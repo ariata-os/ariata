@@ -1,0 +1,40 @@
+# Strava Source Configuration
+# Fitness and activity tracking from Strava
+
+name: strava
+display_name: Strava
+icon: simple-icons:strava
+video: strava.webm
+platform: cloud
+company: strava
+description: Fitness activities, workouts, and performance metrics from Strava
+
+# Authentication
+auth:
+  type: oauth2
+  provider: strava
+  auth_url: https://www.strava.com/oauth/authorize
+  token_url: https://www.strava.com/oauth/token
+  revoke_url: https://www.strava.com/oauth/deauthorize
+  auth_proxy: https://auth.ariata.com/strava/auth
+  token_refresh_window: 300  # Refresh 5 minutes before expiry (6 hour tokens)
+  
+# Available streams
+streams:
+  - name: activities
+    display_name: Activities
+    description: Running, cycling, and other fitness activities
+
+# API settings
+api:
+  base_url: https://www.strava.com/api
+  version: v3
+  rate_limits:
+    per_15_minutes: 100  # Default rate limit
+    per_day: 1000  # Daily rate limit
+  timeout: 30000  # 30 seconds
+
+# Sync settings
+sync:
+  type: pull
+  page_size: 30  # Strava recommends 30 per page

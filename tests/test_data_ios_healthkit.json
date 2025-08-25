@@ -1,0 +1,635 @@
+{
+  "device_id": "dev_iphone_001",
+  "stream_name": "ios_healthkit",
+  "data": [
+    {
+      "timestamp": "2025-07-01T05:00:00Z",
+      "heart_rate": 60.9,
+      "hrv": 54.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:05:00Z",
+      "heart_rate": 58.7,
+      "hrv": 52.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:10:00Z",
+      "heart_rate": 62.4,
+      "hrv": 47.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:15:00Z",
+      "heart_rate": 61.9,
+      "hrv": 40.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:20:00Z",
+      "heart_rate": 59.3,
+      "hrv": 44.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:25:00Z",
+      "heart_rate": 54.0,
+      "hrv": 50.4,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:30:00Z",
+      "heart_rate": 62.7,
+      "hrv": 49.4,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:35:00Z",
+      "heart_rate": 60.1,
+      "hrv": 47.4,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:40:00Z",
+      "heart_rate": 59.9,
+      "hrv": 46.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:45:00Z",
+      "heart_rate": 56.2,
+      "hrv": 46.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:50:00Z",
+      "heart_rate": 55.0,
+      "hrv": 49.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T05:55:00Z",
+      "heart_rate": 60.7,
+      "hrv": 53.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:00:00Z",
+      "heart_rate": 58.8,
+      "hrv": 51.2,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:05:00Z",
+      "heart_rate": 59.1,
+      "hrv": 55.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:10:00Z",
+      "heart_rate": 60.3,
+      "hrv": 49.2,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:15:00Z",
+      "heart_rate": 59.9,
+      "hrv": 53.2,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:20:00Z",
+      "heart_rate": 58.7,
+      "hrv": 61.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:25:00Z",
+      "heart_rate": 60.3,
+      "hrv": 50.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:30:00Z",
+      "heart_rate": 60.4,
+      "hrv": 51.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:35:00Z",
+      "heart_rate": 61.1,
+      "hrv": 53.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:40:00Z",
+      "heart_rate": 59.8,
+      "hrv": 57.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:45:00Z",
+      "heart_rate": 56.5,
+      "hrv": 53.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:50:00Z",
+      "heart_rate": 59.2,
+      "hrv": 44.8,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T06:55:00Z",
+      "heart_rate": 59.4,
+      "hrv": 41.6,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:00:00Z",
+      "heart_rate": 52.8,
+      "hrv": 53.8,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:05:00Z",
+      "heart_rate": 54.2,
+      "hrv": 61.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:10:00Z",
+      "heart_rate": 54.0,
+      "hrv": 47.5,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:15:00Z",
+      "heart_rate": 59.0,
+      "hrv": 64.6,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:20:00Z",
+      "heart_rate": 52.4,
+      "hrv": 57.5,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:25:00Z",
+      "heart_rate": 55.0,
+      "hrv": 61.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:30:00Z",
+      "heart_rate": 51.6,
+      "hrv": 57.8,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:35:00Z",
+      "heart_rate": 56.0,
+      "hrv": 59.6,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:40:00Z",
+      "heart_rate": 57.2,
+      "hrv": 65.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:45:00Z",
+      "heart_rate": 53.4,
+      "hrv": 61.5,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:50:00Z",
+      "heart_rate": 54.5,
+      "hrv": 62.5,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T07:55:00Z",
+      "heart_rate": 54.3,
+      "hrv": 59.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:00:00Z",
+      "heart_rate": 55.1,
+      "hrv": 70.8,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:05:00Z",
+      "heart_rate": 54.6,
+      "hrv": 55.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:10:00Z",
+      "heart_rate": 55.0,
+      "hrv": 64.3,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:15:00Z",
+      "heart_rate": 53.0,
+      "hrv": 55.2,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:20:00Z",
+      "heart_rate": 54.7,
+      "hrv": 65.3,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:25:00Z",
+      "heart_rate": 55.6,
+      "hrv": 57.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:30:00Z",
+      "heart_rate": 59.3,
+      "hrv": 68.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:35:00Z",
+      "heart_rate": 53.0,
+      "hrv": 59.8,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:40:00Z",
+      "heart_rate": 57.5,
+      "hrv": 63.4,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:45:00Z",
+      "heart_rate": 55.7,
+      "hrv": 64.8,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:50:00Z",
+      "heart_rate": 54.8,
+      "hrv": 64.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T08:55:00Z",
+      "heart_rate": 50.5,
+      "hrv": 57.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:00:00Z",
+      "heart_rate": 64.9,
+      "hrv": 47.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:05:00Z",
+      "heart_rate": 62.4,
+      "hrv": 47.4,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:10:00Z",
+      "heart_rate": 60.4,
+      "hrv": 54.9,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:15:00Z",
+      "heart_rate": 63.8,
+      "hrv": 46.6,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:20:00Z",
+      "heart_rate": 64.7,
+      "hrv": 53.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:25:00Z",
+      "heart_rate": 62.5,
+      "hrv": 49.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:30:00Z",
+      "heart_rate": 59.4,
+      "hrv": 48.9,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:35:00Z",
+      "heart_rate": 63.8,
+      "hrv": 47.8,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:40:00Z",
+      "heart_rate": 62.4,
+      "hrv": 47.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:45:00Z",
+      "heart_rate": 63.5,
+      "hrv": 48.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:50:00Z",
+      "heart_rate": 64.5,
+      "hrv": 46.9,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T09:55:00Z",
+      "heart_rate": 61.7,
+      "hrv": 46.8,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:00:00Z",
+      "heart_rate": 65.7,
+      "hrv": 60.3,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:05:00Z",
+      "heart_rate": 63.4,
+      "hrv": 52.9,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:10:00Z",
+      "heart_rate": 66.6,
+      "hrv": 52.2,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:15:00Z",
+      "heart_rate": 65.3,
+      "hrv": 50.3,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:20:00Z",
+      "heart_rate": 65.0,
+      "hrv": 55.9,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:25:00Z",
+      "heart_rate": 63.8,
+      "hrv": 49.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:30:00Z",
+      "heart_rate": 64.8,
+      "hrv": 57.4,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:35:00Z",
+      "heart_rate": 62.8,
+      "hrv": 53.6,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:40:00Z",
+      "heart_rate": 60.3,
+      "hrv": 42.4,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:45:00Z",
+      "heart_rate": 56.6,
+      "hrv": 41.9,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:50:00Z",
+      "heart_rate": 60.1,
+      "hrv": 53.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T10:55:00Z",
+      "heart_rate": 61.0,
+      "hrv": 49.8,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:00:00Z",
+      "heart_rate": 56.7,
+      "hrv": 46.6,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:05:00Z",
+      "heart_rate": 59.6,
+      "hrv": 50.3,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:10:00Z",
+      "heart_rate": 63.9,
+      "hrv": 48.8,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:15:00Z",
+      "heart_rate": 57.5,
+      "hrv": 45.3,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:20:00Z",
+      "heart_rate": 54.1,
+      "hrv": 57.9,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:25:00Z",
+      "heart_rate": 59.3,
+      "hrv": 50.4,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:30:00Z",
+      "heart_rate": 60.7,
+      "hrv": 51.5,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:35:00Z",
+      "heart_rate": 58.9,
+      "hrv": 47.3,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:40:00Z",
+      "heart_rate": 58.5,
+      "hrv": 52.2,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:45:00Z",
+      "heart_rate": 62.8,
+      "hrv": 59.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:50:00Z",
+      "heart_rate": 60.0,
+      "hrv": 54.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T11:55:00Z",
+      "heart_rate": 57.5,
+      "hrv": 53.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T12:00:00Z",
+      "heart_rate": 61.1,
+      "hrv": 47.4,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T12:05:00Z",
+      "heart_rate": 61.4,
+      "hrv": 42.6,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T12:10:00Z",
+      "heart_rate": 61.6,
+      "hrv": 50.7,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T12:15:00Z",
+      "heart_rate": 59.1,
+      "hrv": 50.1,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    },
+    {
+      "timestamp": "2025-07-01T12:20:00Z",
+      "heart_rate": 60.6,
+      "hrv": 51.0,
+      "activity_type": "sleeping",
+      "confidence": 0.95
+    }
+  ],
+  "batch_metadata": {
+    "total_points": 89,
+    "date": "2025-07-01",
+    "start_time": "2025-07-01T05:00:00Z",
+    "end_time": "2025-07-01T12:20:00Z"
+  }
+}

@@ -1,0 +1,67 @@
+name: mac_apps
+source: mac
+display_name: Mac Applications
+description: Application focus and usage events
+ingestion:
+  type: push
+  batch_type: events
+  raw_data_type: AppEvent
+processor:
+  table_name: stream_mac_apps
+processing:
+  deduplication:
+    strategy: single
+  normalization: true
+  validation:
+    required_fields:
+    - app_name
+    - bundle_id
+    - timestamp
+    - event_type
+    event_types:
+    - focus_gained
+    - focus_lost
+    - launch
+    - quit
+storage:
+  retention_days: 30
+  compression: gzip
+  format: json
+schema:
+  table_name: stream_mac_apps
+  description: Application focus events from macOS
+  columns:
+  - name: app_name
+    type: string
+    max_length: 200
+    nullable: false
+    description: Application name
+  - name: bundle_id
+    type: string
+    max_length: 200
+    nullable: true
+    description: macOS bundle identifier
+  - name: event_type
+    type: string
+    max_length: 50
+    nullable: false
+    description: Event type (focus_gained, focus_lost, launch, quit)
+  indexes:
+  - columns:
+    - timestamp
+    type: btree
+    description: Primary time-series index
+  - columns:
+    - app_name
+    - timestamp
+    type: btree
+    description: Index for app-specific queries
+  - columns:
+    - event_type
+    - timestamp
+    type: btree
+    description: Index for event type queries
+  storage:
+    strategy: postgres_only
+    minio_fields: []
+    note: All fields stay in PostgreSQL - app usage data is small and queryable

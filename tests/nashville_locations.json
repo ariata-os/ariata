@@ -1,0 +1,211 @@
+{
+  "locations": {
+    "home": {
+      "name": "Home - East Nashville",
+      "address": "1012 Woodland St",
+      "lat": 36.1744,
+      "lng": -86.7444,
+      "indoor": true,
+      "area_type": "residential",
+      "gps_accuracy_range": [3, 8],
+      "altitude": 165
+    },
+    "shelby_bottoms_greenway": {
+      "name": "Shelby Bottoms Greenway",
+      "address": "Greenway Entrance",
+      "lat": 36.1780,
+      "lng": -86.7380,
+      "indoor": false,
+      "area_type": "park",
+      "gps_accuracy_range": [2, 5],
+      "altitude": 130
+    },
+    "crema_coffee": {
+      "name": "Crema Coffee",
+      "address": "15 Hermitage Ave",
+      "lat": 36.1516,
+      "lng": -86.7960,
+      "indoor": true,
+      "area_type": "urban",
+      "gps_accuracy_range": [5, 25],
+      "altitude": 175
+    },
+    "the_gym_nashville": {
+      "name": "The Gym Nashville",
+      "address": "2525 West End Ave",
+      "lat": 36.1486,
+      "lng": -86.8050,
+      "indoor": true,
+      "area_type": "commercial",
+      "gps_accuracy_range": [10, 40],
+      "altitude": 180
+    },
+    "farmers_market": {
+      "name": "Nashville Farmers' Market",
+      "address": "900 Rosa L Parks Blvd",
+      "lat": 36.1688,
+      "lng": -86.7847,
+      "indoor": false,
+      "area_type": "urban",
+      "gps_accuracy_range": [4, 12],
+      "altitude": 170
+    },
+    "centennial_park": {
+      "name": "Centennial Park Tennis Courts",
+      "address": "2500 West End Ave",
+      "lat": 36.1490,
+      "lng": -86.8127,
+      "indoor": false,
+      "area_type": "park",
+      "gps_accuracy_range": [3, 6],
+      "altitude": 185
+    },
+    "cvs_green_hills": {
+      "name": "CVS Green Hills",
+      "address": "2125 Abbott Martin Rd",
+      "lat": 36.1065,
+      "lng": -86.8163,
+      "indoor": true,
+      "area_type": "suburban",
+      "gps_accuracy_range": [8, 30],
+      "altitude": 200
+    },
+    "shell_station": {
+      "name": "Shell Station",
+      "address": "701 Main St",
+      "lat": 36.1650,
+      "lng": -86.7800,
+      "indoor": false,
+      "area_type": "commercial",
+      "gps_accuracy_range": [4, 10],
+      "altitude": 172
+    },
+    "etch_restaurant": {
+      "name": "Etch Restaurant",
+      "address": "303 Demonbreun St",
+      "lat": 36.1644,
+      "lng": -86.7819,
+      "indoor": true,
+      "area_type": "downtown",
+      "gps_accuracy_range": [8, 35],
+      "altitude": 175
+    },
+    "etch_valet": {
+      "name": "Etch Valet Drop-off",
+      "address": "3rd Ave entrance",
+      "lat": 36.1642,
+      "lng": -86.7816,
+      "indoor": false,
+      "area_type": "downtown",
+      "gps_accuracy_range": [5, 15],
+      "altitude": 175
+    },
+    "patterson_house": {
+      "name": "The Patterson House",
+      "address": "1711 Division St",
+      "lat": 36.1550,
+      "lng": -86.7965,
+      "indoor": true,
+      "area_type": "midtown",
+      "gps_accuracy_range": [7, 30],
+      "altitude": 178
+    }
+  },
+  "routes": {
+    "home_to_greenway": {
+      "mode": "walking",
+      "distance_km": 0.6,
+      "duration_min": 8,
+      "waypoints": [
+        {"lat": 36.1744, "lng": -86.7444},
+        {"lat": 36.1752, "lng": -86.7430},
+        {"lat": 36.1765, "lng": -86.7410},
+        {"lat": 36.1780, "lng": -86.7380}
+      ]
+    },
+    "home_to_crema": {
+      "mode": "biking",
+      "distance_km": 2.8,
+      "duration_min": 12,
+      "waypoints": [
+        {"lat": 36.1744, "lng": -86.7444},
+        {"lat": 36.1720, "lng": -86.7480},
+        {"lat": 36.1680, "lng": -86.7520},
+        {"lat": 36.1640, "lng": -86.7600},
+        {"lat": 36.1600, "lng": -86.7700},
+        {"lat": 36.1550, "lng": -86.7850},
+        {"lat": 36.1516, "lng": -86.7960}
+      ]
+    },
+    "crema_to_gym": {
+      "mode": "driving",
+      "distance_km": 3.2,
+      "duration_min": 8,
+      "traffic_lights": 6,
+      "waypoints": [
+        {"lat": 36.1516, "lng": -86.7960},
+        {"lat": 36.1520, "lng": -86.7980},
+        {"lat": 36.1510, "lng": -86.8000},
+        {"lat": 36.1500, "lng": -86.8020},
+        {"lat": 36.1490, "lng": -86.8040},
+        {"lat": 36.1486, "lng": -86.8050}
+      ]
+    }
+  },
+  "traffic_patterns": {
+    "saturday_morning": {
+      "congestion_factor": 0.3,
+      "avg_speed_city_mph": 35,
+      "avg_speed_highway_mph": 60
+    },
+    "saturday_afternoon": {
+      "congestion_factor": 0.5,
+      "avg_speed_city_mph": 28,
+      "avg_speed_highway_mph": 55
+    },
+    "saturday_evening": {
+      "congestion_factor": 0.8,
+      "avg_speed_city_mph": 18,
+      "avg_speed_highway_mph": 45,
+      "downtown_broadway_mph": 8
+    }
+  },
+  "movement_profiles": {
+    "walking": {
+      "base_speed_ms": 1.4,
+      "variation": 0.3,
+      "stop_probability": 0.15,
+      "stop_duration_range": [5, 30]
+    },
+    "dog_walking": {
+      "base_speed_ms": 1.2,
+      "variation": 0.5,
+      "stop_probability": 0.25,
+      "stop_duration_range": [10, 60]
+    },
+    "biking": {
+      "base_speed_ms": 5.0,
+      "variation": 1.5,
+      "stop_probability": 0.1,
+      "stop_duration_range": [15, 45]
+    },
+    "driving_city": {
+      "base_speed_ms": 11.0,
+      "variation": 3.0,
+      "traffic_light_interval_m": 400,
+      "stop_duration_range": [30, 90]
+    },
+    "driving_highway": {
+      "base_speed_ms": 26.0,
+      "variation": 4.0,
+      "stop_probability": 0.02,
+      "stop_duration_range": [0, 0]
+    },
+    "parking_search": {
+      "base_speed_ms": 3.0,
+      "variation": 2.0,
+      "circle_radius_m": 200,
+      "search_duration_range": [120, 300]
+    }
+  }
+}

@@ -1,0 +1,70 @@
+# iOS Source Configuration
+# Device-based data collection from iPhone
+
+name: ios
+display_name: iPhone
+icon: ri:smartphone-line
+video: ios.webm
+platform: device
+company: apple
+description: All data from your iPhone including location, sound, and voice
+
+# Authentication
+auth:
+  type: device_token
+  required_fields:
+    - device_id
+    - device_name
+    - os_version
+  device_setup:
+    title: "Connect your iPhone"
+    app_store_url: null  # Coming soon
+    setup_steps:
+      - step: "app"
+        label: "Open the Jaces app on your iPhone"
+        description: "Download from TestFlight or the App Store"
+      - step: "settings"
+        label: "Go to Settings → Connection"
+        description: "Navigate to the connection settings"
+      - step: "token"
+        label: "Enter your device token"
+        description: "Paste the token: {TOKEN}"
+      - step: "connect"
+        label: "The app will connect automatically"
+        description: "Wait for the connection to establish"
+    show_api_endpoint: true
+
+# Available streams
+streams:
+  - name: location
+    display_name: Core Location
+    description: GPS, altitude, and speed data
+    
+  - name: healthkit
+    display_name: HealthKit
+    description: Health metrics including heart rate, steps, sleep
+    
+  - name: mic
+    display_name: Microphone
+    description: Audio capture and transcription
+
+# Device requirements
+requirements:
+  min_os_version: "14.0"
+  capabilities:
+    - location_services
+    - healthkit
+    - microphone
+  permissions:
+    - location_always
+    - health_read
+    - microphone
+
+# Sync settings
+sync:
+  batch_upload_interval: 300  # 5 minutes
+  max_batch_size: 1000
+  compression: gzip
+  retry_policy:
+    max_retries: 3
+    backoff_multiplier: 2

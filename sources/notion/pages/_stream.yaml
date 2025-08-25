@@ -1,0 +1,151 @@
+name: notion_pages
+source: notion
+display_name: Notion Pages
+description: Pages and databases from Notion workspace
+ingestion:
+  type: pull
+  batch_type: pages
+  raw_data_type: NotionPage
+processor:
+  table_name: stream_notion_pages
+  minio_fields:
+  - blocks
+  - attachments
+api:
+  endpoint: https://api.notion.com/v1
+  rate_limit: 3
+  pagination: true
+  page_size: 100
+sync:
+  schedule: '*/30 * * * *'
+  type: token
+processing:
+  extract_text: true
+  extract_metadata: true
+  versioning: true
+  deduplication:
+    key:
+    - page_id
+    - last_edited_time
+    strategy: content_hash
+  normalization: true
+  validation:
+    required_fields:
+    - id
+    - object
+    - created_time
+    - last_edited_time
+schema:
+  table_name: stream_notion_pages
+  description: Pages and databases from Notion workspace
+  columns:
+  - name: page_id
+    type: string
+    max_length: 100
+    nullable: false
+    description: Notion page UUID
+  - name: parent_id
+    type: string
+    max_length: 100
+    nullable: true
+    description: Parent page or workspace ID
+  - name: parent_type
+    type: string
+    max_length: 20
+    nullable: true
+    description: Type of parent (page, database, workspace)
+  - name: title
+    type: string
+    max_length: 500
+    nullable: true
+    description: Page title
+  - name: object_type
+    type: string
+    max_length: 20
+    nullable: true
+    description: Object type (page, database)
+  - name: archived
+    type: boolean
+    nullable: true
+    default: false
+    description: Whether the page is archived
+  - name: url
+    type: string
+    max_length: 500
+    nullable: true
+    description: Public URL if shared
+  - name: created_time
+    type: timestamp
+    nullable: true
+    description: When the page was created in Notion
+  - name: created_by
+    type: string
+    max_length: 100
+    nullable: true
+    description: User ID who created the page
+  - name: last_edited_time
+    type: timestamp
+    nullable: true
+    description: When the page was last edited in Notion
+  - name: last_edited_by
+    type: string
+    max_length: 100
+    nullable: true
+    description: User ID who last edited the page
+  - name: content_text
+    type: text
+    nullable: true
+    description: Extracted plain text content
+  - name: content_markdown
+    type: text
+    nullable: true
+    description: Content converted to Markdown
+  - name: properties
+    type: jsonb
+    nullable: true
+    description: Database properties and values
+  - name: icon
+    type: jsonb
+    nullable: true
+    description: Page icon (emoji or image)
+  - name: cover
+    type: jsonb
+    nullable: true
+    description: Page cover image
+  - name: parent
+    type: jsonb
+    nullable: true
+    description: Full parent relationship data
+  - name: blocks
+    type: jsonb
+    nullable: true
+    description: Page content blocks (if small)
+  - name: minio_path
+    type: string
+    max_length: 500
+    nullable: true
+    description: Path to full content in MinIO (if large)
+  - name: full_page
+    type: jsonb
+    nullable: true
+    description: Complete page object for unmapped fields
+  indexes:
+  - columns:
+    - timestamp
+    type: btree
+    description: Primary time-series index
+  - columns:
+    - last_edited_time
+    type: btree
+    description: Index for edit time queries
+  - columns:
+    - page_id
+    type: btree
+    description: Index for page lookups
+  storage:
+    strategy: hybrid
+    minio_fields:
+    - blocks
+    - attachments
+    reference_pattern: assets/{stream_name}/{year}/{month}/{day}/{page_id}_{field_name}.json
+    note: Deterministic storage - large content/attachments in MinIO, metadata in PostgreSQL

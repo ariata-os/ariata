@@ -1,0 +1,305 @@
+{
+  "source": "google_calendar",
+  "user_id": "test_user_001",
+  "stream_id": "ba477cd2-6821-4329-9059-c02d17ac7a55",
+  "events": [
+    {
+      "calendar": {
+        "id": "testuser@example.com",
+        "summary": "testuser@example.com"
+      },
+      "event": {
+        "kind": "calendar#event",
+        "etag": "\"3491234567890123\"",
+        "id": "workout_saturday_morning_001",
+        "status": "confirmed",
+        "htmlLink": "https://www.google.com/calendar/event?eid=d29ya291dF9zYXR1cmRheV9tb3JuaW5nXzAwMSB0ZXN0dXNlckBleGFtcGxlLmNvbQ",
+        "created": "2025-06-01T15:00:00.000Z",
+        "updated": "2025-06-01T15:00:00.000Z",
+        "summary": "Morning Workout - Upper Body",
+        "description": "Strength training at Equinox gym",
+        "location": "Equinox Gym, 123 Main St",
+        "creator": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "organizer": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "start": {
+          "dateTime": "2025-07-01T15:15:00Z"
+        },
+        "end": {
+          "dateTime": "2025-07-01T16:00:00Z"
+        },
+        "iCalUID": "workout_saturday_morning_001@google.com",
+        "sequence": 0,
+        "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=SA"],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 30
+            }
+          ]
+        },
+        "eventType": "default"
+      }
+    },
+    {
+      "calendar": {
+        "id": "testuser@example.com",
+        "summary": "testuser@example.com"
+      },
+      "event": {
+        "kind": "calendar#event",
+        "etag": "\"3491234567890124\"",
+        "id": "pickleball_tournament_sat_001",
+        "status": "confirmed",
+        "htmlLink": "https://www.google.com/calendar/event?eid=cGlja2xlYmFsbF90b3VybmFtZW50X3NhdF8wMDEgdGVzdHVzZXJAZXhhbXBsZS5jb20",
+        "created": "2025-06-28T10:00:00.000Z",
+        "updated": "2025-06-28T10:00:00.000Z",
+        "summary": "Pickleball Tournament - Saturday League",
+        "description": "Doubles matches with partners rotation format at Sunset Community Courts",
+        "location": "Sunset Community Courts, 456 Park Ave",
+        "creator": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "organizer": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "start": {
+          "dateTime": "2025-07-01T18:30:00Z"
+        },
+        "end": {
+          "dateTime": "2025-07-01T19:45:00Z"
+        },
+        "iCalUID": "pickleball_tournament_sat_001@google.com",
+        "sequence": 0,
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 60
+            }
+          ]
+        },
+        "eventType": "default"
+      }
+    },
+    {
+      "calendar": {
+        "id": "testuser@example.com",
+        "summary": "testuser@example.com"
+      },
+      "event": {
+        "kind": "calendar#event",
+        "etag": "\"3491234567890125\"",
+        "id": "date_sarah_bella_vista_001",
+        "status": "confirmed",
+        "htmlLink": "https://www.google.com/calendar/event?eid=ZGF0ZV9zYXJhaF9iZWxsYV92aXN0YV8wMDEgdGVzdHVzZXJAZXhhbXBsZS5jb20",
+        "created": "2025-06-29T14:30:00.000Z",
+        "updated": "2025-06-30T16:45:00.000Z",
+        "summary": "Dinner with Sarah",
+        "description": "First date at Bella Vista Italian Restaurant",
+        "location": "Bella Vista Restaurant, 789 Main Street",
+        "creator": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "organizer": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "start": {
+          "dateTime": "2025-07-01T22:00:00Z"
+        },
+        "end": {
+          "dateTime": "2025-07-02T00:00:00Z"
+        },
+        "iCalUID": "date_sarah_bella_vista_001@google.com",
+        "sequence": 1,
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 30
+            },
+            {
+              "method": "email",
+              "minutes": 120
+            }
+          ]
+        },
+        "eventType": "default"
+      }
+    },
+    {
+      "calendar": {
+        "id": "testuser@example.com",
+        "summary": "testuser@example.com"
+      },
+      "event": {
+        "kind": "calendar#event",
+        "etag": "\"3491234567890126\"",
+        "id": "pub_quiz_mcneelys_001",
+        "status": "confirmed",
+        "htmlLink": "https://www.google.com/calendar/event?eid=cHViX3F1aXpfbWNuZWVseXNfMDAxIHRlc3R1c2VyQGV4YW1wbGUuY29t",
+        "created": "2025-06-30T09:00:00.000Z",
+        "updated": "2025-06-30T09:00:00.000Z",
+        "summary": "Pub Quiz Night at McNeely's",
+        "description": "Weekly trivia with The Brainstormers team - Alex, Mike, Jamie, and others",
+        "location": "McNeely's Irish Pub, 321 Oak Street",
+        "creator": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "organizer": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "start": {
+          "dateTime": "2025-07-02T01:30:00Z"
+        },
+        "end": {
+          "dateTime": "2025-07-02T03:30:00Z"
+        },
+        "iCalUID": "pub_quiz_mcneelys_001@google.com",
+        "sequence": 0,
+        "attendees": [
+          {
+            "email": "testuser@example.com",
+            "self": true,
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "alex@example.com",
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "mike@example.com",
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "jamie@example.com",
+            "responseStatus": "accepted"
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "eventType": "default"
+      }
+    },
+    {
+      "calendar": {
+        "id": "testuser@example.com",
+        "summary": "testuser@example.com"
+      },
+      "event": {
+        "kind": "calendar#event",
+        "etag": "\"3491234567890127\"",
+        "id": "farmers_market_recurring_001",
+        "status": "confirmed",
+        "htmlLink": "https://www.google.com/calendar/event?eid=ZmFybWVyc19tYXJrZXRfcmVjdXJyaW5nXzAwMSB0ZXN0dXNlckBleGFtcGxlLmNvbQ",
+        "created": "2025-06-15T10:00:00.000Z",
+        "updated": "2025-06-15T10:00:00.000Z",
+        "summary": "Farmers Market",
+        "description": "Weekly visit to Grand Lake farmers market",
+        "location": "Grand Lake Farmers Market",
+        "creator": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "organizer": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "start": {
+          "dateTime": "2025-07-01T16:30:00Z"
+        },
+        "end": {
+          "dateTime": "2025-07-01T17:15:00Z"
+        },
+        "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=SA"],
+        "iCalUID": "farmers_market_recurring_001@google.com",
+        "sequence": 0,
+        "reminders": {
+          "useDefault": true
+        },
+        "eventType": "default"
+      }
+    },
+    {
+      "calendar": {
+        "id": "testuser@example.com",
+        "summary": "testuser@example.com"
+      },
+      "event": {
+        "kind": "calendar#event",
+        "etag": "\"3491234567890128\"",
+        "id": "family_video_call_weekly_001",
+        "status": "confirmed",
+        "htmlLink": "https://www.google.com/calendar/event?eid=ZmFtaWx5X3ZpZGVvX2NhbGxfd2Vla2x5XzAwMSB0ZXN0dXNlckBleGFtcGxlLmNvbQ",
+        "created": "2025-06-01T12:00:00.000Z",
+        "updated": "2025-06-01T12:00:00.000Z",
+        "summary": "Family Video Call",
+        "description": "Weekly FaceTime with parents in Boston",
+        "creator": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "organizer": {
+          "email": "testuser@example.com",
+          "self": true
+        },
+        "start": {
+          "dateTime": "2025-07-01T21:00:00Z"
+        },
+        "end": {
+          "dateTime": "2025-07-01T21:45:00Z"
+        },
+        "recurrence": ["RRULE:FREQ=WEEKLY;BYDAY=SA"],
+        "iCalUID": "family_video_call_weekly_001@google.com",
+        "sequence": 0,
+        "conferenceData": {
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "uri": "facetime:parents@example.com",
+              "label": "FaceTime"
+            }
+          ],
+          "conferenceSolution": {
+            "key": {
+              "type": "facetime"
+            },
+            "name": "FaceTime"
+          }
+        },
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 5
+            }
+          ]
+        },
+        "eventType": "default"
+      }
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+# docker-compose.prod.yml
+# Production-specific overrides for the Ariata stack
+
+version: '3.8'
+
+services:
+  # Web service - production settings
+  web:
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Override URLs to use PUBLIC_IP from .env
+      FRONTEND_URL: http://${PUBLIC_IP}:${WEB_PORT}
+    # Remove volume mounts for source code in production
+    volumes:
+      - ./assets:/assets:ro  # Keep assets read-only
+
+  # PostgreSQL - production settings
+  postgres:
+    restart: unless-stopped
+    # Consider using a more robust password in production
+    
+  # MinIO - production settings
+  minio:
+    restart: unless-stopped
+    # Consider changing default credentials in production
+    
+  # Redis - production settings
+  redis:
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    
+  # Celery Worker - production settings
+  celery-worker:
+    restart: unless-stopped
+    # Remove development volume mounts
+    volumes:
+      - ./assets:/app/assets:ro
+    
+  # Celery Beat - production settings
+  celery-beat:
+    restart: unless-stopped
+    # Remove development volume mounts
+    volumes:
+      - ./assets:/app/assets:ro
+    
+  # Processing service - production settings
+  processing:
+    restart: unless-stopped
+    # Remove development volume mounts
+    volumes: []

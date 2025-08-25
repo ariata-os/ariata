@@ -1,0 +1,104 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+services/auth-proxy/.env
+apps/google-auth-proxy/.env
+
+# Keep .env.example files
+!.env.example
+!**/.env.example
+
+# Apple certificates and signing
+*.p12
+*.pfx
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+Developer ID Application*
+
+# Xcode
+*.xcuserdata/
+*.xcscheme
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+.ropeproject/
+.conductor/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Node.js
+node_modules/
+
+# Python environments
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Python lock files
+uv.lock
+
+# Celery
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat.pid
+
+.Python
+build/
+apps/mac/build/
+
+# Build artifacts
+apps/mac/jaces-mac
+apps/mac/*.tar.gz
+apps/mac/*.zip
+apps/mac/*.dmg
+
+# Git backups
+.git-backup-*/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg

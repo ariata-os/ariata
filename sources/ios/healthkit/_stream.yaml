@@ -1,0 +1,107 @@
+name: ios_healthkit
+source: ios
+display_name: iOS HealthKit
+description: Health data including heart rate, steps, workouts, sleep, and energy
+ingestion:
+  type: push
+  batch_type: array
+  raw_data_type: HKSample
+sync:
+  type: date_range
+  initial_sync_days: 90
+  schedule: '*/5 * * * *'
+processor:
+  table_name: stream_ios_healthkit
+processing:
+  deduplication:
+    strategy: content_hash
+  normalization: true
+  validation:
+    required_fields:
+    - type
+    - value
+    - timestamp
+    ranges:
+      heart_rate:
+      - 30
+      - 250
+      steps:
+      - 0
+      - 100000
+      active_energy:
+      - 0
+      - 10000
+      heart_rate_variability:
+      - 0
+      - 500
+storage:
+  retention_days: 365
+  compression: gzip
+  format: json
+schema:
+  table_name: stream_ios_healthkit
+  description: Health metrics from iOS HealthKit including heart rate, HRV, steps, and activity
+  columns:
+  - name: heart_rate
+    type: float
+    nullable: true
+    description: Heart rate in beats per minute
+  - name: hrv
+    type: float
+    nullable: true
+    description: Heart rate variability in milliseconds
+  - name: activity_type
+    type: string
+    max_length: 50
+    nullable: true
+    description: Type of activity (sleeping, walking, running, etc.)
+  - name: confidence
+    type: float
+    nullable: true
+    min: 0.0
+    max: 1.0
+    description: Confidence level of the measurement
+  - name: steps
+    type: integer
+    nullable: true
+    description: Number of steps
+  - name: active_energy
+    type: float
+    nullable: true
+    description: Active energy burned in kcal
+  - name: sleep_stage
+    type: string
+    max_length: 20
+    nullable: true
+    description: Sleep stage (awake, light, deep, rem)
+  - name: workout_type
+    type: string
+    max_length: 50
+    nullable: true
+    description: Type of workout activity
+  - name: workout_duration
+    type: integer
+    nullable: true
+    description: Workout duration in seconds
+  - name: device_name
+    type: string
+    max_length: 100
+    nullable: true
+    description: Name of the device that recorded the data
+  - name: raw_data
+    type: jsonb
+    nullable: true
+    description: Additional fields not mapped to columns
+  indexes:
+  - columns:
+    - timestamp
+    type: btree
+    description: Primary time-series index
+  storage:
+    strategy: postgres_only
+    minio_fields: []
+    note: All fields stay in PostgreSQL - health metrics are small structured data
+    partitioning:
+      enabled: false
+      by: timestamp
+      interval: month

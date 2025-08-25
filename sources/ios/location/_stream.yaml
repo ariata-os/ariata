@@ -1,0 +1,103 @@
+name: ios_location
+source: ios
+display_name: iOS Core Location
+description: Raw CoreLocation data including GPS, altitude, speed, and activity
+ingestion:
+  type: push
+  batch_type: array
+  raw_data_type: CLLocation
+sync:
+  type: none
+  schedule: '*/5 * * * *'
+processing:
+  deduplication:
+    strategy: single
+  normalization: true
+  validation:
+    required_fields:
+    - latitude
+    - longitude
+    - timestamp
+    ranges:
+      latitude:
+      - -90
+      - 90
+      longitude:
+      - -180
+      - 180
+      altitude:
+      - -500
+      - 9000
+      speed:
+      - 0
+      - 500
+processor:
+  table_name: stream_ios_location
+storage:
+  retention_days: 90
+  compression: gzip
+  format: json
+schema:
+  table_name: stream_ios_location
+  description: GPS and location data from iOS Core Location
+  columns:
+  - name: latitude
+    type: float
+    nullable: false
+    description: Latitude coordinate
+  - name: longitude
+    type: float
+    nullable: false
+    description: Longitude coordinate
+  - name: altitude
+    type: float
+    nullable: true
+    description: Altitude in meters
+  - name: horizontal_accuracy
+    type: float
+    nullable: true
+    description: Horizontal accuracy in meters
+  - name: vertical_accuracy
+    type: float
+    nullable: true
+    description: Vertical accuracy in meters
+  - name: speed
+    type: float
+    nullable: true
+    description: Speed in meters per second
+  - name: course
+    type: float
+    nullable: true
+    description: Course/heading in degrees from true north
+  - name: floor
+    type: integer
+    nullable: true
+    description: Floor level in building
+  - name: activity_type
+    type: string
+    max_length: 50
+    nullable: true
+    description: Type of activity (stationary, walking, running, automotive, etc.)
+  - name: address
+    type: string
+    max_length: 500
+    nullable: true
+    description: Reverse geocoded address
+  - name: place_name
+    type: string
+    max_length: 200
+    nullable: true
+    description: Name of the place/venue
+  - name: raw_data
+    type: jsonb
+    nullable: true
+    description: Additional location metadata
+  indexes:
+  - columns:
+    - timestamp
+    type: btree
+    description: Primary time-series index
+  storage:
+    strategy: postgres_only
+    minio_fields: []
+    note: All fields stay in PostgreSQL - no binary data in location streams

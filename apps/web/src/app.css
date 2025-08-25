@@ -1,0 +1,34 @@
+@import 'tailwindcss';
+
+@use url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&display=swap');
+
+@layer utilities {
+	.max-w-8xl {
+		max-width: 1440px;
+	}
+}
+
+
+@media (prefers-reduced-motion) {
+
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none !important;
+	}
+}
+
+@theme {
+	--color-canvas: #1c1917;
+
+	--font-mono: 'Neue Machina', monospace;
+	--font-sans: 'Avenir', sans-serif;
+	--font-serif: 'Lora', serif;
+}
+
+@font-face {
+	font-family: 'Neue Machina';
+	font-style: normal;
+	font-display: swap;
+	src: url('lib/fonts/NeueMachina-Regular.otf') format('otf');
+}
