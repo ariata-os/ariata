@@ -166,7 +166,7 @@ else
     osascript -e 'display notification "Downloading Ariata Mac Monitor..." with title "Installing" subtitle "This may take a moment"'
     
     # Download the binary from mac-latest release (has unversioned files)
-    DOWNLOAD_URL="https://github.com/ariata-com/ariata/releases/download/mac-latest/ariata-mac-universal.tar.gz"
+    DOWNLOAD_URL="https://github.com/ariata-os/ariata/releases/download/mac-latest/ariata-mac-universal.tar.gz"
     echo "Downloading from: $DOWNLOAD_URL"
     
     if ! curl -L --progress-bar -o "$TEMP_DIR/ariata-mac.tar.gz" "$DOWNLOAD_URL"; then

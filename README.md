@@ -1,6 +1,6 @@
 # Ariata: An open source ecosystem for owning and exporting your personal data
 
-[![Release](https://img.shields.io/badge/Release-None-red.svg)](https://github.com/ariata-com/ariata/releases)
+[![Release](https://img.shields.io/badge/Release-None-red.svg)](https://github.com/ariata-os/ariata/releases)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white)](https://discord.gg/sSQKzDWqgv)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![License: ELv2](https://img.shields.io/badge/License-ELv2-orange.svg)](https://www.elastic.co/licensing/elastic-license)
@@ -111,7 +111,7 @@ Get Ariata running in under 2 minutes:
 
 ```bash
 # Clone the repository
-git clone https://github.com/ariata-com/ariata
+git clone https://github.com/ariata-os/ariata
 cd ariata
 
 # Start the entire stack (PostgreSQL, Redis, MinIO, Web App, Workers)
@@ -337,7 +337,7 @@ We believe that only an open-source solution to personal data management can tru
 
 ```bash
 # Fork and clone the repository
-git clone https://github.com/ariata-com/ariata
+git clone https://github.com/ariata-os/ariata
 cd ariata
 
 # Create a feature branch
@@ -365,7 +365,7 @@ See [LICENSE](./LICENSE) for complete details.
 ## 📞 Contact & Support
 
 - **Community**: Slack coming soon
-- **GitHub Issues**: [Report bugs or request features](https://github.com/ariata-com/ariata/issues)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/ariata-os/ariata/issues)
 
 ---
 

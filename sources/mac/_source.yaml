@@ -18,12 +18,12 @@ auth:
     - os_version
   device_setup:
     title: "Install Mac Monitor"
-    download_url: "https://github.com/ariata-com/ariata/releases/latest/download/install.sh"
-    install_command: "curl -sSL https://github.com/ariata-com/ariata/releases/latest/download/install.sh | bash"
+    download_url: "https://github.com/ariata-os/ariata/releases/latest/download/install.sh"
+    install_command: "curl -sSL https://github.com/ariata-os/ariata/releases/latest/download/install.sh | bash"
     setup_steps:
       - step: "install"
         label: "Install the Mac CLI tool"
-        command: "curl -sSL https://github.com/ariata-com/ariata/releases/latest/download/install.sh | bash"
+        command: "curl -sSL https://github.com/ariata-os/ariata/releases/latest/download/install.sh | bash"
       - step: "init"
         label: "Initialize with your token"
         command: "ariata-mac init {TOKEN}"

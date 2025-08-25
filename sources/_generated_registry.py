@@ -1,6 +1,6 @@
 """Auto-generated registry of sources and streams."""
 
-# Generated at: 2025-08-25T21:38:40.404114Z
+# Generated at: 2025-08-25T21:43:09.480002Z
 
 REGISTRY = {
   "sources": {
@@ -174,13 +174,13 @@ REGISTRY = {
         ],
         "device_setup": {
           "title": "Install Mac Monitor",
-          "download_url": "https://github.com/ariata-com/ariata/releases/latest/download/install.sh",
-          "install_command": "curl -sSL https://github.com/ariata-com/ariata/releases/latest/download/install.sh | bash",
+          "download_url": "https://github.com/ariata-os/ariata/releases/latest/download/install.sh",
+          "install_command": "curl -sSL https://github.com/ariata-os/ariata/releases/latest/download/install.sh | bash",
           "setup_steps": [
             {
               "step": "install",
               "label": "Install the Mac CLI tool",
-              "command": "curl -sSL https://github.com/ariata-com/ariata/releases/latest/download/install.sh | bash"
+              "command": "curl -sSL https://github.com/ariata-os/ariata/releases/latest/download/install.sh | bash"
             },
             {
               "step": "init",
@@ -1847,7 +1847,7 @@ REGISTRY = {
     }
   },
   "metadata": {
-    "generated_at": "2025-08-25T21:38:40.404114Z",
+    "generated_at": "2025-08-25T21:43:09.480002Z",
     "version": "2.0.0"
   }
 }

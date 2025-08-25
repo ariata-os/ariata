@@ -802,11 +802,11 @@
 														Run this command in Terminal:
 													</p>
 													<div class="relative">
-														<pre class="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto whitespace-pre">curl -sSL https://github.com/ariata-com/ariata/releases/download/mac-latest/installer.sh | \
+														<pre class="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto whitespace-pre">curl -sSL https://github.com/ariata-os/ariata/releases/download/mac-latest/installer.sh | \
 bash -s -- --token {generatedToken} --endpoint {typeof window !== "undefined" ? window.location.origin : ""}</pre>
 														<button
 															onclick={() => {
-																const command = `curl -sSL https://github.com/ariata-com/ariata/releases/download/mac-latest/installer.sh | bash -s -- --token ${generatedToken} --endpoint ${window.location.origin}`;
+																const command = `curl -sSL https://github.com/ariata-os/ariata/releases/download/mac-latest/installer.sh | bash -s -- --token ${generatedToken} --endpoint ${window.location.origin}`;
 																navigator.clipboard.writeText(command);
 																toast.success('Command copied! Open Terminal and paste to run');
 															}}
