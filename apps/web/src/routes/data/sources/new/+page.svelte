@@ -135,7 +135,7 @@
 	$effect(() => {
 		if (typeof window !== 'undefined') {
 			// Restore OAuth form data
-			const storageKey = `jaces_oauth_form_${data.source.name}`;
+			const storageKey = `ariata_oauth_form_${data.source.name}`;
 			const saved = localStorage.getItem(storageKey);
 			if (saved) {
 				try {
@@ -258,7 +258,7 @@
 			const result = await response.json();
 
 			// Clear any saved form data on successful submission
-			localStorage.removeItem(`jaces_oauth_form_${data.source.name}`);
+			localStorage.removeItem(`ariata_oauth_form_${data.source.name}`);
 
 			// Show success toast
 			toast.success("Configuration saved successfully!", {
@@ -290,7 +290,7 @@
 	function handleOAuthConnect() {
 		if (data.source.oauthUrl) {
 			// Save form data to localStorage before OAuth redirect
-			const storageKey = `jaces_oauth_form_${data.source.name}`;
+			const storageKey = `ariata_oauth_form_${data.source.name}`;
 			localStorage.setItem(storageKey, JSON.stringify({
 				instanceName,
 				connectionDescription
@@ -379,7 +379,7 @@
 			const result = await response.json();
 			
 			// Clear any saved form data on successful submission
-			localStorage.removeItem(`jaces_oauth_form_${data.source.name}`);
+			localStorage.removeItem(`ariata_oauth_form_${data.source.name}`);
 
 			// Show success toast
 			toast.success("Configuration saved successfully!", {
@@ -410,7 +410,7 @@
 	// Handle cancel
 	async function handleCancel() {
 		// Clear any saved form data when cancelling
-		localStorage.removeItem(`jaces_oauth_form_${data.source.name}`);
+		localStorage.removeItem(`ariata_oauth_form_${data.source.name}`);
 		// Invalidate sources data to ensure fresh data when navigating back
 		await invalidate('app:sources');
 		goto("/data/sources");
@@ -700,7 +700,7 @@
 					<div class="space-y-4">
 						<p class="text-sm text-neutral-600 mb-4">
 							Generate a secure token for your {data.source
-								.displayName} device to connect to Jaces.
+								.displayName} device to connect to Ariata.
 						</p>
 
 						{#if !generatedToken}
@@ -853,11 +853,11 @@ bash -s -- --token {generatedToken} --endpoint {typeof window !== "undefined" ? 
 															<p class="text-xs font-medium text-neutral-600">Step 4: Set API endpoint</p>
 															<div class="relative">
 																<code class="block font-mono text-xs bg-neutral-50 px-3 py-2 pr-20 rounded border border-neutral-200 overflow-x-auto whitespace-nowrap">
-																	export JACES_API_URL="{typeof window !== "undefined" ? window.location.origin : ""}"
+																	export ARIATA_API_URL="{typeof window !== "undefined" ? window.location.origin : ""}"
 																</code>
 																<button
 																	onclick={() => {
-																		navigator.clipboard.writeText(`export JACES_API_URL="${window.location.origin}"`);
+																		navigator.clipboard.writeText(`export ARIATA_API_URL="${window.location.origin}"`);
 																		toast.success('Copied to clipboard');
 																	}}
 																	class="absolute right-2 top-1/2 -translate-y-1/2 text-xs px-2 py-1 bg-white border border-neutral-200 rounded hover:bg-neutral-50 transition-colors"

@@ -102,16 +102,16 @@ fi
 
 # Setup systemd service for auto-start
 echo "🔧 Setting up systemd service..."
-sudo tee /etc/systemd/system/jaces.service > /dev/null << EOF
+sudo tee /etc/systemd/system/ariata.service > /dev/null << EOF
 [Unit]
-Description=Jaces Docker Compose Application
+Description=Ariata Docker Compose Application
 After=docker.service
 Requires=docker.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/home/$USER/jaces
+WorkingDirectory=/home/$USER/ariata
 ExecStart=/usr/local/bin/docker-compose up -d
 ExecStop=/usr/local/bin/docker-compose down
 User=$USER
@@ -121,7 +121,7 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable jaces.service
+sudo systemctl enable ariata.service
 
 echo "✅ EC2 setup complete!"
 echo ""

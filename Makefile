@@ -145,8 +145,8 @@ reset:
 		$(MAKE) schema || (echo "  ❌ Schema creation failed" && exit 1); \
 		echo "🪣 Clearing MinIO storage..."; \
 		docker-compose exec -T minio mc alias set local http://localhost:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} 2>/dev/null || echo "  ⚠️  MinIO alias already exists"; \
-		docker-compose exec -T minio mc rm --recursive --force local/jaces >/dev/null 2>&1 || echo "  ⚠️  No existing MinIO data"; \
-		docker-compose exec -T minio mc mb local/jaces --ignore-existing 2>/dev/null || echo "  ⚠️  Bucket already exists"; \
+		docker-compose exec -T minio mc rm --recursive --force local/ariata >/dev/null 2>&1 || echo "  ⚠️  No existing MinIO data"; \
+		docker-compose exec -T minio mc mb local/ariata --ignore-existing 2>/dev/null || echo "  ⚠️  Bucket already exists"; \
 		echo "  ✅ MinIO storage cleared"; \
 		echo "🌱 Loading test data..."; \
 		$(MAKE) seed || (echo "  ❌ Seeding failed" && exit 1); \
@@ -175,8 +175,8 @@ reset-clean:
 		$(MAKE) schema || (echo "  ❌ Schema creation failed" && exit 1); \
 		echo "🪣 Clearing MinIO storage..."; \
 		docker-compose exec -T minio mc alias set local http://localhost:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} 2>/dev/null || echo "  ⚠️  MinIO alias already exists"; \
-		docker-compose exec -T minio mc rm --recursive --force local/jaces >/dev/null 2>&1 || echo "  ⚠️  No existing MinIO data"; \
-		docker-compose exec -T minio mc mb local/jaces --ignore-existing 2>/dev/null || echo "  ⚠️  Bucket already exists"; \
+		docker-compose exec -T minio mc rm --recursive --force local/ariata >/dev/null 2>&1 || echo "  ⚠️  No existing MinIO data"; \
+		docker-compose exec -T minio mc mb local/ariata --ignore-existing 2>/dev/null || echo "  ⚠️  Bucket already exists"; \
 		echo "  ✅ MinIO storage cleared"; \
 		echo "✨ Reset complete! Database and storage are now empty."; \
 	else \
@@ -216,7 +216,7 @@ validate:
 
 # Start production environment (no build)
 prod: env-check
-	@echo "🚀 Starting Jaces in production mode..."
+	@echo "🚀 Starting Ariata in production mode..."
 	@if [ -z "$${PUBLIC_IP}" ]; then \
 		export PUBLIC_IP=$$(curl -s ifconfig.me 2>/dev/null || echo "localhost"); \
 	fi; \
@@ -254,12 +254,12 @@ deploy-ec2:
 # Update deployment (git pull + restart)
 deploy-update:
 	@read -p "EC2 Host (user@ip): " host; \
-	ssh $$host "cd jaces && git pull && make prod"
+	ssh $$host "cd ariata && git pull && make prod"
 
 # View remote logs
 deploy-logs:
 	@read -p "EC2 Host (user@ip): " host; \
-	ssh $$host "cd jaces && docker-compose logs -f"
+	ssh $$host "cd ariata && docker-compose logs -f"
 
 # === MINIO COMMANDS ===
 
@@ -299,8 +299,8 @@ mac-release:
 mac-install:
 	@echo "📦 Installing Mac CLI to /usr/local/bin..."
 	@cd apps/mac && swift build -c release
-	@sudo cp apps/mac/.build/release/jaces-mac /usr/local/bin/
-	@echo "✅ Installed. Run 'jaces-mac --help' to get started"
+	@sudo cp apps/mac/.build/release/ariata-mac /usr/local/bin/
+	@echo "✅ Installed. Run 'ariata-mac --help' to get started"
 
 # Create GitHub release (requires gh CLI)
 mac-publish:
@@ -320,15 +320,15 @@ mac-test:
 # Run Mac CLI
 mac-run:
 	@echo "🖥️  Running Mac CLI..."
-	@cd apps/mac && swift run jaces-mac
+	@cd apps/mac && swift run ariata-mac
 
 # Build and install Mac CLI locally for testing
 mac-local:
 	@echo "🛠️  Building and installing Mac CLI locally..."
-	@echo "Step 1: Stopping any existing jaces-mac processes..."
-	@pkill -f "jaces-mac" 2>/dev/null || true
-	@if launchctl list | grep -q "com.jaces.mac" 2>/dev/null; then \
-		launchctl unload ~/Library/LaunchAgents/com.jaces.mac.plist 2>/dev/null || true; \
+	@echo "Step 1: Stopping any existing ariata-mac processes..."
+	@pkill -f "ariata-mac" 2>/dev/null || true
+	@if launchctl list | grep -q "com.ariata.mac" 2>/dev/null; then \
+		launchctl unload ~/Library/LaunchAgents/com.ariata.mac.plist 2>/dev/null || true; \
 	fi
 	@echo "Step 2: Building release version..."
 	@cd apps/mac && swift build -c release
@@ -340,7 +340,7 @@ mac-local:
 
 help:
 	@echo ""
-	@echo "  🚀 Jaces - All Commands"
+	@echo "  🚀 Ariata - All Commands"
 	@echo "  ────────────────────────────────"
 	@echo ""
 	@echo "  DEVELOPMENT"

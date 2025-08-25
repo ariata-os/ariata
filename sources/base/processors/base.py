@@ -1,5 +1,5 @@
 """
-Base Stream Processor for Jaces
+Base Stream Processor for Ariata
 ================================
 
 This module provides the base class for all stream processors.

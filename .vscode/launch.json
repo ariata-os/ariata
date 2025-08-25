@@ -4,19 +4,19 @@
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:jaces}/apps/mac",
-            "name": "Debug jaces-mac (apps/mac)",
-            "program": "${workspaceFolder:jaces}/apps/mac/.build/debug/jaces-mac",
-            "preLaunchTask": "swift: Build Debug jaces-mac (apps/mac)"
+            "cwd": "${workspaceFolder:ariata}/apps/mac",
+            "name": "Debug ariata-mac (apps/mac)",
+            "program": "${workspaceFolder:ariata}/apps/mac/.build/debug/ariata-mac",
+            "preLaunchTask": "swift: Build Debug ariata-mac (apps/mac)"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:jaces}/apps/mac",
-            "name": "Release jaces-mac (apps/mac)",
-            "program": "${workspaceFolder:jaces}/apps/mac/.build/release/jaces-mac",
-            "preLaunchTask": "swift: Build Release jaces-mac (apps/mac)"
+            "cwd": "${workspaceFolder:ariata}/apps/mac",
+            "name": "Release ariata-mac (apps/mac)",
+            "program": "${workspaceFolder:ariata}/apps/mac/.build/release/ariata-mac",
+            "preLaunchTask": "swift: Build Release ariata-mac (apps/mac)"
         }
     ]
 }

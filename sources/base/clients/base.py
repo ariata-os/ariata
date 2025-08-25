@@ -1,5 +1,5 @@
 """
-Base API Client for Jaces
+Base API Client for Ariata
 ==========================
 
 This module provides the abstract base class for all API clients.

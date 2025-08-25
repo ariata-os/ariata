@@ -1,6 +1,6 @@
 """Auto-generated registry of sources and streams."""
 
-# Generated at: 2025-08-25T21:43:09.480002Z
+# Generated at: 2025-08-25T22:09:36.569561Z
 
 REGISTRY = {
   "sources": {
@@ -75,7 +75,7 @@ REGISTRY = {
           "setup_steps": [
             {
               "step": "app",
-              "label": "Open the Jaces app on your iPhone",
+              "label": "Open the Ariata app on your iPhone",
               "description": "Download from TestFlight or the App Store"
             },
             {
@@ -1847,7 +1847,7 @@ REGISTRY = {
     }
   },
   "metadata": {
-    "generated_at": "2025-08-25T21:43:09.480002Z",
+    "generated_at": "2025-08-25T22:09:36.569561Z",
     "version": "2.0.0"
   }
 }

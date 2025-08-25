@@ -21,7 +21,7 @@ auth:
     app_store_url: null  # Coming soon
     setup_steps:
       - step: "app"
-        label: "Open the Jaces app on your iPhone"
+        label: "Open the Ariata app on your iPhone"
         description: "Download from TestFlight or the App Store"
       - step: "settings"
         label: "Go to Settings → Connection"

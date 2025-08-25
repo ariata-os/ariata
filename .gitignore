@@ -82,7 +82,7 @@ build/
 apps/mac/build/
 
 # Build artifacts
-apps/mac/jaces-mac
+apps/mac/ariata-mac
 apps/mac/*.tar.gz
 apps/mac/*.zip
 apps/mac/*.dmg

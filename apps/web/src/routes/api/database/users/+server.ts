@@ -87,7 +87,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Generate a unique username and secure password
 		const timestamp = Date.now();
 		const randomStr = crypto.randomBytes(4).toString('hex');
-		const username = `jaces_${permissionLevel}_${timestamp}_${randomStr}`;
+		const username = `ariata_${permissionLevel}_${timestamp}_${randomStr}`;
 		const password = crypto.randomBytes(16).toString('base64').replace(/[^a-zA-Z0-9]/g, '');
 
 		// Connect to PostgreSQL as superuser to create the new user
@@ -102,7 +102,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			await adminClient.query(`CREATE USER ${username} WITH PASSWORD '${password}'`);
 
 			// Grant connection and schema permissions
-			await adminClient.query(`GRANT CONNECT ON DATABASE ${process.env.DB_NAME || 'jaces'} TO ${username}`);
+			await adminClient.query(`GRANT CONNECT ON DATABASE ${process.env.DB_NAME || 'ariata'} TO ${username}`);
 			await adminClient.query(`GRANT USAGE ON SCHEMA public TO ${username}`);
 
 			// Grant table permissions based on permission level
@@ -126,7 +126,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			// Build connection string
 			const dbHost = process.env.DB_HOST || 'localhost';
 			const dbPort = process.env.DB_PORT || '5432';
-			const dbName = process.env.DB_NAME || 'jaces';
+			const dbName = process.env.DB_NAME || 'ariata';
 			const connectionString = `postgresql://${username}:${password}@${dbHost}:${dbPort}/${dbName}`;
 
 			// Store user info in our database

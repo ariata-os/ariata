@@ -9,7 +9,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Use local build path
-LOCAL_BUILD="/Users/adamjace/Documents/GitHub/jaces/apps/mac/.build/release/ariata-mac"
+LOCAL_BUILD="$(cd "$(dirname "$0")/.." && pwd)/.build/release/ariata-mac"
 
 # Default to localhost for testing
 DEFAULT_ENDPOINT="http://localhost:3000"
