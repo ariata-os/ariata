@@ -6,6 +6,7 @@
  */
 
 export * from './stream_google_calendar';
+export * from './stream_google_gmail';
 export * from './stream_ios_healthkit';
 export * from './stream_ios_location';
 export * from './stream_ios_mic';

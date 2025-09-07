@@ -1,6 +1,6 @@
 """Auto-generated registry of sources and streams."""
 
-# Generated at: 2025-08-25T22:09:36.569561Z
+# Generated at: 2025-08-26T16:59:09.794350Z
 
 REGISTRY = {
   "sources": {
@@ -30,6 +30,14 @@ REGISTRY = {
             "https://www.googleapis.com/auth/calendar.readonly",
             "https://www.googleapis.com/auth/calendar.events.readonly"
           ]
+        },
+        {
+          "name": "gmail",
+          "display_name": "Gmail",
+          "description": "Email messages and conversations",
+          "required_scopes": [
+            "https://www.googleapis.com/auth/gmail.readonly"
+          ]
         }
       ],
       "api": {
@@ -50,6 +58,12 @@ REGISTRY = {
           "name": "google_calendar",
           "display_name": "Google Calendar",
           "description": "Calendar events and appointments",
+          "required_scopes": []
+        },
+        {
+          "name": "google_gmail",
+          "display_name": "Gmail",
+          "description": "Email messages and conversations from Gmail",
           "required_scopes": []
         }
       ]
@@ -558,6 +572,275 @@ REGISTRY = {
           "strategy": "postgres_only",
           "minio_fields": [],
           "note": "All fields stay in PostgreSQL - calendar events are structured data"
+        }
+      }
+    },
+    "google_gmail": {
+      "name": "google_gmail",
+      "source": "google",
+      "display_name": "Gmail",
+      "description": "Email messages and conversations from Gmail",
+      "ingestion": {
+        "type": "pull",
+        "batch_type": "messages",
+        "raw_data_type": "GmailMessage"
+      },
+      "api": {
+        "endpoint": "https://gmail.googleapis.com/gmail/v1",
+        "rate_limit": 250,
+        "pagination": true,
+        "max_results": 500
+      },
+      "sync": {
+        "schedule": "*/15 * * * *",
+        "type": "token",
+        "initial_sync_days": 730
+      },
+      "processing": {
+        "normalization": true
+      },
+      "processor": {
+        "table_name": "stream_google_gmail"
+      },
+      "schema": {
+        "table_name": "stream_google_gmail",
+        "description": "Email messages from Gmail",
+        "columns": [
+          {
+            "name": "message_id",
+            "type": "string",
+            "max_length": 200,
+            "nullable": false,
+            "description": "Gmail message ID"
+          },
+          {
+            "name": "thread_id",
+            "type": "string",
+            "max_length": 200,
+            "nullable": false,
+            "description": "Gmail thread ID"
+          },
+          {
+            "name": "history_id",
+            "type": "string",
+            "max_length": 50,
+            "nullable": true,
+            "description": "History ID for incremental sync"
+          },
+          {
+            "name": "subject",
+            "type": "string",
+            "max_length": 500,
+            "nullable": true,
+            "description": "Email subject line"
+          },
+          {
+            "name": "snippet",
+            "type": "string",
+            "max_length": 500,
+            "nullable": true,
+            "description": "Preview snippet of email body"
+          },
+          {
+            "name": "body_text",
+            "type": "text",
+            "nullable": true,
+            "description": "Plain text body of email"
+          },
+          {
+            "name": "body_html",
+            "type": "text",
+            "nullable": true,
+            "description": "HTML body of email"
+          },
+          {
+            "name": "from_email",
+            "type": "string",
+            "max_length": 255,
+            "nullable": true,
+            "description": "Sender email address"
+          },
+          {
+            "name": "from_name",
+            "type": "string",
+            "max_length": 255,
+            "nullable": true,
+            "description": "Sender display name"
+          },
+          {
+            "name": "to_emails",
+            "type": "jsonb",
+            "nullable": true,
+            "description": "Array of recipient email addresses"
+          },
+          {
+            "name": "cc_emails",
+            "type": "jsonb",
+            "nullable": true,
+            "description": "Array of CC recipient email addresses"
+          },
+          {
+            "name": "bcc_emails",
+            "type": "jsonb",
+            "nullable": true,
+            "description": "Array of BCC recipient email addresses"
+          },
+          {
+            "name": "reply_to_emails",
+            "type": "jsonb",
+            "nullable": true,
+            "description": "Array of reply-to email addresses"
+          },
+          {
+            "name": "labels",
+            "type": "jsonb",
+            "nullable": true,
+            "description": "Gmail labels applied to message"
+          },
+          {
+            "name": "categories",
+            "type": "jsonb",
+            "nullable": true,
+            "description": "Gmail categories (Primary, Social, Promotions, etc.)"
+          },
+          {
+            "name": "is_read",
+            "type": "boolean",
+            "nullable": true,
+            "default": false,
+            "description": "Whether message has been read"
+          },
+          {
+            "name": "is_starred",
+            "type": "boolean",
+            "nullable": true,
+            "default": false,
+            "description": "Whether message is starred"
+          },
+          {
+            "name": "is_important",
+            "type": "boolean",
+            "nullable": true,
+            "default": false,
+            "description": "Whether message is marked important"
+          },
+          {
+            "name": "is_spam",
+            "type": "boolean",
+            "nullable": true,
+            "default": false,
+            "description": "Whether message is in spam folder"
+          },
+          {
+            "name": "is_trash",
+            "type": "boolean",
+            "nullable": true,
+            "default": false,
+            "description": "Whether message is in trash"
+          },
+          {
+            "name": "has_attachments",
+            "type": "boolean",
+            "nullable": true,
+            "default": false,
+            "description": "Whether message has attachments"
+          },
+          {
+            "name": "attachment_count",
+            "type": "integer",
+            "nullable": true,
+            "default": 0,
+            "description": "Number of attachments"
+          },
+          {
+            "name": "attachments",
+            "type": "jsonb",
+            "nullable": true,
+            "description": "Attachment metadata (filename, size, mime_type)"
+          },
+          {
+            "name": "size_bytes",
+            "type": "integer",
+            "nullable": true,
+            "description": "Total size of message in bytes"
+          },
+          {
+            "name": "received_date",
+            "type": "timestamp",
+            "nullable": false,
+            "description": "When email was received"
+          },
+          {
+            "name": "sent_date",
+            "type": "timestamp",
+            "nullable": true,
+            "description": "When email was sent"
+          },
+          {
+            "name": "headers",
+            "type": "jsonb",
+            "nullable": true,
+            "description": "Email headers"
+          },
+          {
+            "name": "full_message",
+            "type": "jsonb",
+            "nullable": true,
+            "description": "Complete message object for unmapped fields"
+          }
+        ],
+        "indexes": [
+          {
+            "columns": [
+              "timestamp"
+            ],
+            "type": "btree",
+            "description": "Primary time-series index"
+          },
+          {
+            "columns": [
+              "received_date"
+            ],
+            "type": "btree",
+            "description": "Index for received date queries"
+          },
+          {
+            "columns": [
+              "message_id"
+            ],
+            "type": "btree",
+            "description": "Index for message lookups"
+          },
+          {
+            "columns": [
+              "thread_id"
+            ],
+            "type": "btree",
+            "description": "Index for thread grouping"
+          },
+          {
+            "columns": [
+              "from_email"
+            ],
+            "type": "btree",
+            "description": "Index for sender queries"
+          },
+          {
+            "columns": [
+              "is_read",
+              "is_starred"
+            ],
+            "type": "btree",
+            "description": "Index for filtering by status"
+          }
+        ],
+        "storage": {
+          "strategy": "hybrid",
+          "minio_fields": [
+            "body_html",
+            "full_message"
+          ],
+          "note": "Large HTML bodies and full message JSON stored in MinIO"
         }
       }
     },
@@ -1847,7 +2130,7 @@ REGISTRY = {
     }
   },
   "metadata": {
-    "generated_at": "2025-08-25T22:09:36.569561Z",
+    "generated_at": "2025-08-26T16:59:09.794350Z",
     "version": "2.0.0"
   }
 }

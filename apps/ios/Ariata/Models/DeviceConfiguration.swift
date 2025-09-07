@@ -33,7 +33,7 @@ struct DeviceConfiguration: Codable {
     
     init(deviceId: String = UUID().uuidString,
          deviceToken: String = "",
-         apiEndpoint: String = "http://localhost:3000",
+         apiEndpoint: String = "",
          deviceName: String = UIDevice.current.name,
          configuredDate: Date? = nil,
          streamConfigurations: [String: StreamConfig] = [:]) {

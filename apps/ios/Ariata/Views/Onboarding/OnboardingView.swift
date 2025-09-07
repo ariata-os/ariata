@@ -12,7 +12,7 @@ struct OnboardingView: View {
     @StateObject private var healthKitManager = HealthKitManager.shared
     
     @State private var currentStep = 1
-    @State private var apiEndpoint = "http://localhost:3000"
+    @State private var apiEndpoint = ""
     @State private var deviceToken = ""
     @State private var isVerifying = false
     @State private var errorMessage: String?

@@ -50,7 +50,7 @@ streams:
 
 # Device requirements
 requirements:
-  min_os_version: "14.0"
+  min_os_version: "18.0"
   capabilities:
     - location_services
     - healthkit

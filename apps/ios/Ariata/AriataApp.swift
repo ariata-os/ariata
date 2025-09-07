@@ -41,7 +41,6 @@ struct AriataApp: App {
                 
                 // Check and recover audio recording state if needed
                 if isOnboardingComplete && audioManager.hasPermission && !audioManager.isRecording {
-                    print("⚠️ Audio recording was stopped, restarting...")
                     audioManager.startRecording()
                 }
             }
@@ -108,7 +107,9 @@ struct AriataApp: App {
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
+            #if DEBUG
             print("Failed to schedule background refresh: \(error)")
+            #endif
         }
     }
     
@@ -118,30 +119,22 @@ struct AriataApp: App {
         
         let config = deviceManager.configuration
         
+        #if DEBUG
         print("🚀 Starting services with configuration:")
         print("   Stream configurations: \(config.streamConfigurations.count) streams")
         for (key, streamConfig) in config.streamConfigurations {
             print("     - \(key): enabled=\(streamConfig.enabled), initialSyncDays=\(streamConfig.initialSyncDays)")
         }
+        #endif
         
         // Start location tracking if authorized AND enabled
         if locationManager.hasPermission && config.isStreamEnabled("location") {
             locationManager.startTracking()
-            print("✅ Started location tracking (enabled in web app)")
-        } else if locationManager.hasPermission {
-            print("⏸️ Location tracking disabled in web app")
-        } else {
-            print("❌ Location tracking - no permission")
         }
         
         // Start audio recording if authorized AND enabled
         if audioManager.hasPermission && config.isStreamEnabled("mic") {
             audioManager.startRecording()
-            print("✅ Started audio recording (enabled in web app)")
-        } else if audioManager.hasPermission {
-            print("⏸️ Audio recording disabled in web app")
-        } else {
-            print("❌ Audio recording - no permission")
         }
         
         // Start HealthKit monitoring if authorized AND enabled
@@ -149,25 +142,7 @@ struct AriataApp: App {
             // Check if we have anchors (meaning initial sync was done)
             let hasAnchors = !healthKitManager.anchors.isEmpty
             
-            if hasAnchors {
-                // We have anchors, so initial sync was done - start regular monitoring
-                healthKitManager.startMonitoring()
-                print("✅ Started HealthKit monitoring (incremental sync)")
-            } else {
-                // No anchors means initial sync hasn't been done yet
-                // This happens when the app is restarted after onboarding
-                // In this case, onboarding should have set the anchors
-                // If not, we need to do initial sync first
-                print("⚠️ HealthKit initial sync may not have completed properly")
-                print("⚠️ Starting monitoring anyway - will collect all data")
-                healthKitManager.startMonitoring()
-            }
-        } else if healthKitManager.isAuthorized {
-            print("⏸️ HealthKit monitoring disabled in web app")
-        } else {
-            print("❌ HealthKit monitoring - no permission")
+            healthKitManager.startMonitoring()
         }
-        
-        print("✅ Service startup complete")
     }
 }

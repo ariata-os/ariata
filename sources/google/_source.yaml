@@ -27,6 +27,11 @@ streams:
     required_scopes:
       - https://www.googleapis.com/auth/calendar.readonly
       - https://www.googleapis.com/auth/calendar.events.readonly
+  - name: gmail
+    display_name: Gmail
+    description: Email messages and conversations
+    required_scopes:
+      - https://www.googleapis.com/auth/gmail.readonly
 
 # API settings
 api:

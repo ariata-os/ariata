@@ -28,7 +28,12 @@ def collect_sources_and_streams() -> Dict[str, Any]:
     Returns:
         Dictionary with 'sources' and 'streams' keys containing all configurations
     """
-    sources_dir = Path(__file__).parent.parent / 'sources'
+    # Use /sources if running in Docker, otherwise relative path
+    import os
+    if os.path.exists('/sources'):
+        sources_dir = Path('/sources')
+    else:
+        sources_dir = Path(__file__).parent.parent / 'sources'
     registry = {
         'sources': {},
         'streams': {},
@@ -111,13 +116,20 @@ def main():
     # Collect all configurations
     registry = collect_sources_and_streams()
     
+    # Write registry - use /sources if in Docker
+    import os
+    if os.path.exists('/sources'):
+        sources_dir = Path('/sources')
+    else:
+        sources_dir = Path(__file__).parent.parent / 'sources'
+    
     # Write YAML registry
-    yaml_output = Path(__file__).parent.parent / 'sources' / '_generated_registry.yaml'
+    yaml_output = sources_dir / '_generated_registry.yaml'
     write_registry(registry, yaml_output)
     print(f"\n✅ Generated YAML registry: {yaml_output}")
     
     # Write Python registry
-    py_output = Path(__file__).parent.parent / 'sources' / '_generated_registry.py'
+    py_output = sources_dir / '_generated_registry.py'
     write_python_registry(registry, py_output)
     print(f"✅ Generated Python registry: {py_output}")
     
