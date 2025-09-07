@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Ariata iOS app has a single purpose: **Reliable raw data collection to MinIO**.
+The Ariata iOS app has a single purpose: **Reliable raw data collection**.
 
 ### Architecture
 

@@ -1,4 +1,11 @@
-# Ariata: An open source ecosystem for owning and exporting your personal data
+![Ariata Cover](.github/images/cover2.png)
+<!--<p align="center">
+  <a href="https://ariata.com"><img src="" alt="Ariata logo"></a>
+</p>-->
+<p align="center">
+    <b>Ariata - the open source, personal ecosystem.</b> <br/>
+    A protocol for ingestion and management of personal data.
+</p>
 
 [![Release](https://img.shields.io/badge/Release-None-red.svg)](https://github.com/ariata-os/ariata/releases)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white)](https://discord.gg/sSQKzDWqgv)
@@ -18,7 +25,7 @@ Your data is incredibly valuable—companies build trillion-dollar empires on it
 
 - **Train personal AI on YOUR data**, not theirs
 - **Life logging and memory augmentation** for perfect recall
-- **Health and productivity optimization** through pattern recognition  
+- **Health and productivity optimization** through pattern recognition
 - **Build a queryable life archive** of your entire digital existence
 - **Generate insights for self-improvement** from your actual behavior
 - **See what data companies collect** and take back control
@@ -40,7 +47,7 @@ conn = psycopg2.connect(
 df = pd.read_sql("""
     SELECT h.timestamp, h.heart_rate as bpm, c.summary as meeting
     FROM stream_ios_healthkit h
-    JOIN stream_google_calendar c 
+    JOIN stream_google_calendar c
         ON h.timestamp BETWEEN c.start_time AND c.end_time
     WHERE h.heart_rate IS NOT NULL
 """, conn)
@@ -236,27 +243,27 @@ Ariata provides direct PostgreSQL access for power users. Connect with any SQL c
 Navigate to `/settings/database` in your Ariata web UI to:
 
 - Create read-only users for safe data analysis
-- Create read-write users for custom integrations  
+- Create read-write users for custom integrations
 - Generate secure connection strings
 
 ### Example Queries
 
 ```sql
 -- Recent heart rate data
-SELECT timestamp, heart_rate 
-FROM stream_ios_healthkit 
-WHERE heart_rate IS NOT NULL 
+SELECT timestamp, heart_rate
+FROM stream_ios_healthkit
+WHERE heart_rate IS NOT NULL
 AND timestamp > NOW() - INTERVAL '24 hours'
 ORDER BY timestamp DESC;
 
 -- Location history
 SELECT timestamp, longitude as lon, latitude as lat
-FROM stream_ios_location 
+FROM stream_ios_location
 WHERE timestamp::date = CURRENT_DATE
 ORDER BY timestamp;
 
 -- Daily step summary
-SELECT 
+SELECT
   DATE(timestamp) as day,
   SUM(steps) as total_steps,
   AVG(heart_rate) as avg_heart_rate
@@ -285,9 +292,9 @@ This approach ensures you never lose data and can reprocess with improved algori
 
 ### Tech Stack
 
-**Backend**: Python, Celery, FastAPI, PostgreSQL (PostGIS/pgvector), Redis, MinIO  
-**Frontend**: SvelteKit, TypeScript, TailwindCSS  
-**Mobile**: Swift/SwiftUI (iOS/macOS)  
+**Backend**: Python, Celery, FastAPI, PostgreSQL (PostGIS/pgvector), Redis, MinIO
+**Frontend**: SvelteKit, TypeScript, TailwindCSS
+**Mobile**: Swift/SwiftUI (iOS/macOS)
 **ML/AI**: PELT change detection, HDBSCAN clustering, Vector embeddings
 
 ## 🔧 Development
