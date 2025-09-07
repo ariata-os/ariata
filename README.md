@@ -6,11 +6,12 @@
     <b>Ariata - the open source, personal ecosystem.</b> <br/>
     A protocol for ingestion and management of personal data.
 </p>
-
+<div align="center">
 [![Release](https://img.shields.io/badge/Release-None-red.svg)](https://github.com/ariata-os/ariata/releases)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white)](https://discord.gg/sSQKzDWqgv)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![License: ELv2](https://img.shields.io/badge/License-ELv2-orange.svg)](https://www.elastic.co/licensing/elastic-license)
+</div>
 
 > [!WARNING]
 > **Experimental Phase**: Expect rapid iteration and sweeping changes as we refine the core applications and infrastructure.
