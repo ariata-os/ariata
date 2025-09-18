@@ -1,14 +1,18 @@
 ![Ariata Cover](.github/images/cover2.png)
-<!--<p align="center">
+
+<!--
+<p align="center">
   <a href="https://ariata.com"><img src="" alt="Ariata logo"></a>
-</p>-->
+</p>
+-->
+
 <p align="center">
     <b>Ariata - the open source, personal ecosystem.</b> <br/>
     A protocol for ingestion and management of personal data.
 </p>
 
 > [!WARNING]
-> **Experimental Phase**: Expect rapid iteration and sweeping changes as we refine the core applications and infrastructure.
+> **Experimental Phase**: Expect rapid iteration and sweeping changes as we refine the core applications and infrastructure. The following is a MINIMAL VIABLE PRODUCT. Proceeed with an R&D mindset.
 
 [![Release](https://img.shields.io/badge/Release-None-red.svg)](https://github.com/ariata-os/ariata/releases)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white)](https://discord.gg/sSQKzDWqgv)
@@ -98,17 +102,6 @@ Sources → Streams → Timeline
 | Strava | Activities | ✅ | Workouts and performance data |
 | Zoom | Meetings | 📋 | Meeting attendance and recordings |
 
-### Legend
-
-- ✅ **Stable**: Fully implemented and tested
-- 🚧 **In Progress**: Actively being developed
-- 📋 **Planned**: On the roadmap
-
-### Notes
-
-- **Authentication Requirements**: Cloud sources require OAuth2 setup. Device sources require the native app installation.
-- **Sync Intervals**: Shown in parentheses for active streams. Pull-based sources check for updates, push-based sources upload batched data.
-- **PELT Algorithm**: Change Point Detection using Pruned Exact Linear Time with either L1 (sum of absolute differences) or L2 (sum of squared differences) cost functions.
 - **iOS Requirements**: Minimum iOS 14.0, requires location/health/microphone permissions
 - **Mac Requirements**: Minimum macOS 11.0, requires accessibility and automation permissions
 
@@ -121,13 +114,20 @@ Get Ariata running in under 2 minutes:
 git clone https://github.com/ariata-os/ariata
 cd ariata
 
-# Start the entire stack (PostgreSQL, Redis, MinIO, Web App, Workers)
-# make dev automatically clones .env.example as .env if none available
-make dev
+# Copy environment template
+cp .env.example .env
 
-# Open the dashboard
+# Start all services
+docker compose up -d
+
+# Wait for services to initialize (30 seconds)
+sleep 30
+
+# Check everything is running
+curl http://localhost:3000/api/health
+
+# Open the web interface
 open http://localhost:3000
-
 ```
 
 That's it! The system will:
@@ -138,95 +138,12 @@ That's it! The system will:
 - Launch the SvelteKit web application
 - Spin up Celery workers for background processing
 
-## 🌐 Self-Hosting & Networking
+### Next Steps
 
-### Recommended: Tailscale Setup (5 Minutes)
-
-Tailscale creates a secure, private network between your devices. Your Ariata instance stays completely private while remaining accessible from all your devices.
-
-#### Quick Start with Tailscale
-
-```bash
-# 1. Install Tailscale on your server (where Docker is running)
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
-
-# 2. Note your Tailscale IP (shown after login, e.g., 100.64.1.5)
-
-# 3. Install Tailscale app on your devices:
-# - iOS: App Store → Tailscale
-# - macOS: brew install --cask tailscale
-# - Windows/Linux: https://tailscale.com/download
-
-# 4. Update your .env file:
-PUBLIC_IP=100.64.1.5  # Your Tailscale IP from step 2
-FRONTEND_URL=http://100.64.1.5:3000
-
-# 5. Restart Ariata:
-make restart
-
-# 6. Access from any device on your Tailscale network:
-open http://100.64.1.5:3000
-# Or use MagicDNS: http://your-machine.tail-scale.ts.net:3000
-```
-
-**Why Tailscale?**
-
-Zero exposed port -- servers aren't on the public internet. E2EE WireGuard protocol. Behind firewalls, NAT, cellular networks. 100 devices, 3 users, perfect for personal use.
-
-### Direct Database Access
-
-Once on Tailscale, you can connect directly to your PostgreSQL database:
-
-```python
-# Python
-import psycopg2
-import pandas as pd
-
-conn = psycopg2.connect(
-    "postgresql://ariata_user:ariata_password@100.64.1.5:5432/ariata"
-)
-df = pd.read_sql("SELECT * FROM stream_ios_healthkit WHERE heart_rate IS NOT NULL", conn)
-```
-
-```javascript
-// JavaScript/TypeScript
-import { Client } from 'pg';
-
-const client = new Client({
-  connectionString: 'postgresql://ariata_user:ariata_password@100.64.1.5:5432/ariata'
-});
-await client.connect();
-const result = await client.query('SELECT * FROM stream_google_calendar');
-```
-
-See the [Database Access](#database-access) section for managing read-only users and connection strings.
-
-### Alternative Networking Options
-
-**Local Only (Simplest):**
-
-```bash
-# No changes needed, access at:
-http://localhost:3000
-```
-
-**Public VPS (Advanced):**
-
-- Use the included `deploy-ec2-setup.sh` script
-- Add HTTPS with Caddy or Traefik
-- Consider authentication layer (Authelia)
-
-### How External Services Work
-
-Even with Tailscale, these features work perfectly:
-
-- **OAuth (Google/Notion)**: Handled by `auth.ariata.com` proxy
-- **API Syncing**: Outbound connections work normally
-- **AI Features**: Can call OpenAI/Anthropic APIs
-- **Calendar/Email**: Fetches data via polling
-
-Your instance makes outbound connections but accepts no inbound traffic from the internet.
+- **Configure data sources**: Visit Settings → Sources in the web UI
+- **iOS app**: Build from `apps/ios/` and point to `http://YOUR_IP:3000`
+- **Mac agent**: Get token from web UI, run `ariata-mac init TOKEN`
+- **Remote access (5G/anywhere)**: See [TAILSCALE_DEPLOY.md](./TAILSCALE_DEPLOY.md)
 
 ## 📦 Prerequisites
 
@@ -263,7 +180,7 @@ WHERE timestamp::date = CURRENT_DATE
 ORDER BY timestamp;
 
 -- Daily step summary
-SELECT
+SELECT 
   DATE(timestamp) as day,
   SUM(steps) as total_steps,
   AVG(heart_rate) as avg_heart_rate
@@ -293,92 +210,85 @@ This approach ensures you never lose data and can reprocess with improved algori
 ### Tech Stack
 
 **Backend**: Python, Celery, FastAPI, PostgreSQL (PostGIS/pgvector), Redis, MinIO
+
 **Frontend**: SvelteKit, TypeScript, TailwindCSS
+
 **Mobile**: Swift/SwiftUI (iOS/macOS)
+
 **ML/AI**: PELT change detection, HDBSCAN clustering, Vector embeddings
 
 ## 🔧 Development
 
-### Available Commands
+### Prerequisites
+
+- Node.js 18+ and pnpm
+- Python 3.11+
+- Docker & Docker Compose
+- Xcode (for iOS/macOS development)
+
+### Commands
 
 ```bash
-make dev              # Start development environment
-make stop             # Stop all services
-make clean            # Clean up containers and volumes
-make logs             # View application logs
-make db-studio        # Open Drizzle Studio for database inspection
-make test             # Run test suite
-make format           # Format code with Biome
-make lint             # Lint codebase
-```
+# Web Development
+cd apps/web
+pnpm install
+pnpm dev
 
-### Project Structure
+# Python Development (with uv)
+cd sources
+uv sync
+uv run python -m base.scheduler.celery_app
 
-```
-ariata/
-├── apps/                      # User-facing applications
-│   ├── web/                   # SvelteKit dashboard
-│   ├── ios/                   # Native iOS app
-│   ├── mac/                   # Native macOS agent
-│   └── google-auth-proxy/     # OAuth proxy for Google services
-├── sources/                   # Data pipeline logic
-│   ├── base/                  # Shared infrastructure
-│   ├── google/                # Google service integrations
-│   ├── ios/                   # iOS data sources
-│   ├── mac/                   # macOS data sources
-│   ├── notion/                # Notion integration
-│   └── _registry.yaml         # Master source/stream registry
-└── scripts/                   # Utility scripts
-```
+# iOS Development
+cd apps/ios
+open Ariata.xcodeproj
 
-## 🤝 Contributing
+# Mac CLI Development
+cd apps/mac
+swift build
+swift run ariata-mac
 
-We believe that only an open-source solution to personal data management can truly respect user privacy while covering the long tail of data sources. We welcome contributions in several areas:
-
-### How to Contribute
-
-1. **Code Contributions**: Implement new data sources, improve existing ones, or enhance the core platform
-2. **Architecture Reviews**: Share expertise on iOS/Swift, distributed systems, or data processing
-3. **Documentation**: Help others understand and use Ariata effectively
-4. **Bug Reports**: Find something broken? Let us know!
-
-```bash
-# Fork and clone the repository
-git clone https://github.com/ariata-os/ariata
-cd ariata
-
-# Create a feature branch
-git checkout -b feature/your-feature-name
-
-# Make your changes and test
+# Run tests
 make test
 
-# Submit a pull request
+# Format code
+make format
+
+# Type checking
+make typecheck
 ```
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and configure:
+
+- Database credentials
+- MinIO access keys
+- OAuth client IDs (for Google/Notion)
+- Encryption keys
 
 ## 📄 License
 
-Ariata uses a dual-license model:
+Most components are MIT licensed. The ML/AI processing modules use Elastic License v2.
 
-- **MIT License**: Core functionality and most components
-- **Elastic License 2.0 (ELv2)**: Certain enterprise components
+See [LICENSE](LICENSE) file for details.
 
-**You can**: Self-host, modify, extend, and use Ariata for personal or commercial purposes.
+## 🤝 Contributing
 
-**You cannot**: Offer Ariata as a hosted service or remove license functionality.
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-See [LICENSE](./LICENSE) for complete details.
+## 💬 Community
 
-## 📞 Contact & Support
+- [Discord](https://discord.gg/sSQKzDWqgv) - Join our community
+- [GitHub Issues](https://github.com/ariata-os/ariata/issues) - Report bugs or request features
+- [Documentation](https://docs.ariata.com) - Coming soon
 
-- **Community**: Slack coming soon
-- **GitHub Issues**: [Report bugs or request features](https://github.com/ariata-os/ariata/issues)
+## 🙏 Acknowledgments
+
+Built with amazing open source projects including PostgreSQL, Redis, MinIO, SvelteKit, and many more.
 
 ---
 
-## Axioms
-
-Headless personal data.
-The protocol for personal intelligence.
-Your data should work for you, not against you.
-The search box for your own life.
+<p align="center">
+  <i>Your data. Your insights. Your AI.</i>
+</p>
