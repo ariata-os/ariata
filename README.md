@@ -23,7 +23,7 @@
 
 Ariata is your personal AI agent that ingests your digital life—from calendar events and locations to health metrics and screen time—constructing a coherent, queryable timeline. Unlike cloud services that monetize your data, Ariata runs on your infrastructure, ensuring complete privacy and control.
 
-<https://github.com/user-attachments/assets/562b1e3e-1e65-46ed-8cf4-2ea4b83123f0>
+<https://github.com/user-attachments/assets/50d037b5-7e06-49b2-ad5a-69d14fb079af>
 
 Your data is incredibly valuable—companies build trillion-dollar empires on it. Ariata lets you reclaim that value for yourself:
 
