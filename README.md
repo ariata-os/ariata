@@ -34,31 +34,6 @@ Your data is incredibly valuable—companies build trillion-dollar empires on it
 - **Generate insights for self-improvement** from your actual behavior
 - **See what data companies collect** and take back control
 
-## Your Data, Your Database
-
-Unlike cloud services that lock away your data, Ariata gives you **direct PostgreSQL access**. Query your life with SQL, build custom analytics, or export everything—it's your database.
-
-```python
-# Connect directly to YOUR data
-import psycopg2
-import pandas as pd
-
-conn = psycopg2.connect(
-    "postgresql://readonly_user:secure_pass@your-server:5432/ariata"
-)
-
-# Query your heart rate during meetings
-df = pd.read_sql("""
-    SELECT h.timestamp, h.heart_rate as bpm, c.summary as meeting
-    FROM stream_ios_healthkit h
-    JOIN stream_google_calendar c
-        ON h.timestamp BETWEEN c.start_time AND c.end_time
-    WHERE h.heart_rate IS NOT NULL
-""", conn)
-```
-
-**Manage credentials** at `/settings/database` in your Ariata UI—create read-only users for analysis or full access for integrations. Works with any PostgreSQL client: TablePlus, DBeaver, Jupyter notebooks, or your favorite BI tool.
-
 ## ✨ Features
 
 ### Data Sources
