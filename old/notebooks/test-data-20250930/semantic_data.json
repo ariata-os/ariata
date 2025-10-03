@@ -1,0 +1,118 @@
+{
+  "credit_card_transactions": [
+    {
+      "timestamp_offset_minutes": 31,
+      "amount": 15.82,
+      "merchant": "1418 Coffee",
+      "category": "Food & Dining",
+      "location": "Plano, TX",
+      "type": "credit_card"
+    }
+  ],
+  "audio_transcriptions": [
+    {
+      "timestamp_offset_minutes": 2,
+      "text": "Adam: I could really use a coffee. Let me check what's nearby.",
+      "has_speech": true,
+      "speakers": ["Adam"],
+      "context": "self_talk"
+    },
+    {
+      "timestamp_offset_minutes": 5,
+      "text": "Adam: Hmm, 1418 Coffee looks good. Only 10 minutes away. I'll head there.",
+      "has_speech": true,
+      "speakers": ["Adam"],
+      "context": "planning"
+    },
+    {
+      "timestamp_offset_minutes": 8,
+      "text": "Adam: Alright, let me grab my keys and wallet.",
+      "has_speech": true,
+      "speakers": ["Adam"],
+      "context": "preparation"
+    },
+    {
+      "timestamp_offset_minutes": 28,
+      "text": "Adam: Perfect, here we are. Let me find parking.",
+      "has_speech": true,
+      "speakers": ["Adam"],
+      "context": "arrival"
+    },
+    {
+      "timestamp_offset_minutes": 30,
+      "text": "Adam: I'll have a large black coffee and a turkey sandwich please.\nOther: Sure, that'll be $15.82. Name for the order?\nAdam: Adam.",
+      "has_speech": true,
+      "speakers": ["Adam", "Other"],
+      "context": "ordering_food"
+    },
+    {
+      "timestamp_offset_minutes": 32,
+      "text": "Adam: Thanks. Oh actually, can I also get that sandwich toasted?\nOther: No problem, give us about 5 minutes.",
+      "has_speech": true,
+      "speakers": ["Adam", "Other"],
+      "context": "food_service"
+    },
+    {
+      "timestamp_offset_minutes": 35,
+      "text": "Adam: This place looks nice. Good atmosphere for working.\nAdam: Let me find a seat by the window.",
+      "has_speech": true,
+      "speakers": ["Adam"],
+      "context": "self_talk"
+    },
+    {
+      "timestamp_offset_minutes": 38,
+      "text": "Adam: This coffee is perfect. Good spot to work from today.",
+      "has_speech": true,
+      "speakers": ["Adam"],
+      "context": "self_talk"
+    }
+  ],
+  "context_signals": [
+    {
+      "timestamp_offset_minutes": -8,
+      "signal_type": "imessage_sent",
+      "value": "dude I've been in Dallas for 2 months now and still haven't really met anyone. working from home is killing my social life",
+      "recipient": "Sebastian",
+      "context": "social_communication"
+    },
+    {
+      "timestamp_offset_minutes": -6,
+      "signal_type": "imessage_received",
+      "value": "you gotta get out more man. coffee shops are great for that. might meet someone ;)",
+      "sender": "Sebastian",
+      "context": "social_communication"
+    },
+    {
+      "timestamp_offset_minutes": -5,
+      "signal_type": "imessage_sent",
+      "value": "yeah you're right. there's this place called 1418 Coffee I've been meaning to check out. maybe I'll work from there today",
+      "recipient": "Sebastian",
+      "context": "social_communication"
+    },
+    {
+      "timestamp_offset_minutes": -4,
+      "signal_type": "imessage_received",
+      "value": "do it! worst case you get good coffee and a change of scenery. best case... who knows",
+      "sender": "Sebastian",
+      "context": "social_communication"
+    },
+    {
+      "timestamp_offset_minutes": 1,
+      "signal_type": "web_search",
+      "value": "coffee shops near me",
+      "context": "search_query"
+    },
+    {
+      "timestamp_offset_minutes": 3,
+      "signal_type": "web_search",
+      "value": "1418 coffee plano reviews",
+      "context": "search_query"
+    },
+    {
+      "timestamp_offset_minutes": 31,
+      "signal_type": "wifi_connect",
+      "value": "1418 Coffee - Guest WiFi",
+      "context": "location_confirmation"
+    }
+  ]
+}

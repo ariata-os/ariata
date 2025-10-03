@@ -1,0 +1,218 @@
+[
+  {
+    "name": "google",
+    "company": "google",
+    "platform": "cloud",
+    "device_type": null,
+    "default_fidelity_score": 1.0,
+    "auth_type": "oauth2",
+    "display_name": "Google",
+    "description": "Google services including Calendar, Gmail, and Drive",
+    "icon": "ri:google-fill",
+    "video": "google2.webm",
+    "oauth_config": {
+      "type": "oauth2",
+      "provider": "google",
+      "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
+      "token_url": "https://oauth2.googleapis.com/token",
+      "revoke_url": "https://oauth2.googleapis.com/revoke",
+      "auth_proxy": "https://auth.ariata.com/google/auth",
+      "token_refresh_window": 300,
+      "requiredScopes": []
+    },
+    "sync_config": {
+      "type": "pull",
+      "page_size": 100
+    },
+    "default_sync_schedule": "0 * * * *",
+    "min_sync_frequency": 300,
+    "max_sync_frequency": 86400,
+    "created_at": "2025-09-15T16:45:07.425601+00:00",
+    "updated_at": "2025-09-15T16:45:07.425601+00:00"
+  },
+  {
+    "name": "ios",
+    "company": "apple",
+    "platform": "device",
+    "device_type": null,
+    "default_fidelity_score": 1.0,
+    "auth_type": "device_token",
+    "display_name": "iPhone",
+    "description": "All data from your iPhone including location, sound, and voice",
+    "icon": "ri:smartphone-line",
+    "video": "ios.webm",
+    "oauth_config": {
+      "type": "device_token",
+      "required_fields": [
+        "device_id",
+        "device_name",
+        "os_version"
+      ],
+      "device_setup": {
+        "title": "Connect your iPhone",
+        "app_store_url": null,
+        "setup_steps": [
+          {
+            "step": "app",
+            "label": "Open the Ariata app on your iPhone",
+            "description": "Download from TestFlight or the App Store"
+          },
+          {
+            "step": "settings",
+            "label": "Go to Settings \u2192 Connection",
+            "description": "Navigate to the connection settings"
+          },
+          {
+            "step": "token",
+            "label": "Enter your device token",
+            "description": "Paste the token: {TOKEN}"
+          },
+          {
+            "step": "connect",
+            "label": "The app will connect automatically",
+            "description": "Wait for the connection to establish"
+          }
+        ],
+        "show_api_endpoint": true
+      },
+      "requiredScopes": []
+    },
+    "sync_config": {
+      "batch_upload_interval": 300,
+      "max_batch_size": 1000,
+      "compression": "gzip",
+      "retry_policy": {
+        "max_retries": 3,
+        "backoff_multiplier": 2
+      }
+    },
+    "default_sync_schedule": "0 * * * *",
+    "min_sync_frequency": 300,
+    "max_sync_frequency": 86400,
+    "created_at": "2025-09-15T16:45:07.429055+00:00",
+    "updated_at": "2025-09-15T16:45:07.429055+00:00"
+  },
+  {
+    "name": "mac",
+    "company": "apple",
+    "platform": "device",
+    "device_type": null,
+    "default_fidelity_score": 1.0,
+    "auth_type": "device_token",
+    "display_name": "Mac",
+    "description": "Application usage and activity from your Mac",
+    "icon": "ri:mac-line",
+    "video": "mac2.webm",
+    "oauth_config": {
+      "type": "device_token",
+      "required_fields": [
+        "device_id",
+        "device_name",
+        "os_version"
+      ],
+      "device_setup": {
+        "title": "Install Mac Monitor",
+        "download_url": "https://github.com/ariata-os/ariata/releases/latest/download/install.sh",
+        "install_command": "curl -sSL https://github.com/ariata-os/ariata/releases/latest/download/install.sh | bash",
+        "setup_steps": [
+          {
+            "step": "install",
+            "label": "Install the Mac CLI tool",
+            "command": "curl -sSL https://github.com/ariata-os/ariata/releases/latest/download/install.sh | bash"
+          },
+          {
+            "step": "init",
+            "label": "Initialize with your token",
+            "command": "ariata-mac init {TOKEN}"
+          },
+          {
+            "step": "daemon",
+            "label": "Start monitoring (runs in background)",
+            "command": "ariata-mac daemon"
+          }
+        ],
+        "show_token_inline": true
+      },
+      "requiredScopes": []
+    },
+    "sync_config": {
+      "batch_upload_interval": 300,
+      "max_batch_size": 500,
+      "compression": "gzip",
+      "local_buffer": {
+        "max_size_mb": 100,
+        "retention_days": 7
+      },
+      "retry_policy": {
+        "max_retries": 5,
+        "backoff_multiplier": 2
+      }
+    },
+    "default_sync_schedule": "0 * * * *",
+    "min_sync_frequency": 300,
+    "max_sync_frequency": 86400,
+    "created_at": "2025-09-15T16:45:07.431768+00:00",
+    "updated_at": "2025-09-15T16:45:07.431768+00:00"
+  },
+  {
+    "name": "notion",
+    "company": "notion",
+    "platform": "cloud",
+    "device_type": null,
+    "default_fidelity_score": 1.0,
+    "auth_type": "oauth2",
+    "display_name": "Notion",
+    "description": "Notion workspace pages, databases, and blocks",
+    "icon": "ri:notion-fill",
+    "video": "notion.webm",
+    "oauth_config": {
+      "type": "oauth2",
+      "provider": "notion",
+      "auth_url": "https://api.notion.com/v1/oauth/authorize",
+      "token_url": "https://api.notion.com/v1/oauth/token",
+      "auth_proxy": "https://auth.ariata.com/notion/auth",
+      "public_integration": true,
+      "token_refresh_window": 0,
+      "requiredScopes": []
+    },
+    "sync_config": {
+      "type": "pull"
+    },
+    "default_sync_schedule": "0 * * * *",
+    "min_sync_frequency": 300,
+    "max_sync_frequency": 86400,
+    "created_at": "2025-09-15T16:45:07.433371+00:00",
+    "updated_at": "2025-09-15T16:45:07.433371+00:00"
+  },
+  {
+    "name": "strava",
+    "company": "strava",
+    "platform": "cloud",
+    "device_type": null,
+    "default_fidelity_score": 1.0,
+    "auth_type": "oauth2",
+    "display_name": "Strava",
+    "description": "Fitness activities, workouts, and performance metrics from Strava",
+    "icon": "simple-icons:strava",
+    "video": "strava.webm",
+    "oauth_config": {
+      "type": "oauth2",
+      "provider": "strava",
+      "auth_url": "https://www.strava.com/oauth/authorize",
+      "token_url": "https://www.strava.com/oauth/token",
+      "revoke_url": "https://www.strava.com/oauth/deauthorize",
+      "auth_proxy": "https://auth.ariata.com/strava/auth",
+      "token_refresh_window": 300,
+      "requiredScopes": []
+    },
+    "sync_config": {
+      "type": "pull",
+      "page_size": 30
+    },
+    "default_sync_schedule": "0 * * * *",
+    "min_sync_frequency": 300,
+    "max_sync_frequency": 86400,
+    "created_at": "2025-09-15T16:45:07.434851+00:00",
+    "updated_at": "2025-09-15T16:45:07.434851+00:00"
+  }
+]

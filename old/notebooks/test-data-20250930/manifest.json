@@ -1,0 +1,24 @@
+{
+  "export_date": "2025-09-30T14:57:40.571776+00:00",
+  "target_date": "2025-09-30",
+  "data_summary": {
+    "audio_files": 40,
+    "streams": {
+      "stream_ios_healthkit": 46,
+      "stream_ios_mic": 40,
+      "stream_ios_location": 212
+    },
+    "metadata": {
+      "sources": 3,
+      "streams": 6,
+      "source_configs": 5,
+      "stream_configs": 9
+    }
+  },
+  "environment": {
+    "db_host": "localhost",
+    "db_name": "ariata",
+    "minio_endpoint": "http://localhost:9000",
+    "minio_bucket": "ariata"
+  }
+}

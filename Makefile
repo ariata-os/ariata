@@ -106,11 +106,11 @@ rebuild:
 schema:
 	@echo "🔄 Updating schema..."
 	@echo "  📋 Generating registry from YAML configs..."
-	@docker-compose exec -T celery-worker python /app/scripts/generate_registry.py || (echo "  ❌ Registry generation failed" && exit 1)
+	@docker-compose exec -T celery-worker uv run python /app/scripts/generate_registry.py || (echo "  ❌ Registry generation failed" && exit 1)
 	@echo "  📄 Generating Drizzle TypeScript from YAML..."
 	@docker-compose exec -T web npx tsx /app/scripts/generate-drizzle-from-yaml.ts || (echo "  ❌ Drizzle generation failed" && exit 1)
 	@echo "  🐍 Generating Pydantic models from YAML..."
-	@docker-compose exec -T celery-worker python /app/scripts/generate-pydantic-from-yaml.py || (echo "  ❌ Pydantic generation failed" && exit 1)
+	@docker-compose exec -T celery-worker uv run python /app/scripts/generate-pydantic-from-yaml.py || (echo "  ❌ Pydantic generation failed" && exit 1)
 	@echo "  🗄️  Generating SQL migrations..."
 	@docker-compose exec -T -e DATABASE_URL="$(DB_URL_DOCKER)" web npx drizzle-kit generate || (echo "  ❌ SQL migration generation failed" && exit 1)
 	@echo "  ⚡ Pushing schema to database..."
@@ -143,6 +143,8 @@ reset:
 		echo "  ✅ Extensions installed"; \
 		echo "📝 Recreating schema..."; \
 		$(MAKE) schema || (echo "  ❌ Schema creation failed" && exit 1); \
+		echo "⏳ Waiting for schema to be ready..."; \
+		sleep 2; \
 		echo "🪣 Clearing MinIO storage..."; \
 		docker-compose exec -T minio mc alias set local http://localhost:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} 2>/dev/null || echo "  ⚠️  MinIO alias already exists"; \
 		docker-compose exec -T minio mc rm --recursive --force local/ariata >/dev/null 2>&1 || echo "  ⚠️  No existing MinIO data"; \
@@ -243,46 +245,6 @@ deploy-init:
 		--exclude='**/.git'
 	@echo "✅ Created deploy.tar.gz"
 
-# Deploy to EC2
-deploy-ec2:
-	@read -p "EC2 Host (user@ip): " host; \
-	echo "📤 Uploading to $$host..."; \
-	scp deploy.tar.gz $$host:~/ && \
-	echo "🚀 Deploying on remote host..."; \
-	ssh $$host 'tar -xzf deploy.tar.gz && make env-setup && make prod'
-
-# Update deployment (git pull + restart)
-deploy-update:
-	@read -p "EC2 Host (user@ip): " host; \
-	ssh $$host "cd ariata && git pull && make prod"
-
-# View remote logs
-deploy-logs:
-	@read -p "EC2 Host (user@ip): " host; \
-	ssh $$host "cd ariata && docker-compose logs -f"
-
-# === MINIO COMMANDS ===
-
-# Download today's streams from MinIO
-minio-download:
-	@echo "📥 Downloading today's stream data from MinIO..."
-	@docker-compose exec celery-worker uv run python /app/scripts/download-minio-streams.py
-	@echo "✅ Stream data saved to assets/test-data/captured-streams/"
-
-# Download streams for a specific date
-minio-download-date:
-	@read -p "Date (YYYY-MM-DD): " date; \
-	echo "📥 Downloading streams for $$date..."; \
-	docker-compose exec celery-worker uv run python /app/scripts/download-minio-streams.py $$date
-
-# Process captured streams to filter by date
-minio-process:
-	@echo "🔄 Processing captured stream data..."
-	@docker-compose exec celery-worker uv run python /app/scripts/filter-stream-data.py
-	@echo "✅ Processed data saved to assets/test-data/captured-streams/processed/"
-
-
-
 # === MAC CLI COMMANDS ===
 
 # Build Mac CLI for development
@@ -335,52 +297,3 @@ mac-local:
 	@echo "Step 3: Running installer with local build..."
 	@cd apps/mac && ./Scripts/installer.sh --local
 	@echo "✅ Local installation complete!"
-
-# === HELP ===
-
-help:
-	@echo ""
-	@echo "  🚀 Ariata - All Commands"
-	@echo "  ────────────────────────────────"
-	@echo ""
-	@echo "  DEVELOPMENT"
-	@echo "    make dev              Start development environment"
-	@echo "    make stop             Stop all services"
-	@echo "    make logs             View logs"
-	@echo "    make studio           Open Drizzle Studio UI"
-	@echo "    make ps               Show service status"
-	@echo "    make rebuild          Force rebuild containers"
-	@echo ""
-	@echo "  SCHEMA MANAGEMENT"
-	@echo "    make schema           Full pipeline: YAML→Drizzle→SQL→Python"
-	@echo "    make schema-generate  Generate Drizzle schemas from YAML"
-	@echo "    make schema-migrate   Generate SQL migrations"
-	@echo "    make schema-push      Push schema to database"
-	@echo ""
-	@echo "  DATA MANAGEMENT"
-	@echo "    make seed             Load test data"
-	@echo "    make reset            Clear all data & reseed with test data"
-	@echo "    make reset-clean      Clear all data (no test data)"
-	@echo "    make clean            Delete everything (nuclear)"
-	@echo ""
-	@echo "  DEPLOYMENT"
-	@echo "    make prod             Start production mode"
-	@echo "    make deploy-init      Create deployment package"
-	@echo "    make deploy-ec2       Deploy to EC2"
-	@echo "    make deploy-update    Update deployment"
-	@echo "    make deploy-logs      View remote logs"
-	@echo ""
-	@echo "  DATA EXPORT"
-	@echo "    make minio-download   Download today's streams"
-	@echo "    make minio-download-date  Download specific date"
-	@echo "    make minio-process    Process captured streams"
-	@echo ""
-	@echo "  MAC CLI"
-	@echo "    make mac-build        Build Mac CLI for development"
-	@echo "    make mac-release      Build universal binary release"
-	@echo "    make mac-install      Install to /usr/local/bin"
-	@echo "    make mac-local        Build and test with local installer"
-	@echo "    make mac-publish      Create GitHub release (requires gh CLI)"
-	@echo "    make mac-test         Run tests"
-	@echo "    make mac-run          Run Mac CLI"
-	@echo ""

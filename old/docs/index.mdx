@@ -1,0 +1,453 @@
+---
+title: "Ariata Documentation"
+description: "An open source ecosystem for owning and exporting your personal data"
+---
+
+<Warning>
+**Experimental Phase**: Expect rapid iteration and sweeping changes as we refine the core applications and infrastructure.
+</Warning>
+
+## What is Ariata
+
+Ariata is your personal AI agent that ingests your digital life—from calendar events and locations to health metrics and screen time—constructing a coherent, queryable timeline. Unlike cloud services that monetize your data, Ariata runs on your infrastructure, ensuring complete privacy and control.
+
+Your data is incredibly valuable—companies build trillion-dollar empires on it. Ariata lets you reclaim that value for yourself:
+
+- **Train personal AI on YOUR data**, not theirs
+- **Life logging and memory augmentation** for perfect recall
+- **Health and productivity optimization** through pattern recognition  
+- **Build a queryable life archive** of your entire digital existence
+- **Generate insights for self-improvement** from your actual behavior
+- **See what data companies collect** and take back control
+
+## Quick Start
+
+Get Ariata running in under 2 minutes:
+
+<Steps>
+<Step title="Clone and setup">
+```bash
+# Clone the repository
+git clone https://github.com/ariata-os/ariata
+cd ariata
+
+# Start the entire stack
+make dev
+```
+</Step>
+
+<Step title="Access the dashboard">
+```bash
+# Open the dashboard
+open http://localhost:3000
+```
+</Step>
+
+<Step title="Configure data sources">
+Navigate to Settings → Sources in the web UI to connect your data sources.
+</Step>
+</Steps>
+
+The system will automatically:
+- Initialize PostgreSQL with PostGIS and pgvector extensions
+- Set up MinIO for object storage
+- Start Redis for task queuing
+- Launch the SvelteKit web application
+- Spin up Celery workers for background processing
+
+## Your Data, Your Database
+
+Unlike cloud services that lock away your data, Ariata gives you **direct PostgreSQL access**. Query your life with SQL, build custom analytics, or export everything—it's your database.
+
+<CodeGroup>
+```python Python
+import psycopg2
+import pandas as pd
+
+conn = psycopg2.connect(
+    "postgresql://readonly_user:secure_pass@your-server:5432/ariata"
+)
+
+# Query your heart rate during meetings
+df = pd.read_sql("""
+    SELECT h.timestamp, h.heart_rate as bpm, c.summary as meeting
+    FROM stream_ios_healthkit h
+    JOIN stream_google_calendar c 
+        ON h.timestamp BETWEEN c.start_time AND c.end_time
+    WHERE h.heart_rate IS NOT NULL
+""", conn)
+```
+
+```javascript JavaScript
+import { Client } from 'pg';
+
+const client = new Client({
+  connectionString: 'postgresql://readonly_user:secure_pass@your-server:5432/ariata'
+});
+
+await client.connect();
+const result = await client.query(`
+  SELECT * FROM stream_google_calendar 
+  WHERE start_time > NOW() - INTERVAL '7 days'
+`);
+```
+
+```sql SQL
+-- Daily step summary
+SELECT 
+  DATE(timestamp) as day,
+  SUM(steps) as total_steps,
+  AVG(heart_rate) as avg_heart_rate
+FROM stream_ios_healthkit
+GROUP BY DATE(timestamp)
+ORDER BY day DESC
+LIMIT 30;
+```
+</CodeGroup>
+
+**Manage credentials** at `/settings/database` in your Ariata UI—create read-only users for analysis or full access for integrations. Works with any PostgreSQL client: TablePlus, DBeaver, Jupyter notebooks, or your favorite BI tool.
+
+## Data Sources
+
+<Tabs>
+<Tab title="Stable">
+| Source | Stream | Description |
+|--------|--------|-------------|
+| Google | Calendar | Calendar events and meetings |
+| iOS | HealthKit | Health metrics (heart rate, steps, sleep, workouts, HRV) |
+| iOS | Location | GPS coordinates, speed, and altitude |
+| iOS | Microphone | Audio levels and transcription |
+| Mac | Applications | App usage and focus tracking |
+| Notion | Pages | Page and database content |
+| Strava | Activities | Workouts and performance data |
+</Tab>
+
+<Tab title="Planned">
+| Source | Stream | Description |
+|--------|--------|-------------|
+| Google | Gmail | Email messages and attachments |
+| Google | Drive | Document edits and shared files |
+| Mac | iMessage | Messages and attachments |
+| Mac | Browser | History, bookmarks, and downloads |
+| Amazon | Orders | Purchase history and delivery tracking |
+| WhatsApp | Messages | Conversations and voice notes |
+| LinkedIn | Profile | Profile views and messages |
+| X (Twitter) | Posts | Tweets and engagement metrics |
+| Spotify | Listening | Listening history and playlists |
+| Plaid | Banking | Transactions and investments |
+| GitHub | Repository | Commits, PRs, and issues |
+| Slack | Workspace | Messages and mentions |
+| Zoom | Meetings | Meeting attendance and recordings |
+</Tab>
+</Tabs>
+
+## Self-Hosting & Networking
+
+### Recommended: Tailscale Setup (5 Minutes)
+
+Tailscale creates a secure, private network between your devices. Your Ariata instance stays completely private while remaining accessible from all your devices.
+
+<Steps>
+<Step title="Install Tailscale on your server">
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+</Step>
+
+<Step title="Note your Tailscale IP">
+After login, note your IP (e.g., `100.64.1.5`)
+</Step>
+
+<Step title="Install Tailscale on your devices">
+- **iOS**: App Store → Tailscale
+- **macOS**: `brew install --cask tailscale`
+- **Windows/Linux**: [tailscale.com/download](https://tailscale.com/download)
+</Step>
+
+<Step title="Update your configuration">
+```bash
+# Update your .env file:
+PUBLIC_IP=100.64.1.5  # Your Tailscale IP
+FRONTEND_URL=http://100.64.1.5:3000
+
+# Restart Ariata:
+make restart
+```
+</Step>
+
+<Step title="Access from any device">
+```bash
+open http://100.64.1.5:3000
+# Or use MagicDNS: http://your-machine.tail-scale.ts.net:3000
+```
+</Step>
+</Steps>
+
+<Note>
+**Why Tailscale?**
+- Zero exposed ports - servers aren't on the public internet
+- E2E encrypted WireGuard protocol  
+- Works behind firewalls, NAT, cellular networks
+- Free tier includes 100 devices and 3 users
+</Note>
+
+## Architecture
+
+Ariata follows a stream-based ELT (Extract, Load, Transform) architecture:
+
+```mermaid
+graph LR
+    A[Sources] -->|Extract| B[Raw Storage]
+    B -->|Load| C[PostgreSQL]
+    C -->|Transform| D[Timeline]
+    
+    A2[Google Calendar] --> A
+    A3[iOS HealthKit] --> A
+    A4[Mac Applications] --> A
+    
+    B --> B1[MinIO Objects]
+    B --> B2[Time-series Data]
+    
+    D --> D1[Queryable History]
+    D --> D2[AI Insights]
+```
+
+### Key Components
+
+<CardGroup cols={2}>
+<Card title="Sources" icon="plug">
+External services and devices that provide data (Google, iOS, Mac, etc.)
+</Card>
+
+<Card title="Streams" icon="water">
+Time-series data tables with full fidelity storage
+</Card>
+
+<Card title="Processing" icon="gears">
+Celery workers that handle data ingestion and transformation
+</Card>
+
+<Card title="Storage" icon="database">
+PostgreSQL for metadata, MinIO for raw data objects
+</Card>
+</CardGroup>
+
+### Tech Stack
+
+- **Backend**: Python, Celery, FastAPI, PostgreSQL (PostGIS/pgvector), Redis, MinIO  
+- **Frontend**: SvelteKit, TypeScript, TailwindCSS  
+- **Mobile**: Swift/SwiftUI (iOS/macOS)  
+- **ML/AI**: PELT change detection, HDBSCAN clustering, Vector embeddings
+
+## Development
+
+### Prerequisites
+
+- Docker & Docker Compose (v2.0+)
+- 8GB RAM minimum, 16GB recommended
+- 20GB free disk space
+
+### Commands
+
+```bash
+make dev              # Start development environment
+make stop             # Stop all services
+make clean            # Clean up containers and volumes
+make logs             # View application logs
+make db-studio        # Open Drizzle Studio for database inspection
+make test             # Run test suite
+make format           # Format code with Biome
+make lint             # Lint codebase
+```
+
+### Project Structure
+
+```
+ariata/
+├── apps/                      # User-facing applications
+│   ├── web/                   # SvelteKit dashboard
+│   ├── ios/                   # Native iOS app
+│   ├── mac/                   # Native macOS agent
+│   └── oauth-proxy/           # OAuth proxy for services
+├── sources/                   # Data pipeline logic
+│   ├── base/                  # Shared infrastructure
+│   ├── google/                # Google service integrations
+│   ├── ios/                   # iOS data sources
+│   ├── mac/                   # macOS data sources
+│   ├── notion/                # Notion integration
+│   └── _generated_registry.yaml # Source/stream registry
+└── scripts/                   # Utility scripts
+```
+
+### Database Schema
+
+The schema follows an ELT pipeline pattern:
+
+- `source_configs`: Global catalog of source types
+- `sources`: Active source instances (e.g., "My iPhone")
+- `stream_configs`: Global catalog of stream types  
+- `streams`: Active stream instances with settings
+- `stream_*`: Time-series data tables (e.g., `stream_google_calendar`)
+
+### Development Tips
+
+<AccordionGroup>
+<Accordion title="Running commands in Docker">
+```bash
+# Run commands within the Docker container
+docker compose exec [service] [command]
+
+# Examples:
+docker compose exec web npm run dev
+docker compose exec worker python -m sources.google.calendar.sync
+```
+</Accordion>
+
+<Accordion title="Database credentials">
+```env
+DB_USER=ariata_user
+DB_PASSWORD=ariata_password
+DB_NAME=ariata
+DB_HOST=postgres
+DB_PORT=5432
+```
+</Accordion>
+
+<Accordion title="Updating the source registry">
+```bash
+# After adding a new source, regenerate the registry
+python scripts/generate_registry.py
+
+# This updates:
+# - sources/_generated_registry.yaml
+# - sources/_generated_registry.py
+```
+</Accordion>
+</AccordionGroup>
+
+## Example Queries
+
+<CodeGroup>
+```sql "Heart Rate Patterns"
+-- Analyze heart rate patterns during work hours
+SELECT 
+  EXTRACT(HOUR FROM timestamp) as hour,
+  AVG(heart_rate) as avg_hr,
+  MIN(heart_rate) as min_hr,
+  MAX(heart_rate) as max_hr,
+  COUNT(*) as readings
+FROM stream_ios_healthkit
+WHERE timestamp >= NOW() - INTERVAL '30 days'
+  AND EXTRACT(DOW FROM timestamp) BETWEEN 1 AND 5
+  AND heart_rate IS NOT NULL
+GROUP BY hour
+ORDER BY hour;
+```
+
+```sql "Location Clusters"
+-- Find your most visited locations
+WITH location_clusters AS (
+  SELECT 
+    ST_ClusterDBSCAN(
+      ST_MakePoint(longitude, latitude), 
+      eps := 0.001,  -- ~100m radius
+      minpoints := 10
+    ) OVER() AS cluster_id,
+    longitude,
+    latitude,
+    timestamp
+  FROM stream_ios_location
+  WHERE timestamp >= NOW() - INTERVAL '30 days'
+)
+SELECT 
+  cluster_id,
+  COUNT(*) as visit_count,
+  AVG(longitude) as center_lon,
+  AVG(latitude) as center_lat,
+  MIN(timestamp) as first_visit,
+  MAX(timestamp) as last_visit
+FROM location_clusters
+WHERE cluster_id IS NOT NULL
+GROUP BY cluster_id
+ORDER BY visit_count DESC
+LIMIT 10;
+```
+
+```sql "Productivity Analysis"
+-- Correlate app usage with calendar events
+SELECT 
+  a.app_name,
+  c.summary as meeting,
+  SUM(a.duration_seconds) / 60.0 as minutes_used
+FROM stream_mac_applications a
+LEFT JOIN stream_google_calendar c
+  ON a.timestamp BETWEEN c.start_time AND c.end_time
+WHERE a.timestamp >= NOW() - INTERVAL '7 days'
+GROUP BY a.app_name, c.summary
+ORDER BY minutes_used DESC;
+```
+</CodeGroup>
+
+## Contributing
+
+We believe that only an open-source solution to personal data management can truly respect user privacy while covering the long tail of data sources. We welcome contributions in several areas:
+
+### How to Contribute
+
+1. **Code Contributions**: Implement new data sources, improve existing ones, or enhance the core platform
+2. **Architecture Reviews**: Share expertise on iOS/Swift, distributed systems, or data processing
+3. **Documentation**: Help others understand and use Ariata effectively
+4. **Bug Reports**: Find something broken? Let us know!
+
+<Steps>
+<Step title="Fork and clone">
+```bash
+git clone https://github.com/ariata-os/ariata
+cd ariata
+```
+</Step>
+
+<Step title="Create a feature branch">
+```bash
+git checkout -b feature/your-feature-name
+```
+</Step>
+
+<Step title="Make changes and test">
+```bash
+make test
+```
+</Step>
+
+<Step title="Submit a pull request">
+Push your changes and open a PR on GitHub
+</Step>
+</Steps>
+
+## License
+
+Ariata uses a dual-license model:
+
+- **MIT License**: Core functionality and most components
+- **Elastic License 2.0 (ELv2)**: Certain enterprise components
+
+**You can**: Self-host, modify, extend, and use Ariata for personal or commercial purposes.
+
+**You cannot**: Offer Ariata as a hosted service or remove license functionality.
+
+## Support
+
+<CardGroup cols={2}>
+<Card title="Discord Community" icon="discord" href="https://discord.gg/sSQKzDWqgv">
+Join our Discord for discussions and support
+</Card>
+
+<Card title="GitHub Issues" icon="github" href="https://github.com/ariata-os/ariata/issues">
+Report bugs or request features
+</Card>
+</CardGroup>
+
+---
+
+*Your data should work for you, not against you.*

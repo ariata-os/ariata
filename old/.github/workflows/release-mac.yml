@@ -1,0 +1,287 @@
+name: Release Mac CLI
+
+on:
+  push:
+    tags:
+      - 'mac-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.0'
+      
+      - name: Get version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/mac-v}
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+      
+      - name: Import Code Signing Certificate
+        if: env.APPLE_CERTIFICATE_BASE64 != ''
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          
+          # Create keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          
+          # Import certificate
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 -d > certificate.p12
+          security import certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          
+          # Clean up
+          rm certificate.p12
+      
+      - name: Build universal binary
+        env:
+          CODESIGN_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID }}
+        run: |
+          cd apps/mac
+          
+          # Build for x86_64
+          swift build -c release --arch x86_64
+          
+          # Build for arm64
+          swift build -c release --arch arm64
+          
+          # Create universal binary
+          lipo -create \
+            .build/x86_64-apple-macosx/release/ariata-mac \
+            .build/arm64-apple-macosx/release/ariata-mac \
+            -output ariata-mac
+          
+          # Make it executable
+          chmod +x ariata-mac
+          
+          # Strip debug symbols
+          strip ariata-mac
+          
+          # Sign if certificate is available
+          if [ -n "$CODESIGN_IDENTITY" ]; then
+            echo "Signing with identity: $CODESIGN_IDENTITY"
+            codesign --force --deep \
+                     --sign "$CODESIGN_IDENTITY" \
+                     --options runtime \
+                     --timestamp \
+                     ariata-mac
+            
+            # Verify signature
+            codesign --verify --verbose ariata-mac
+            echo "Binary signed successfully"
+          else
+            echo "No signing identity provided, binary will be unsigned"
+          fi
+          
+          # Verify universal binary
+          echo "Binary architectures:"
+          lipo -info ariata-mac
+          
+          # Create tarball
+          tar -czf ariata-mac-${{ steps.version.outputs.VERSION }}-universal.tar.gz ariata-mac
+          
+          # Create zip for easier download
+          zip ariata-mac-${{ steps.version.outputs.VERSION }}-universal.zip ariata-mac
+      
+      - name: Notarize Binary
+        if: env.APPLE_ID != '' && env.APPLE_APP_PASSWORD != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cd apps/mac
+          
+          # Only notarize if signed
+          if codesign -dv ariata-mac 2>&1 | grep -q "Authority"; then
+            echo "Submitting for notarization..."
+            
+            # Create zip for notarization
+            zip ariata-mac-notarize.zip ariata-mac
+            
+            # Submit for notarization
+            xcrun notarytool submit ariata-mac-notarize.zip \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+            
+            # Staple the notarization
+            xcrun stapler staple ariata-mac
+            
+            # Recreate archives with notarized binary
+            tar -czf ariata-mac-${{ steps.version.outputs.VERSION }}-universal.tar.gz ariata-mac
+            zip ariata-mac-${{ steps.version.outputs.VERSION }}-universal.zip ariata-mac
+            
+            echo "Notarization complete"
+          else
+            echo "Binary not signed, skipping notarization"
+          fi
+      
+      - name: Copy installer scripts
+        run: |
+          # Copy the enhanced installer with GUI
+          cp apps/mac/Scripts/installer.sh installer.sh
+          chmod +x installer.sh
+          
+          # Create simple install script for backward compatibility
+          cat > install-simple.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          VERSION="${1:-latest}"
+          INSTALL_DIR="/usr/local/bin"
+          
+          echo "Installing ariata-mac $VERSION..."
+          
+          # Detect architecture
+          ARCH=$(uname -m)
+          echo "Detected architecture: $ARCH"
+          
+          # Download URL
+          if [ "$VERSION" = "latest" ]; then
+            DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/latest/download/ariata-mac-universal.tar.gz"
+          else
+            DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/mac-v$VERSION/ariata-mac-$VERSION-universal.tar.gz"
+          fi
+          
+          # Download and extract
+          echo "Downloading from $DOWNLOAD_URL..."
+          curl -L -o /tmp/ariata-mac.tar.gz "$DOWNLOAD_URL"
+          tar -xzf /tmp/ariata-mac.tar.gz -C /tmp/
+          
+          # Install binary
+          echo "Installing to $INSTALL_DIR..."
+          sudo mv /tmp/ariata-mac "$INSTALL_DIR/ariata-mac"
+          sudo chmod +x "$INSTALL_DIR/ariata-mac"
+          
+          # Clean up
+          rm -f /tmp/ariata-mac.tar.gz
+          
+          echo "✅ Installation complete!"
+          echo ""
+          echo "Run 'ariata-mac --help' to get started"
+          echo ""
+          echo "Quick start:"
+          echo "  1. Get a device token from https://ariata.com"
+          echo "  2. Run: ariata-mac init <token>"
+          echo "  3. Run: ariata-mac daemon"
+          EOF
+          
+          chmod +x install-simple.sh
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Mac CLI v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## Ariata Mac CLI v${{ steps.version.outputs.VERSION }}
+            
+            ### Installation
+            
+            #### Option 1: Interactive Installer (Recommended)
+            ```bash
+            # With GUI dialogs and automatic setup
+            curl -sSL https://github.com/${{ github.repository }}/releases/latest/download/installer.sh | bash
+            ```
+            
+            #### Option 2: Quick Install with Parameters
+            ```bash
+            # Provide token and endpoint directly
+            curl -sSL https://github.com/${{ github.repository }}/releases/latest/download/installer.sh | \
+              bash -s -- --token YOUR_TOKEN --endpoint https://your-server.com
+            ```
+            
+            #### Option 3: Manual Download
+            1. Download `ariata-mac-${{ steps.version.outputs.VERSION }}-universal.tar.gz`
+            2. Extract: `tar -xzf ariata-mac-*.tar.gz`
+            3. Move to PATH: `sudo mv ariata-mac /usr/local/bin/`
+            4. Make executable: `sudo chmod +x /usr/local/bin/ariata-mac`
+            
+            ### Usage
+            ```bash
+            # Initialize with token from web UI
+            ariata-mac init <token>
+            
+            # Install as background service (auto-starts on login)
+            ariata-mac daemon
+            
+            # Check status
+            ariata-mac status
+            
+            # Stop service
+            ariata-mac stop
+            ```
+            
+            ### What's New
+            - Universal binary (Intel + Apple Silicon)
+            - Automatic startup on login
+            - Simplified data collection (app focus events only)
+            - 5-minute batch uploads
+            - Local SQLite queue for reliability
+            
+            ### Requirements
+            - macOS 11.0 or later
+            - Accessibility permissions (prompted on first run)
+          files: |
+            apps/mac/ariata-mac-${{ steps.version.outputs.VERSION }}-universal.tar.gz
+            apps/mac/ariata-mac-${{ steps.version.outputs.VERSION }}-universal.zip
+            installer.sh
+            install-simple.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Update latest release
+        if: success()
+        run: |
+          # Copy files for latest tag
+          cd apps/mac
+          cp ariata-mac-${{ steps.version.outputs.VERSION }}-universal.tar.gz ariata-mac-universal.tar.gz
+          cp ariata-mac-${{ steps.version.outputs.VERSION }}-universal.zip ariata-mac-universal.zip
+      
+      - name: Upload latest artifacts
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: mac-latest
+          name: Mac CLI Latest
+          body: |
+            This release is automatically updated with the latest stable version.
+            Current version: v${{ steps.version.outputs.VERSION }}
+            
+            For specific versions, see [all releases](https://github.com/${{ github.repository }}/releases).
+          files: |
+            apps/mac/ariata-mac-universal.tar.gz
+            apps/mac/ariata-mac-universal.zip
+            installer.sh
+            install-simple.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

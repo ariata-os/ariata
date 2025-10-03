@@ -1,0 +1,95 @@
+[package]
+name = "ariata"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ariata Team <team@ariata.com>"]
+description = "Open source personal data ecosystem - High-performance Rust core"
+license = "MIT"
+repository = "https://github.com/ariata/ariata"
+keywords = ["etl", "data-pipeline", "personal-data", "timeseries"]
+categories = ["database", "data-structures"]
+build = "build.rs"
+
+[lib]
+name = "ariata"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ariata"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+async-trait = "0.1"
+
+# Database
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "migrate", "chrono", "json", "macros"] }
+
+# Storage
+aws-sdk-s3 = "1.49"
+aws-config = "1.5"
+
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Compression
+zstd = "0.13"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# HTTP Server
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+bytes = "1.7"
+
+# OAuth
+oauth2 = "4.4"
+reqwest = { version = "0.12", features = ["json"] }
+
+# Scheduler
+tokio-cron-scheduler = "0.13"
+
+# Encryption for credentials
+ring = "0.17"
+base64 = "0.22"
+
+[dev-dependencies]
+# Testing
+criterion = { version = "0.5", features = ["html_reports"] }
+tempfile = "3.12"
+wiremock = "0.6"
+testcontainers = "0.21"
+testcontainers-modules = { version = "0.11", features = ["postgres", "minio"] }
+
+# Async testing
+tokio-test = "0.4"
+
+# Property testing
+proptest = "1.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 0
+
+[profile.test]
+opt-level = 0

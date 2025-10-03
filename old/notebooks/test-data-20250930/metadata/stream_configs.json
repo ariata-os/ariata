@@ -1,0 +1,384 @@
+[
+  {
+    "id": "c36f11dd-0bc6-4f79-8167-bfa33ab2551a",
+    "stream_name": "google_gmail",
+    "source_name": "google",
+    "display_name": "Gmail",
+    "description": "Email messages and conversations from Gmail",
+    "ingestion_type": "pull",
+    "status": "active",
+    "cron_schedule": "*/15 * * * *",
+    "settings": {
+      "ingestion": {
+        "type": "pull",
+        "batch_type": "messages",
+        "raw_data_type": "GmailMessage"
+      },
+      "sync": {
+        "schedule": "*/15 * * * *",
+        "type": "token",
+        "initial_sync_days": 730
+      },
+      "processing": {
+        "normalization": true
+      }
+    },
+    "last_ingestion_at": null,
+    "created_at": "2025-09-30T14:12:21.961442+00:00",
+    "updated_at": "2025-09-30T14:12:21.961442+00:00"
+  },
+  {
+    "id": "6e06a93b-d426-4241-8e8d-aec98ecad3b8",
+    "stream_name": "mac_apps",
+    "source_name": "mac",
+    "display_name": "Mac Applications",
+    "description": "Application focus and usage events",
+    "ingestion_type": "push",
+    "status": "active",
+    "cron_schedule": null,
+    "settings": {
+      "ingestion": {
+        "type": "push",
+        "batch_type": "events",
+        "raw_data_type": "AppEvent"
+      },
+      "processing": {
+        "deduplication": {
+          "strategy": "single"
+        },
+        "normalization": true,
+        "validation": {
+          "required_fields": [
+            "app_name",
+            "bundle_id",
+            "timestamp",
+            "event_type"
+          ],
+          "event_types": [
+            "focus_gained",
+            "focus_lost",
+            "launch",
+            "quit"
+          ]
+        }
+      },
+      "storage": {
+        "retention_days": 30,
+        "compression": "gzip",
+        "format": "json"
+      }
+    },
+    "last_ingestion_at": null,
+    "created_at": "2025-09-30T14:12:21.967047+00:00",
+    "updated_at": "2025-09-30T14:12:21.967047+00:00"
+  },
+  {
+    "id": "131c89d1-866d-4a3e-a514-c4fe37e1fc6b",
+    "stream_name": "mac_messages",
+    "source_name": "mac",
+    "display_name": "Messages",
+    "description": "iMessage and SMS conversation history",
+    "ingestion_type": "push",
+    "status": "active",
+    "cron_schedule": null,
+    "settings": {
+      "ingestion": {
+        "type": "push",
+        "batch_type": "events",
+        "raw_data_type": "MessageEvent"
+      },
+      "processing": {
+        "deduplication": {
+          "strategy": "unique_key",
+          "key": [
+            "message_id"
+          ]
+        },
+        "normalization": true,
+        "validation": {
+          "required_fields": [
+            "message_id",
+            "chat_id",
+            "date",
+            "text"
+          ]
+        }
+      },
+      "storage": {
+        "retention_days": 365,
+        "compression": "gzip",
+        "format": "json"
+      }
+    },
+    "last_ingestion_at": null,
+    "created_at": "2025-09-30T14:12:21.969433+00:00",
+    "updated_at": "2025-09-30T14:12:21.969433+00:00"
+  },
+  {
+    "id": "23151fe9-967a-46f9-bb2c-ff83e43cac6b",
+    "stream_name": "notion_pages",
+    "source_name": "notion",
+    "display_name": "Notion Pages",
+    "description": "Pages and databases from Notion workspace",
+    "ingestion_type": "pull",
+    "status": "active",
+    "cron_schedule": "*/30 * * * *",
+    "settings": {
+      "ingestion": {
+        "type": "pull",
+        "batch_type": "pages",
+        "raw_data_type": "NotionPage"
+      },
+      "sync": {
+        "schedule": "*/30 * * * *",
+        "type": "token"
+      },
+      "processing": {
+        "extract_text": true,
+        "extract_metadata": true,
+        "versioning": true,
+        "deduplication": {
+          "key": [
+            "page_id",
+            "last_edited_time"
+          ],
+          "strategy": "content_hash"
+        },
+        "normalization": true,
+        "validation": {
+          "required_fields": [
+            "id",
+            "object",
+            "created_time",
+            "last_edited_time"
+          ]
+        }
+      }
+    },
+    "last_ingestion_at": null,
+    "created_at": "2025-09-30T14:12:21.971715+00:00",
+    "updated_at": "2025-09-30T14:12:21.971715+00:00"
+  },
+  {
+    "id": "b8ad01bd-551d-4076-ba63-6de4d8af6a62",
+    "stream_name": "strava_activities",
+    "source_name": "strava",
+    "display_name": "Activities",
+    "description": "Running, cycling, and other fitness activities",
+    "ingestion_type": "pull",
+    "status": "active",
+    "cron_schedule": "*/30 * * * *",
+    "settings": {
+      "ingestion": {
+        "type": "pull",
+        "batch_type": "activities",
+        "raw_data_type": "StravaActivity"
+      },
+      "sync": {
+        "schedule": "*/30 * * * *",
+        "type": "date_range",
+        "initial_sync_days": 90
+      },
+      "processing": {
+        "normalization": true
+      }
+    },
+    "last_ingestion_at": null,
+    "created_at": "2025-09-30T14:12:21.972739+00:00",
+    "updated_at": "2025-09-30T14:12:21.972739+00:00"
+  },
+  {
+    "id": "0d262144-cda5-4826-8a04-7a67bd826008",
+    "stream_name": "ios_location",
+    "source_name": "ios",
+    "display_name": "iOS Core Location",
+    "description": "Raw CoreLocation data including GPS, altitude, speed, and activity",
+    "ingestion_type": "push",
+    "status": "active",
+    "cron_schedule": "*/5 * * * *",
+    "settings": {
+      "ingestion": {
+        "type": "push",
+        "batch_type": "array",
+        "raw_data_type": "CLLocation"
+      },
+      "sync": {
+        "type": "none",
+        "schedule": "*/5 * * * *"
+      },
+      "processing": {
+        "deduplication": {
+          "strategy": "single"
+        },
+        "normalization": true,
+        "validation": {
+          "required_fields": [
+            "latitude",
+            "longitude",
+            "timestamp"
+          ],
+          "ranges": {
+            "latitude": [
+              -90,
+              90
+            ],
+            "longitude": [
+              -180,
+              180
+            ],
+            "altitude": [
+              -500,
+              9000
+            ],
+            "speed": [
+              0,
+              500
+            ]
+          }
+        }
+      },
+      "storage": {
+        "retention_days": 90,
+        "compression": "gzip",
+        "format": "json"
+      }
+    },
+    "last_ingestion_at": "2025-09-30T14:53:59.353000+00:00",
+    "created_at": "2025-09-30T14:12:21.964100+00:00",
+    "updated_at": "2025-09-30T14:12:21.964100+00:00"
+  },
+  {
+    "id": "667bcc69-1978-4c35-8fc6-d8277e96cf54",
+    "stream_name": "google_calendar",
+    "source_name": "google",
+    "display_name": "Google Calendar",
+    "description": "Calendar events and appointments",
+    "ingestion_type": "pull",
+    "status": "active",
+    "cron_schedule": "*/15 * * * *",
+    "settings": {
+      "ingestion": {
+        "type": "pull",
+        "batch_type": "events",
+        "raw_data_type": "CalendarEvent"
+      },
+      "sync": {
+        "schedule": "*/15 * * * *",
+        "type": "token"
+      },
+      "processing": {
+        "normalization": true
+      }
+    },
+    "last_ingestion_at": "2025-09-30T14:12:22.184000+00:00",
+    "created_at": "2025-09-30T14:12:21.954821+00:00",
+    "updated_at": "2025-09-30T14:12:21.954821+00:00"
+  },
+  {
+    "id": "cbba8cae-c6af-4464-a75a-c095aa74f135",
+    "stream_name": "ios_mic",
+    "source_name": "ios",
+    "display_name": "iOS Microphone Audio",
+    "description": "Audio chunks for transcription and analysis",
+    "ingestion_type": "push",
+    "status": "active",
+    "cron_schedule": "*/5 * * * *",
+    "settings": {
+      "ingestion": {
+        "type": "push",
+        "batch_type": "chunks",
+        "raw_data_type": "AudioChunk",
+        "chunk_duration_ms": 5000
+      },
+      "sync": {
+        "type": "none",
+        "schedule": "*/5 * * * *"
+      },
+      "processing": {
+        "deduplication": false,
+        "normalization": true,
+        "validation": {
+          "required_fields": [
+            "audio_data",
+            "timestamp",
+            "sample_rate"
+          ],
+          "audio": {
+            "sample_rate": 16000,
+            "encoding": "pcm16",
+            "channels": 1
+          }
+        }
+      },
+      "storage": {
+        "retention_days": 7,
+        "compression": "opus",
+        "format": "binary"
+      }
+    },
+    "last_ingestion_at": "2025-09-30T14:54:09.041000+00:00",
+    "created_at": "2025-09-30T14:12:21.965145+00:00",
+    "updated_at": "2025-09-30T14:12:21.965145+00:00"
+  },
+  {
+    "id": "7fa6442d-0f8a-4b28-9dce-776121c51869",
+    "stream_name": "ios_healthkit",
+    "source_name": "ios",
+    "display_name": "iOS HealthKit",
+    "description": "Health data including heart rate, steps, workouts, sleep, and energy",
+    "ingestion_type": "push",
+    "status": "active",
+    "cron_schedule": "*/5 * * * *",
+    "settings": {
+      "ingestion": {
+        "type": "push",
+        "batch_type": "array",
+        "raw_data_type": "HKSample"
+      },
+      "sync": {
+        "type": "date_range",
+        "initial_sync_days": 90,
+        "schedule": "*/5 * * * *"
+      },
+      "processing": {
+        "deduplication": {
+          "strategy": "content_hash"
+        },
+        "normalization": true,
+        "validation": {
+          "required_fields": [
+            "type",
+            "value",
+            "timestamp"
+          ],
+          "ranges": {
+            "heart_rate": [
+              30,
+              250
+            ],
+            "steps": [
+              0,
+              100000
+            ],
+            "active_energy": [
+              0,
+              10000
+            ],
+            "heart_rate_variability": [
+              0,
+              500
+            ]
+          }
+        }
+      },
+      "storage": {
+        "retention_days": 365,
+        "compression": "gzip",
+        "format": "json"
+      }
+    },
+    "last_ingestion_at": "2025-09-30T14:53:58.733000+00:00",
+    "created_at": "2025-09-30T14:12:21.962856+00:00",
+    "updated_at": "2025-09-30T14:12:21.962856+00:00"
+  }
+]

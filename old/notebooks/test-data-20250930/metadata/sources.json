@@ -1,0 +1,89 @@
+[
+  {
+    "id": "00000000-0000-0000-0000-000000000101",
+    "source_name": "ios",
+    "instance_name": "Test iPhone (Demo)",
+    "status": "paused",
+    "device_id": "dev_iphone_001",
+    "device_token": "DEV_TOKEN_001",
+    "device_type": "ios",
+    "device_last_seen": "2025-09-30T14:12:21.975000+00:00",
+    "oauth_access_token": null,
+    "oauth_refresh_token": null,
+    "oauth_expires_at": null,
+    "scopes": null,
+    "source_metadata": {
+      "os_version": "17.0",
+      "model": "iPhone 15 Pro",
+      "app_version": "1.0.0",
+      "isTest": true
+    },
+    "last_sync_at": "2025-09-30T14:12:22.152000+00:00",
+    "last_sync_status": null,
+    "last_sync_error": null,
+    "created_at": "2025-09-30T14:12:21.978552+00:00",
+    "updated_at": "2025-09-30T14:12:21.978552+00:00"
+  },
+  {
+    "id": "00000000-0000-0000-0000-000000000102",
+    "source_name": "google",
+    "instance_name": "Test Google Account (Demo)",
+    "status": "paused",
+    "device_id": "test_google_account",
+    "device_token": "DEV_TOKEN_GOOGLE_001",
+    "device_type": null,
+    "device_last_seen": null,
+    "oauth_access_token": "test_access_token_google",
+    "oauth_refresh_token": "test_refresh_token_google",
+    "oauth_expires_at": "2025-09-30T15:12:21.981000+00:00",
+    "scopes": [
+      "https://www.googleapis.com/auth/calendar.readonly",
+      "https://www.googleapis.com/auth/calendar.events.readonly"
+    ],
+    "source_metadata": {
+      "email": "testuser@example.com",
+      "name": "Test User",
+      "isTest": true
+    },
+    "last_sync_at": "2025-09-30T14:12:22.179000+00:00",
+    "last_sync_status": null,
+    "last_sync_error": null,
+    "created_at": "2025-09-30T14:12:21.982822+00:00",
+    "updated_at": "2025-09-30T14:12:21.982822+00:00"
+  },
+  {
+    "id": "9ea82411-f2e7-4c6c-98df-a5e5760e5230",
+    "source_name": "ios",
+    "instance_name": "iPhone Account 2",
+    "status": "active",
+    "device_id": "361343ba-5292-4361-9c4a-ee3b0cd81db6",
+    "device_token": "G5PGAWYK",
+    "device_type": "ios",
+    "device_last_seen": null,
+    "oauth_access_token": null,
+    "oauth_refresh_token": null,
+    "oauth_expires_at": null,
+    "scopes": null,
+    "source_metadata": {
+      "description": "test",
+      "createdVia": "web",
+      "tokenGeneratedAt": "2025-09-30T14:12:36.433Z",
+      "deviceInfo": {
+        "platform": "iOS",
+        "model": "iPhone",
+        "osVersion": "26.0",
+        "deviceName": "iPhone",
+        "deviceId": "1B0D049C-ED6B-4C05-A6FC-FEE220E52D7A"
+      },
+      "firstVerifiedAt": "2025-09-30T14:13:07.399Z",
+      "lastVerifiedAt": "2025-09-30T14:13:12.779Z",
+      "configuredAt": "2025-09-30T14:13:11.044Z",
+      "enabledStreams": 3
+    },
+    "last_sync_at": "2025-09-30T14:53:59.130000+00:00",
+    "last_sync_status": "success",
+    "last_sync_error": null,
+    "created_at": "2025-09-30T14:12:36.433772+00:00",
+    "updated_at": "2025-09-30T14:13:11.043000+00:00"
+  }
+]
