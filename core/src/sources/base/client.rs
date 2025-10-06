@@ -27,15 +27,15 @@ impl HttpClient {
             .bearer_auth(token)
             .send()
             .await
-            .map_err(|e| Error::Other(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| Error::Other(format!("HTTP request failed: {e}")))?;
 
         if !response.status().is_success() {
             let error = response.text().await.unwrap_or_default();
-            return Err(Error::Other(format!("API error: {}", error)));
+            return Err(Error::Other(format!("API error: {error}")));
         }
 
         response.json::<T>().await
-            .map_err(|e| Error::Other(format!("Failed to parse response: {}", e)))
+            .map_err(|e| Error::Other(format!("Failed to parse response: {e}")))
     }
 
     /// Perform a GET request with bearer auth and query parameters
@@ -49,15 +49,15 @@ impl HttpClient {
             .query(params)
             .send()
             .await
-            .map_err(|e| Error::Other(format!("HTTP request failed: {}", e)))?;
+            .map_err(|e| Error::Other(format!("HTTP request failed: {e}")))?;
 
         if !response.status().is_success() {
             let error = response.text().await.unwrap_or_default();
-            return Err(Error::Other(format!("API error: {}", error)));
+            return Err(Error::Other(format!("API error: {error}")));
         }
 
         response.json::<T>().await
-            .map_err(|e| Error::Other(format!("Failed to parse response: {}", e)))
+            .map_err(|e| Error::Other(format!("Failed to parse response: {e}")))
     }
 
     /// Check if error indicates invalid sync token

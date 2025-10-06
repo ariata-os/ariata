@@ -36,8 +36,8 @@ impl Ariata {
 
         Ok(Status {
             is_healthy: db_status.is_healthy && storage_status.is_healthy,
-            database_status: format!("{:?}", db_status),
-            storage_status: format!("{:?}", storage_status),
+            database_status: format!("{db_status:?}"),
+            storage_status: format!("{storage_status:?}"),
             active_sources: 0, // TODO: Implement
         })
     }

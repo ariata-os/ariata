@@ -6,7 +6,7 @@
 </p>
 
 > [!WARNING]
-> **Experimental Phase**: Expect rapid iteration and sweeping changes. We are currently migrating our work to a core python library for managing the ETL/ELT of personal data.
+> **Experimental Phase**: Expect rapid iteration and sweeping changes. We are migrating to a high-performance Rust core library for managing the ETL/ELT of personal data.
 
 [![Release](https://img.shields.io/badge/Release-None-red.svg)](https://github.com/ariata-os/ariata/releases)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white)](https://discord.gg/sSQKzDWqgv)
@@ -80,6 +80,28 @@ Sources → Streams → Timeline
 - **Sources**: External services and devices (Google, iOS, Mac, etc.)
 - **Streams**: Time-series data tables with full fidelity storage
 - **Timeline**: Your queryable life history aggregated from all streams
+
+## 🏛️ Architecture: Why Monolithic Rust?
+
+Unlike enterprise data tools (e.g., Airbyte with Docker containers per source), Ariata uses a **single Rust package** for all data sources. This is intentional:
+
+**Personal data is fundamentally different from SaaS data:**
+
+- **Device integration**: iOS/macOS apps need direct hardware access (HealthKit, Location) that can't run in containers
+- **Cross-stream correlation**: Analyzing heart rate during calendar events requires in-process data sharing, not IPC
+- **Tight coupling**: OAuth tokens, device authentication, and sync state benefit from shared management
+- **Single-user focus**: No multi-tenancy isolation needed—simpler architecture, better performance
+- **Real-time processing**: Sub-second latency for location + audio streaming from devices
+
+**Extensibility without forking:**
+
+Users can add custom sources via Rust traits without modifying core code:
+
+1. **Compile-time plugins**: Implement `DataSource` trait in `plugins/` directory
+2. **Dynamic loading**: Build as `.dylib` and load at runtime (optional)
+3. **Shared types**: Use Ariata's built-in OAuth, storage, and processing infrastructure
+
+See [`core/examples/custom_source.rs`](core/examples/custom_source.rs) for a plugin template.
 
 ## Status
 

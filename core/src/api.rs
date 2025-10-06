@@ -79,7 +79,7 @@ pub async fn exchange_google_oauth_code(db: &PgPool, code: &str) -> Result<Uuid>
 
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("{}/google/token", oauth_proxy_url))
+        .post(format!("{oauth_proxy_url}/google/token"))
         .json(&json!({
             "code": code,
             "client_id": client_id,
@@ -88,15 +88,15 @@ pub async fn exchange_google_oauth_code(db: &PgPool, code: &str) -> Result<Uuid>
         }))
         .send()
         .await
-        .map_err(|e| Error::Network(format!("Failed to exchange code: {}", e)))?;
+        .map_err(|e| Error::Network(format!("Failed to exchange code: {e}")))?;
 
     if !response.status().is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        return Err(Error::Other(format!("OAuth exchange failed: {}", error_text)));
+        return Err(Error::Other(format!("OAuth exchange failed: {error_text}")));
     }
 
     let token_response: serde_json::Value = response.json().await
-        .map_err(|e| Error::Other(format!("Failed to parse token response: {}", e)))?;
+        .map_err(|e| Error::Other(format!("Failed to parse token response: {e}")))?;
 
     let access_token = token_response["access_token"].as_str()
         .ok_or_else(|| Error::Other("Missing access token".to_string()))?;
@@ -124,7 +124,7 @@ pub async fn exchange_google_oauth_code(db: &PgPool, code: &str) -> Result<Uuid>
     .bind(expires_at)
     .execute(db)
     .await
-    .map_err(|e| Error::Database(format!("Failed to create source: {}", e)))?;
+    .map_err(|e| Error::Database(format!("Failed to create source: {e}")))?;
 
     Ok(source_id)
 }
@@ -171,7 +171,7 @@ pub async fn sync_google_calendar(db: &PgPool, source_id: Uuid) -> Result<SyncSt
     let stats = sync.sync().await?;
 
     Ok(SyncStats {
-        events_count: stats.upserted,
+        events_count: stats.records_written,
         start_date: Utc::now() - Duration::days(30),
         end_date: Utc::now(),
     })
@@ -213,7 +213,7 @@ pub async fn create_google_source_with_refresh_token(
 
     let client = reqwest::Client::new();
     let response = client
-        .post(format!("{}/google/refresh", oauth_proxy_url))
+        .post(format!("{oauth_proxy_url}/google/refresh"))
         .json(&json!({
             "refresh_token": refresh_token,
             "client_id": client_id,
@@ -221,15 +221,15 @@ pub async fn create_google_source_with_refresh_token(
         }))
         .send()
         .await
-        .map_err(|e| Error::Network(format!("Failed to refresh token: {}", e)))?;
+        .map_err(|e| Error::Network(format!("Failed to refresh token: {e}")))?;
 
     if !response.status().is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        return Err(Error::Other(format!("Token refresh failed: {}", error_text)));
+        return Err(Error::Other(format!("Token refresh failed: {error_text}")));
     }
 
     let token_response: serde_json::Value = response.json().await
-        .map_err(|e| Error::Other(format!("Failed to parse token response: {}", e)))?;
+        .map_err(|e| Error::Other(format!("Failed to parse token response: {e}")))?;
 
     let access_token = token_response["access_token"].as_str()
         .ok_or_else(|| Error::Other("Missing access token".to_string()))?;
@@ -249,7 +249,7 @@ pub async fn create_google_source_with_refresh_token(
     .bind(expires_at)
     .execute(db)
     .await
-    .map_err(|e| Error::Database(format!("Failed to create source: {}", e)))?;
+    .map_err(|e| Error::Database(format!("Failed to create source: {e}")))?;
 
     Ok(source_id)
 }
@@ -260,4 +260,77 @@ pub struct SyncStats {
     pub events_count: usize,
     pub start_date: DateTime<Utc>,
     pub end_date: DateTime<Utc>,
+}
+
+// ============================================================================
+// Catalog / Registry API
+// ============================================================================
+
+/// List all available sources in the catalog
+///
+/// Returns metadata about all sources that can be configured, including
+/// their authentication requirements, available streams, and configuration options.
+///
+/// # Example
+/// ```
+/// let sources = ariata::list_available_sources();
+/// for source in sources {
+///     println!("Source: {} ({})", source.display_name, source.name);
+///     println!("  Auth: {:?}", source.auth_type);
+///     println!("  Streams: {}", source.streams.len());
+/// }
+/// ```
+pub fn list_available_sources() -> Vec<&'static crate::registry::SourceDescriptor> {
+    crate::registry::list_sources()
+}
+
+/// Get information about a specific source
+///
+/// # Arguments
+/// * `name` - The source identifier (e.g., "google", "strava", "notion")
+///
+/// # Returns
+/// Source metadata including available streams and configuration schemas, or None if not found
+///
+/// # Example
+/// ```
+/// let google = ariata::get_source_info("google").unwrap();
+/// println!("Google has {} streams available", google.streams.len());
+/// ```
+pub fn get_source_info(name: &str) -> Option<&'static crate::registry::SourceDescriptor> {
+    crate::registry::get_source(name)
+}
+
+/// Get information about a specific stream
+///
+/// # Arguments
+/// * `source_name` - The source identifier (e.g., "google")
+/// * `stream_name` - The stream identifier (e.g., "calendar")
+///
+/// # Returns
+/// Stream metadata including configuration schema and database table name, or None if not found
+///
+/// # Example
+/// ```
+/// let calendar = ariata::get_stream_info("google", "calendar").unwrap();
+/// println!("Table: {}", calendar.table_name);
+/// println!("Config schema: {}", calendar.config_schema);
+/// ```
+pub fn get_stream_info(source_name: &str, stream_name: &str) -> Option<&'static crate::registry::StreamDescriptor> {
+    crate::registry::get_stream(source_name, stream_name)
+}
+
+/// List all streams across all sources
+///
+/// Returns a list of (source_name, stream_descriptor) tuples for all registered streams.
+///
+/// # Example
+/// ```
+/// let all_streams = ariata::list_all_streams();
+/// for (source, stream) in all_streams {
+///     println!("{}.{} -> {}", source, stream.name, stream.table_name);
+/// }
+/// ```
+pub fn list_all_streams() -> Vec<(&'static str, &'static crate::registry::StreamDescriptor)> {
+    crate::registry::list_all_streams()
 }

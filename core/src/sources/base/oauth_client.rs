@@ -242,7 +242,7 @@ impl OAuthHttpClient {
                     // Handle sync token errors first (before retry logic)
                     if matches!(error_class, ErrorClass::SyncTokenError) {
                         // Sync token invalid - let caller handle this
-                        return Err(Error::Source(format!("Sync token invalid: {}", error_body)));
+                        return Err(Error::Source(format!("Sync token invalid: {error_body}")));
                     }
 
                     // Check if we should retry
@@ -309,7 +309,7 @@ impl OAuthHttpClient {
         T: DeserializeOwned,
     {
         response.json::<T>().await
-            .map_err(|e| Error::Other(format!("Failed to parse response: {}", e)))
+            .map_err(|e| Error::Other(format!("Failed to parse response: {e}")))
     }
 
     /// Build full URL from path
@@ -330,7 +330,7 @@ impl OAuthHttpClient {
 
     /// Format error message based on status and body
     fn format_error(&self, status: StatusCode, body: &str) -> Error {
-        Error::Http(format!("API error ({}): {}", status, body))
+        Error::Http(format!("API error ({status}): {body}"))
     }
 }
 

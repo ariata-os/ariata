@@ -6,8 +6,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
-    error::Result,
+    error::{Error, Result},
     oauth::token_manager::TokenManager,
+    sources::base::{DataSource, GoogleSyncToken, HealthStatus, SyncCursor, SyncMode, SyncResult, SyncLogger, TypedCursor},
 };
 use super::{
     client::GoogleClient,
@@ -21,6 +22,7 @@ pub struct GoogleCalendarSync {
     client: GoogleClient,
     db: PgPool,
     config: GoogleCalendarConfig,
+    token_manager: Arc<TokenManager>,
 }
 
 impl GoogleCalendarSync {
@@ -28,7 +30,7 @@ impl GoogleCalendarSync {
     pub fn new(source_id: Uuid, db: PgPool, token_manager: Arc<TokenManager>) -> Self {
         let client = GoogleClient::with_api(
             source_id,
-            token_manager,
+            token_manager.clone(),
             "calendar",
             "v3"
         );
@@ -38,6 +40,7 @@ impl GoogleCalendarSync {
             client,
             db,
             config: GoogleCalendarConfig::default(),
+            token_manager,
         }
     }
 
@@ -50,7 +53,7 @@ impl GoogleCalendarSync {
     ) -> Self {
         let client = GoogleClient::with_api(
             source_id,
-            token_manager,
+            token_manager.clone(),
             "calendar",
             "v3"
         );
@@ -60,6 +63,7 @@ impl GoogleCalendarSync {
             client,
             db,
             config,
+            token_manager,
         }
     }
 
@@ -88,14 +92,50 @@ impl GoogleCalendarSync {
     }
 
     /// Sync calendar events with automatic token refresh
-    pub async fn sync(&self) -> Result<SyncStats> {
-        // Token refresh is now handled automatically by the OAuthSource trait
-        self.sync_internal().await
+    #[tracing::instrument(skip(self), fields(source_id = %self.source_id))]
+    pub async fn sync(&self) -> Result<SyncResult> {
+        let started_at = Utc::now();
+        let logger = SyncLogger::new(self.db.clone());
+
+        // Get last sync token to determine mode
+        let last_sync_token = self.get_last_sync_token().await?;
+        let sync_mode = if let Some(token) = last_sync_token {
+            SyncMode::incremental(Some(token.to_string()))
+        } else {
+            SyncMode::full_refresh()
+        };
+
+        tracing::info!(mode = ?sync_mode, "Starting calendar sync");
+
+        // Execute the sync
+        match self.sync_internal(&sync_mode).await {
+            Ok(result) => {
+                // Log success to database
+                if let Err(e) = logger.log_success(self.source_id, &sync_mode, &result).await {
+                    tracing::warn!(error = %e, "Failed to log sync success");
+                }
+
+                Ok(result)
+            }
+            Err(e) => {
+                // Log failure to database
+                if let Err(log_err) = logger.log_failure(self.source_id, &sync_mode, started_at, &e).await {
+                    tracing::warn!(error = %log_err, "Failed to log sync failure");
+                }
+
+                Err(e)
+            }
+        }
     }
 
     /// Internal sync implementation
-    async fn sync_internal(&self) -> Result<SyncStats> {
-        let mut stats = SyncStats::default();
+    #[tracing::instrument(skip(self), fields(source_id = %self.source_id, mode = ?sync_mode))]
+    async fn sync_internal(&self, sync_mode: &SyncMode) -> Result<SyncResult> {
+        let started_at = Utc::now();
+        let mut records_fetched = 0;
+        let mut records_written = 0;
+        let mut records_failed = 0;
+        let mut next_cursor = None;
 
         // Get last sync token from database
         let last_sync_token = self.get_last_sync_token().await?;
@@ -103,79 +143,213 @@ impl GoogleCalendarSync {
         // Use calendars from configuration
         let calendars = self.config.calendar_ids.clone();
 
-        for calendar_id in calendars {
+        for calendar_id in &calendars {
+            tracing::debug!(calendar_id = %calendar_id, "Syncing calendar");
+
             let result = if let Some(ref token) = last_sync_token {
                 // Incremental sync using sync token
-                self.sync_incremental(&calendar_id, token).await?
+                self.sync_incremental(calendar_id, &token.to_string()).await?
             } else {
-                // Full sync - get all events from last 90 days
-                self.sync_full(&calendar_id).await?
+                // Full sync - get all events from configured time bounds
+                self.sync_full(calendar_id).await?
             };
+
+            records_fetched += result.items.len();
 
             // Process events
             for event in result.items {
-                if self.upsert_event(&calendar_id, &event).await? {
-                    stats.upserted += 1;
-                } else {
-                    stats.skipped += 1;
+                match self.upsert_event(calendar_id, &event).await {
+                    Ok(true) => records_written += 1,
+                    Ok(false) => {
+                        // Event skipped (missing required fields)
+                        records_failed += 1;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            event_id = %event.id,
+                            error = %e,
+                            "Failed to upsert event"
+                        );
+                        records_failed += 1;
+                    }
                 }
             }
 
             // Save new sync token
-            if let Some(token) = result.next_sync_token {
+            if let Some(token_str) = result.next_sync_token {
+                let token = GoogleSyncToken(token_str.clone());
                 self.save_sync_token(&token).await?;
+                next_cursor = Some(token_str);
             }
         }
 
-        Ok(stats)
+        let completed_at = Utc::now();
+
+        Ok(SyncResult {
+            records_fetched,
+            records_written,
+            records_failed,
+            next_cursor,
+            started_at,
+            completed_at,
+        })
     }
 
-    /// Get events using sync token (incremental sync)
+    /// Get events using sync token (incremental sync) with pagination
     async fn sync_incremental(&self, calendar_id: &str, sync_token: &str) -> Result<EventsResponse> {
-        let params = vec![
-            ("syncToken", sync_token),
-        ];
+        // Fetch all pages for incremental sync
+        let mut all_events = Vec::new();
+        let mut page_token: Option<String> = None;
+        let mut page_count = 0;
+        let mut latest_sync_token = None;
 
-        match self.client.get_with_params(
-            &format!("calendars/{}/events", calendar_id),
-            &params
-        ).await {
-            Ok(response) => Ok(response),
-            Err(e) if GoogleClient::is_sync_token_error(&e) => {
-                // Sync token is invalid, clear it and do full sync
-                self.clear_sync_token().await?;
-                self.sync_full(calendar_id).await
-            },
-            Err(e) => Err(e),
+        loop {
+            let mut params = vec![("syncToken", sync_token.to_string())];
+
+            // Add page token if present
+            if let Some(ref token) = page_token {
+                params.push(("pageToken", token.clone()));
+            }
+
+            let param_refs: Vec<(&str, &str)> = params.iter()
+                .map(|(k, v)| (*k, v.as_str()))
+                .collect();
+
+            let response: EventsResponse = match self.client.get_with_params(
+                &format!("calendars/{calendar_id}/events"),
+                &param_refs
+            ).await {
+                Ok(response) => response,
+                Err(e) if GoogleClient::is_sync_token_error(&e) => {
+                    // Sync token is invalid, clear it and do full sync
+                    tracing::warn!("Sync token invalid, falling back to full sync");
+                    self.clear_sync_token().await?;
+                    return self.sync_full(calendar_id).await;
+                },
+                Err(e) => return Err(e),
+            };
+
+            page_count += 1;
+
+            tracing::debug!(
+                page = page_count,
+                events_count = response.items.len(),
+                next_page_token = ?response.next_page_token,
+                next_sync_token = ?response.next_sync_token,
+                "Received incremental events response"
+            );
+
+            all_events.extend(response.items);
+
+            // Save sync token from last page
+            if response.next_sync_token.is_some() {
+                latest_sync_token = response.next_sync_token;
+            }
+
+            // Check if there are more pages
+            if let Some(next_token) = response.next_page_token {
+                page_token = Some(next_token);
+            } else {
+                // No more pages
+                break;
+            }
         }
+
+        tracing::info!(
+            calendar_id = %calendar_id,
+            pages_fetched = page_count,
+            total_events = all_events.len(),
+            "Completed paginated incremental calendar sync"
+        );
+
+        // Return combined response
+        Ok(EventsResponse {
+            items: all_events,
+            next_sync_token: latest_sync_token,
+            next_page_token: None,
+        })
     }
 
-    /// Get all events (full sync)
+    /// Get all events (full sync) with pagination
     async fn sync_full(&self, calendar_id: &str) -> Result<EventsResponse> {
         // Calculate time bounds based on configuration
         let (min_time_dt, max_time_dt) = self.config.calculate_time_bounds();
 
-        let mut params = vec![
+        let mut base_params = vec![
             ("maxResults", self.config.max_events_per_sync.to_string()),
             ("singleEvents", "true".to_string()),
             ("orderBy", "startTime".to_string()),
         ];
 
         if let Some(min) = min_time_dt {
-            params.push(("timeMin", min.to_rfc3339()));
+            base_params.push(("timeMin", min.to_rfc3339()));
         }
         if let Some(max) = max_time_dt {
-            params.push(("timeMax", max.to_rfc3339()));
+            base_params.push(("timeMax", max.to_rfc3339()));
         }
 
-        let param_refs: Vec<(&str, &str)> = params.iter()
-            .map(|(k, v)| (*k, v.as_str()))
-            .collect();
+        // Fetch all pages and collect events
+        let mut all_events = Vec::new();
+        let mut page_token: Option<String> = None;
+        let mut page_count = 0;
+        let mut latest_sync_token = None;
 
-        self.client.get_with_params(
-            &format!("calendars/{}/events", calendar_id),
-            &param_refs
-        ).await
+        loop {
+            let mut params = base_params.clone();
+
+            // Add page token if present
+            if let Some(ref token) = page_token {
+                params.push(("pageToken", token.clone()));
+            }
+
+            let param_refs: Vec<(&str, &str)> = params.iter()
+                .map(|(k, v)| (*k, v.as_str()))
+                .collect();
+
+            let response: EventsResponse = self.client.get_with_params(
+                &format!("calendars/{calendar_id}/events"),
+                &param_refs
+            ).await?;
+
+            page_count += 1;
+
+            tracing::debug!(
+                page = page_count,
+                events_count = response.items.len(),
+                next_page_token = ?response.next_page_token,
+                next_sync_token = ?response.next_sync_token,
+                "Received events response"
+            );
+
+            all_events.extend(response.items);
+
+            // Save sync token from last page
+            if response.next_sync_token.is_some() {
+                latest_sync_token = response.next_sync_token;
+            }
+
+            // Check if there are more pages
+            if let Some(next_token) = response.next_page_token {
+                page_token = Some(next_token);
+            } else {
+                // No more pages
+                break;
+            }
+        }
+
+        tracing::info!(
+            calendar_id = %calendar_id,
+            pages_fetched = page_count,
+            total_events = all_events.len(),
+            "Completed paginated calendar sync"
+        );
+
+        // Return combined response
+        Ok(EventsResponse {
+            items: all_events,
+            next_sync_token: latest_sync_token,
+            next_page_token: None,
+        })
     }
 
     /// Insert or update an event
@@ -314,24 +488,34 @@ impl GoogleCalendarSync {
         Ok(true)
     }
 
-    /// Get the last sync token from the database
-    async fn get_last_sync_token(&self) -> Result<Option<String>> {
+    /// Get the last sync token from the database (typed cursor version)
+    async fn get_last_sync_token(&self) -> Result<Option<GoogleSyncToken>> {
         let row = sqlx::query_as::<_, (Option<String>,)>(
-            "SELECT last_sync_token FROM sources WHERE id = $1"
+            "SELECT cursor_metadata FROM sources WHERE id = $1"
         )
         .bind(self.source_id)
         .fetch_one(&self.db)
         .await?;
 
-        Ok(row.0)
+        if let Some(json) = row.0 {
+            let typed = TypedCursor::from_json(&json)?;
+            let cursor = typed.decode::<GoogleSyncToken>()?;
+            Ok(Some(cursor))
+        } else {
+            Ok(None)
+        }
     }
 
-    /// Save the sync token to the database
-    async fn save_sync_token(&self, token: &str) -> Result<()> {
+    /// Save the sync token to the database (typed cursor version)
+    async fn save_sync_token(&self, token: &GoogleSyncToken) -> Result<()> {
+        let typed = TypedCursor::new(token);
+        let json = typed.to_json();
+
         sqlx::query(
-            "UPDATE sources SET last_sync_token = $1, last_sync_at = $2 WHERE id = $3"
+            "UPDATE sources SET cursor_metadata = $1, cursor_type = $2, last_sync_at = $3 WHERE id = $4"
         )
-        .bind(token)
+        .bind(json)
+        .bind(GoogleSyncToken::cursor_type())
         .bind(Utc::now())
         .bind(self.source_id)
         .execute(&self.db)
@@ -343,7 +527,7 @@ impl GoogleCalendarSync {
     /// Clear the sync token (used when token is invalid)
     async fn clear_sync_token(&self) -> Result<()> {
         sqlx::query(
-            "UPDATE sources SET last_sync_token = NULL WHERE id = $1"
+            "UPDATE sources SET cursor_metadata = NULL, cursor_type = NULL WHERE id = $1"
         )
         .bind(self.source_id)
         .execute(&self.db)
@@ -352,14 +536,162 @@ impl GoogleCalendarSync {
         Ok(())
     }
 
+    /// Get last successful sync time from database
+    async fn get_last_sync_at(&self) -> Result<Option<DateTime<Utc>>> {
+        let row = sqlx::query_as::<_, (Option<DateTime<Utc>>,)>(
+            "SELECT last_sync_at FROM sources WHERE id = $1"
+        )
+        .bind(self.source_id)
+        .fetch_one(&self.db)
+        .await?;
+
+        Ok(row.0)
+    }
 }
 
-/// Statistics from a sync operation
-#[derive(Debug, Default)]
-pub struct SyncStats {
-    pub upserted: usize,
-    pub skipped: usize,
+// ===== DataSource Trait Implementation =====
+
+#[async_trait::async_trait]
+impl DataSource for GoogleCalendarSync {
+    fn source_id(&self) -> Uuid {
+        self.source_id
+    }
+
+    fn source_type(&self) -> &str {
+        "google"
+    }
+
+    fn stream_name(&self) -> &str {
+        "calendar"
+    }
+
+    fn validate_config(config: &serde_json::Value) -> Result<()> {
+        GoogleCalendarConfig::from_json(config)
+            .map_err(|e| Error::Configuration(format!("Invalid GoogleCalendarConfig: {e}")))?;
+        Ok(())
+    }
+
+    fn required_scopes(&self) -> Vec<String> {
+        vec![
+            "https://www.googleapis.com/auth/calendar.readonly".to_string(),
+            "https://www.googleapis.com/auth/calendar.events.readonly".to_string(),
+        ]
+    }
+
+    async fn sync(&self, mode: &SyncMode) -> Result<SyncResult> {
+        // The existing sync() method already handles both modes
+        // We'll delegate to sync_internal with the provided mode
+        let started_at = Utc::now();
+        let logger = SyncLogger::new(self.db.clone());
+
+        tracing::info!(mode = ?mode, "Starting calendar sync via DataSource trait");
+
+        match self.sync_internal(mode).await {
+            Ok(result) => {
+                // Log success to database
+                if let Err(e) = logger.log_success(self.source_id, mode, &result).await {
+                    tracing::warn!(error = %e, "Failed to log sync success");
+                }
+                Ok(result)
+            }
+            Err(e) => {
+                // Log failure to database
+                if let Err(log_err) = logger.log_failure(self.source_id, mode, started_at, &e).await {
+                    tracing::warn!(error = %log_err, "Failed to log sync failure");
+                }
+                Err(e)
+            }
+        }
+    }
+
+    async fn health_check(&self) -> Result<HealthStatus> {
+        // Check if we can get a valid token
+        let token_check = self.token_manager
+            .get_valid_token(self.source_id)
+            .await;
+
+        let last_sync = self.get_last_sync_at().await.unwrap_or(None);
+
+        match token_check {
+            Ok(_) => Ok(HealthStatus {
+                is_healthy: true,
+                message: "Google Calendar authentication valid".to_string(),
+                last_check: Utc::now(),
+                last_successful_sync: last_sync,
+                error_count: 0,
+            }),
+            Err(e) => Ok(HealthStatus {
+                is_healthy: false,
+                message: format!("Authentication error: {e}"),
+                last_check: Utc::now(),
+                last_successful_sync: last_sync,
+                error_count: 1,
+            }),
+        }
+    }
+
+    fn sync_schedule(&self) -> String {
+        // Google Calendar: sync every 5 minutes
+        "0 */5 * * * *".to_string()
+    }
 }
 
 #[cfg(test)]
-mod test;
+mod tests {
+    
+    use crate::sources::google::config::{GoogleCalendarConfig, SyncDirection};
+    use chrono::{Duration, Utc};
+
+    #[test]
+    fn test_config_time_bounds_past() {
+        // Test past sync
+        let config = GoogleCalendarConfig {
+            sync_window_days: 30,
+            sync_direction: SyncDirection::Past,
+            ..Default::default()
+        };
+
+        let (min, max) = config.calculate_time_bounds();
+        let now = Utc::now();
+
+        assert!(min.is_some());
+        assert!(max.is_some());
+
+        let min_time = min.unwrap();
+        let max_time = max.unwrap();
+
+        // Check that we're looking 30 days in the past
+        let expected_min = now - Duration::days(30);
+        let diff = (min_time - expected_min).num_seconds().abs();
+        assert!(diff < 60, "Min time should be ~30 days ago");
+
+        let diff = (max_time - now).num_seconds().abs();
+        assert!(diff < 60, "Max time should be ~now");
+    }
+
+    #[test]
+    fn test_config_time_bounds_future() {
+        // Test future sync
+        let config = GoogleCalendarConfig {
+            sync_window_days: 7,
+            sync_direction: SyncDirection::Future,
+            ..Default::default()
+        };
+
+        let (min, max) = config.calculate_time_bounds();
+        let now = Utc::now();
+
+        assert!(min.is_some());
+        assert!(max.is_some());
+
+        let min_time = min.unwrap();
+        let max_time = max.unwrap();
+
+        let diff = (min_time - now).num_seconds().abs();
+        assert!(diff < 60, "Min time should be ~now for future sync");
+
+        let expected_max = now + Duration::days(7);
+        let diff = (max_time - expected_max).num_seconds().abs();
+        assert!(diff < 60, "Max time should be ~7 days from now");
+    }
+}

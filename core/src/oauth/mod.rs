@@ -68,7 +68,7 @@ impl OAuthManager {
     /// Generate OAuth authorization URL
     pub fn get_auth_url(&self, provider_name: &str) -> Result<(String, CsrfToken)> {
         let provider = self.providers.get(provider_name)
-            .ok_or_else(|| Error::Other(format!("Unknown provider: {}", provider_name)))?;
+            .ok_or_else(|| Error::Other(format!("Unknown provider: {provider_name}")))?;
 
         let client = BasicClient::new(
             ClientId::new(provider.client_id.clone()),
@@ -97,7 +97,7 @@ impl OAuthManager {
         code: String,
     ) -> Result<OAuthCredentials> {
         let provider = self.providers.get(provider_name)
-            .ok_or_else(|| Error::Other(format!("Unknown provider: {}", provider_name)))?;
+            .ok_or_else(|| Error::Other(format!("Unknown provider: {provider_name}")))?;
 
         let client = BasicClient::new(
             ClientId::new(provider.client_id.clone()),
@@ -111,7 +111,7 @@ impl OAuthManager {
             .exchange_code(AuthorizationCode::new(code))
             .request_async(async_http_client)
             .await
-            .map_err(|e| Error::Other(format!("Token exchange failed: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Token exchange failed: {e}")))?;
 
         let credentials = OAuthCredentials {
             provider: provider_name.to_string(),
@@ -136,12 +136,12 @@ impl OAuthManager {
     /// Refresh an access token
     pub async fn refresh_token(&self, provider_name: &str) -> Result<OAuthCredentials> {
         let provider = self.providers.get(provider_name)
-            .ok_or_else(|| Error::Other(format!("Unknown provider: {}", provider_name)))?;
+            .ok_or_else(|| Error::Other(format!("Unknown provider: {provider_name}")))?;
 
         // Get current credentials
         let tokens = self.tokens.read().await;
         let current = tokens.get(provider_name)
-            .ok_or_else(|| Error::Other(format!("No credentials for: {}", provider_name)))?;
+            .ok_or_else(|| Error::Other(format!("No credentials for: {provider_name}")))?;
 
         let refresh_token = current.refresh_token.as_ref()
             .ok_or_else(|| Error::Other("No refresh token available".to_string()))?;
@@ -157,7 +157,7 @@ impl OAuthManager {
             .exchange_refresh_token(&RefreshToken::new(refresh_token.clone()))
             .request_async(async_http_client)
             .await
-            .map_err(|e| Error::Other(format!("Token refresh failed: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Token refresh failed: {e}")))?;
 
         let new_credentials = OAuthCredentials {
             provider: provider_name.to_string(),
@@ -246,7 +246,7 @@ impl OAuthManager {
         let results = self.db.query(query).await?;
 
         if results.is_empty() {
-            return Err(Error::Other(format!("No credentials for: {}", provider_name)));
+            return Err(Error::Other(format!("No credentials for: {provider_name}")));
         }
 
         let json_str = results[0].get("credentials")
@@ -275,7 +275,7 @@ impl OAuthManager {
 
 impl From<oauth2::url::ParseError> for Error {
     fn from(e: oauth2::url::ParseError) -> Self {
-        Error::Other(format!("OAuth URL error: {}", e))
+        Error::Other(format!("OAuth URL error: {e}"))
     }
 }
 

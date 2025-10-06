@@ -60,6 +60,30 @@ Examples:
 
 The Rust core is the **single source of truth** for all data pipeline logic.
 
+### Architecture Rationale: Why Monolithic Rust?
+
+Ariata uses a **single Rust package** for all data sources, unlike enterprise tools (Airbyte) that use Docker containers per source. This is the correct architecture for personal data:
+
+**Why personal data is different:**
+- **Device coupling**: iOS/macOS apps require direct hardware access (HealthKit, Location, Microphone) that can't run in containers
+- **Cross-stream correlation**: Features like "heart rate during meetings" require joining HealthKit + Calendar data in-process, not via IPC
+- **Shared authentication**: OAuth tokens, device tokens, and sync checkpoints benefit from centralized management
+- **Single-user system**: No multi-tenancy isolation needed—simpler code, better performance
+- **Real-time ingestion**: Sub-second latency for streaming data from devices
+
+**Extensibility via plugins:**
+- Users can add custom sources by implementing the `DataSource` trait in `plugins/` directory
+- No need to fork—plugins compile alongside core or load dynamically as `.dylib`
+- See `core/examples/custom_source.rs` for template
+
+**When to use modular (Airbyte-style) architecture:**
+- ❌ Multi-tenancy (isolation) - Not needed for single-user
+- ❌ Untrusted code - We control all sources
+- ❌ Polyglot (multiple languages) - Rust is sufficient
+- ❌ Cloud-scale - Runs on personal infrastructure
+
+The monolithic approach is **intentional**, not a limitation.
+
 ### Key Features
 
 - **High-performance ELT**: Rust's performance for data processing
@@ -67,8 +91,94 @@ The Rust core is the **single source of truth** for all data pipeline logic.
 - **PostgreSQL integration**: `sqlx` for database operations with compile-time query checking
 - **S3/MinIO storage**: AWS SDK for object storage
 - **HTTP ingestion server**: `axum` for receiving data from devices
-- **OAuth support**: Built-in OAuth2 flows for cloud sources
+- **OAuth composability**: Universal `OAuthHttpClient` + trait-based error handling for all providers
+- **Observability**: Two-layer logging (tracing + database sync_logs) for production monitoring
 - **CLI tool**: `ariata` binary for management operations
+
+### OAuth Composability Architecture
+
+The Rust core uses a **trait-based composability pattern** to minimize code duplication across OAuth providers:
+
+**Universal HTTP Client** (`core/src/sources/base/oauth_client.rs`):
+- Single `OAuthHttpClient` (~250 lines) handles all OAuth providers
+- Automatic retry with exponential backoff (1s → 2s → 4s → 8s → 16s → 30s max)
+- Token refresh on 401 errors
+- Rate limit detection (429 status)
+- Provider-specific error handling via `ErrorHandler` trait
+
+**Provider-Specific Logic** via traits:
+- `ErrorHandler` trait for classifying errors (auth, rate limit, sync token, server, client)
+- Each provider implements custom error detection (e.g., Google returns both 400 AND 410 for invalid sync tokens)
+- Example: `GoogleErrorHandler` checks status codes + response body patterns
+
+**Benefits:**
+- **45% code reduction**: GoogleClient went from 206 lines to 113 lines
+- **30-minute onboarding**: Adding new OAuth providers (Notion, Strava) now takes ~30 min vs 4-6 hours
+- **Consistent behavior**: All providers get retry, backoff, token refresh for free
+- **Testability**: ErrorHandler trait makes provider-specific logic unit-testable
+
+**File structure:**
+```
+core/src/sources/
+├── base/
+│   ├── oauth_client.rs     # Universal OAuth HTTP client
+│   ├── error_handler.rs    # ErrorHandler trait + DefaultErrorHandler
+│   └── sync_mode.rs        # SyncMode (FullRefresh/Incremental) + SyncResult
+├── google/
+│   ├── client.rs           # GoogleClient (delegates to OAuthHttpClient)
+│   ├── error_handler.rs    # Google-specific error classification
+│   └── calendar/mod.rs     # Calendar sync implementation
+├── notion/...              # Same pattern
+└── strava/...              # Same pattern
+```
+
+### Observability & Sync Logging
+
+The Rust core implements **two-layer logging** for production observability:
+
+**Layer 1: Application Logs** (via `tracing` library):
+- Real-time structured logging during sync operations
+- Instrumented with `#[tracing::instrument]` for automatic context propagation
+- Fields: `source_id`, `sync_mode`, `calendar_id`, `records_fetched`, `duration_ms`
+- Output to stdout/files/observability platforms (DataDog, CloudWatch, etc)
+- Used for development debugging and real-time monitoring
+
+**Layer 2: Database Sync Logs** (`sync_logs` table):
+- Permanent audit trail of **every sync operation** across all sources
+- Powers analytics: success rates, throughput trends, error patterns
+- Required for compliance and debugging historical issues
+- Matches enterprise ELT patterns (Airbyte, Fivetran, dbt)
+
+**Schema** (`core/migrations/003_sync_logs.sql`):
+```sql
+CREATE TABLE sync_logs (
+    id UUID PRIMARY KEY,
+    source_id UUID REFERENCES sources(id),
+    sync_mode TEXT,           -- 'full_refresh' or 'incremental'
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    duration_ms INTEGER,
+    status TEXT,              -- 'success', 'failed', 'partial'
+    records_fetched INTEGER,
+    records_written INTEGER,
+    records_failed INTEGER,
+    error_message TEXT,
+    error_class TEXT,         -- 'auth_error', 'rate_limit', 'sync_token_error', etc
+    sync_cursor_before TEXT,  -- Token/cursor at start
+    sync_cursor_after TEXT,   -- Token/cursor for next sync
+    created_at TIMESTAMPTZ
+);
+```
+
+**Usage** (automatic via `SyncLogger`):
+- Every `sync()` call logs to database on success/failure
+- Error classification for monitoring dashboards
+- Cursor tracking for incremental sync debugging
+- Historical queries: "What was sync success rate last week?"
+
+**Why both layers?**
+- **Tracing**: Ephemeral, low-latency, detailed debugging
+- **Database**: Permanent, queryable, audit trail + analytics
 
 ### Error Handling
 
@@ -84,10 +194,9 @@ Rationale: Libraries should expose typed errors for callers to handle, binaries 
 
 Migrations are **numbered** and run in order:
 
-- `001_*.sql` - Core schema (sources, streams, stream_data)
-- `003_*.sql` - OAuth and scheduler tables + initial stream tables
-- `004_*.sql` - Fix legacy naming conventions
-- `005_*.sql` - Auto-generated stream schemas from YAML
+- `001_core.sql` - Core schema (sources table with OAuth tokens)
+- `002_google_calendar.sql` - Google Calendar stream table
+- `003_sync_logs.sql` - Sync logging for observability
 
 **Running migrations**:
 

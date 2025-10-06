@@ -1,0 +1,17 @@
+# Rust build artifacts
+target/
+
+# Tests
+tests/
+
+# Documentation
+*.md
+docs/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.*

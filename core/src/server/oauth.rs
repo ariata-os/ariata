@@ -29,6 +29,7 @@ impl OAuthProxyClient {
         Err("OAuth proxy not implemented".to_string())
     }
 
+    #[allow(dead_code)]
     async fn exchange_code(&self, provider: &str, _code: &str) -> Result<OAuthTokens, String> {
         Ok(OAuthTokens {
             provider: provider.to_string(),
@@ -67,6 +68,7 @@ pub struct CallbackParams {
     pub refresh_token: Option<String>,
     pub expires_in: Option<i64>,
     pub provider: Option<String>,
+    #[allow(dead_code)]
     pub state: Option<String>,
     pub error: Option<String>,
 }
@@ -212,6 +214,7 @@ fn extract_tokens_from_params(params: &CallbackParams) -> Result<OAuthTokens, St
 }
 
 /// Connect a Google Calendar source
+#[allow(dead_code)]
 pub async fn connect_google(
     State(state): State<AppState>,
 ) -> Response {

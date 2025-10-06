@@ -14,6 +14,10 @@ build = "build.rs"
 name = "ariata"
 path = "src/lib.rs"
 
+[[bin]]
+name = "ariata"
+path = "src/main.rs"
+
 
 [dependencies]
 # Async runtime

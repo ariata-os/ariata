@@ -10,6 +10,12 @@ pub struct NotionApiClient {
     base_url: String,
 }
 
+impl Default for NotionApiClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NotionApiClient {
     /// Create a new Notion API client
     pub fn new() -> Self {
@@ -28,19 +34,19 @@ impl NotionApiClient {
 
         let response = self.client
             .get(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
             .header("Notion-Version", "2022-06-28")
             .send()
             .await
-            .map_err(|e| Error::Other(format!("Request failed: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Request failed: {e}")))?;
 
         if !response.status().is_success() {
             let error = response.text().await.unwrap_or_default();
-            return Err(Error::Other(format!("Notion API error: {}", error)));
+            return Err(Error::Other(format!("Notion API error: {error}")));
         }
 
         response.json::<T>().await
-            .map_err(|e| Error::Other(format!("Failed to parse response: {}", e)))
+            .map_err(|e| Error::Other(format!("Failed to parse response: {e}")))
     }
 
     /// Make an authenticated POST request for searches
@@ -52,19 +58,19 @@ impl NotionApiClient {
 
         let response = self.client
             .post(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
             .header("Notion-Version", "2022-06-28")
             .json(body)
             .send()
             .await
-            .map_err(|e| Error::Other(format!("Request failed: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Request failed: {e}")))?;
 
         if !response.status().is_success() {
             let error = response.text().await.unwrap_or_default();
-            return Err(Error::Other(format!("Notion API error: {}", error)));
+            return Err(Error::Other(format!("Notion API error: {error}")));
         }
 
         response.json::<T>().await
-            .map_err(|e| Error::Other(format!("Failed to parse response: {}", e)))
+            .map_err(|e| Error::Other(format!("Failed to parse response: {e}")))
     }
 }

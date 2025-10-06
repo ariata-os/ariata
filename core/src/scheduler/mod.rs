@@ -5,46 +5,25 @@ use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     error::{Error, Result},
     database::Database,
     oauth::OAuthManager,
+    sources::{DataSource, base::{SyncMode, SyncResult}},
 };
 
 /// Schedule configuration for a source
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduleConfig {
-    pub source_name: String,
+    pub source_id: Uuid,
+    pub source_type: String,
+    pub stream_name: String,
     pub cron_expression: String,  // e.g., "0 */5 * * * *" for every 5 minutes
     pub enabled: bool,
     pub last_run: Option<DateTime<Utc>>,
     pub next_run: Option<DateTime<Utc>>,
-}
-
-/// Sync task that can be scheduled
-#[async_trait::async_trait]
-pub trait SyncTask: Send + Sync {
-    /// Name of the source
-    fn source_name(&self) -> &str;
-
-    /// Execute the sync
-    async fn sync(&self) -> Result<SyncResult>;
-
-    /// Check if sync is needed
-    async fn should_sync(&self) -> bool {
-        true
-    }
-}
-
-/// Result of a sync operation
-#[derive(Debug, Serialize)]
-pub struct SyncResult {
-    pub source: String,
-    pub records_synced: usize,
-    pub duration_ms: u64,
-    pub success: bool,
-    pub error: Option<String>,
 }
 
 /// Main scheduler for managing periodic syncs
@@ -52,27 +31,27 @@ pub struct Scheduler {
     db: Arc<Database>,
     oauth: Arc<OAuthManager>,
     scheduler: Arc<RwLock<JobScheduler>>,
-    tasks: Arc<RwLock<Vec<Box<dyn SyncTask>>>>,
+    sources: Arc<RwLock<Vec<Box<dyn DataSource>>>>,
 }
 
 impl Scheduler {
     /// Create a new scheduler
     pub async fn new(db: Arc<Database>, oauth: Arc<OAuthManager>) -> Result<Self> {
         let scheduler = JobScheduler::new().await
-            .map_err(|e| Error::Other(format!("Failed to create scheduler: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to create scheduler: {e}")))?;
 
         Ok(Self {
             db,
             oauth,
             scheduler: Arc::new(RwLock::new(scheduler)),
-            tasks: Arc::new(RwLock::new(Vec::new())),
+            sources: Arc::new(RwLock::new(Vec::new())),
         })
     }
 
-    /// Register a sync task
-    pub async fn register_task(&self, task: Box<dyn SyncTask>) {
-        let mut tasks = self.tasks.write().await;
-        tasks.push(task);
+    /// Register a data source for scheduling
+    pub async fn register_source(&self, source: Box<dyn DataSource>) {
+        let mut sources = self.sources.write().await;
+        sources.push(source);
     }
 
     /// Add a scheduled sync for a source
@@ -81,54 +60,55 @@ impl Scheduler {
             return Ok(());
         }
 
-        let source_name = config.source_name.clone();
-        let tasks = self.tasks.clone();
-        let db = self.db.clone();
+        let source_id = config.source_id;
+        let sources = self.sources.clone();
 
         // Create a cron job
         let job = Job::new_async(config.cron_expression.as_str(), move |_uuid, _lock| {
-            let source_name = source_name.clone();
-            let tasks = tasks.clone();
-            let db = db.clone();
+            let source_id = source_id;
+            let sources = sources.clone();
 
             Box::pin(async move {
-                let start = std::time::Instant::now();
+                // Find the source
+                let sources_guard = sources.read().await;
+                let source = sources_guard.iter()
+                    .find(|s| s.source_id() == source_id);
 
-                // Find the task for this source
-                let tasks_guard = tasks.read().await;
-                let task = tasks_guard.iter()
-                    .find(|t| t.source_name() == source_name);
+                if let Some(source) = source {
+                    if source.should_sync().await {
+                        // Determine sync mode (for now, use incremental)
+                        let mode = SyncMode::Incremental { cursor: None };
 
-                if let Some(task) = task {
-                    if task.should_sync().await {
-                        match task.sync().await {
+                        match source.sync(&mode).await {
                             Ok(result) => {
                                 tracing::info!(
-                                    "Sync completed for {}: {} records in {}ms",
-                                    source_name, result.records_synced, result.duration_ms
+                                    source_id = %source_id,
+                                    source_type = source.source_type(),
+                                    stream = source.stream_name(),
+                                    records_fetched = result.records_fetched,
+                                    records_written = result.records_written,
+                                    duration_ms = (result.completed_at - result.started_at).num_milliseconds(),
+                                    "Scheduled sync completed"
                                 );
-
-                                // Record sync result
-                                // TODO: Implement database save
                             }
                             Err(e) => {
-                                tracing::error!("Sync failed for {}: {}", source_name, e);
-
-                                // Record failure
-                                // Record failure
-                                // TODO: Implement database save
+                                tracing::error!(
+                                    source_id = %source_id,
+                                    error = %e,
+                                    "Scheduled sync failed"
+                                );
                             }
                         }
                     }
                 } else {
-                    tracing::warn!("No task found for scheduled source: {}", source_name);
+                    tracing::warn!(source_id = %source_id, "No source found for scheduled sync");
                 }
             })
-        }).map_err(|e| Error::Other(format!("Failed to create job: {}", e)))?;
+        }).map_err(|e| Error::Other(format!("Failed to create job: {e}")))?;
 
         let scheduler = self.scheduler.write().await;
         scheduler.add(job).await
-            .map_err(|e| Error::Other(format!("Failed to add job: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to add job: {e}")))?;
 
         // Store schedule in database
         self.save_schedule(&config).await?;
@@ -156,9 +136,9 @@ impl Scheduler {
         // Start the scheduler
         let scheduler = self.scheduler.write().await;
         scheduler.start().await
-            .map_err(|e| Error::Other(format!("Failed to start scheduler: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to start scheduler: {e}")))?;
 
-        tracing::info!("Scheduler started with {} tasks", self.tasks.read().await.len());
+        tracing::info!("Scheduler started with {} sources", self.sources.read().await.len());
 
         Ok(())
     }
@@ -167,7 +147,7 @@ impl Scheduler {
     pub async fn stop(&self) -> Result<()> {
         let mut scheduler = self.scheduler.write().await;
         scheduler.shutdown().await
-            .map_err(|e| Error::Other(format!("Failed to stop scheduler: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to stop scheduler: {e}")))?;
 
         tracing::info!("Scheduler stopped");
         Ok(())
@@ -199,11 +179,11 @@ impl Scheduler {
                     }
                 }
             })
-        }).map_err(|e| Error::Other(format!("Failed to create token refresh job: {}", e)))?;
+        }).map_err(|e| Error::Other(format!("Failed to create token refresh job: {e}")))?;
 
         let scheduler = self.scheduler.write().await;
         scheduler.add(job).await
-            .map_err(|e| Error::Other(format!("Failed to add token refresh job: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to add token refresh job: {e}")))?;
 
         Ok(())
     }
@@ -229,11 +209,11 @@ impl Scheduler {
                     Err(e) => tracing::error!("Cleanup failed: {}", e),
                 }
             })
-        }).map_err(|e| Error::Other(format!("Failed to create cleanup job: {}", e)))?;
+        }).map_err(|e| Error::Other(format!("Failed to create cleanup job: {e}")))?;
 
         let scheduler = self.scheduler.write().await;
         scheduler.add(job).await
-            .map_err(|e| Error::Other(format!("Failed to add cleanup job: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to add cleanup job: {e}")))?;
 
         Ok(())
     }
@@ -241,15 +221,21 @@ impl Scheduler {
     /// Save schedule configuration to database
     async fn save_schedule(&self, config: &ScheduleConfig) -> Result<()> {
         let query = "
-            INSERT INTO sync_schedules (source_name, cron_expression, enabled, updated_at)
-            VALUES ($1, $2, $3, NOW())
-            ON CONFLICT (source_name) DO UPDATE
-            SET cron_expression = $2, enabled = $3, updated_at = NOW()
+            INSERT INTO sync_schedules (source_id, source_type, stream_name, cron_expression, enabled, updated_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (source_id) DO UPDATE
+            SET cron_expression = $4, enabled = $5, updated_at = NOW()
         ";
 
         self.db.execute(
             query,
-            &[&config.source_name, &config.cron_expression, &config.enabled.to_string()]
+            &[
+                &config.source_id.to_string(),
+                &config.source_type,
+                &config.stream_name,
+                &config.cron_expression,
+                &config.enabled.to_string(),
+            ]
         ).await?;
 
         Ok(())
@@ -258,7 +244,7 @@ impl Scheduler {
     /// Load schedules from database
     async fn load_schedules(&self) -> Result<Vec<ScheduleConfig>> {
         let query = "
-            SELECT source_name, cron_expression, enabled, last_run
+            SELECT source_id, source_type, stream_name, cron_expression, enabled, last_run
             FROM sync_schedules
             WHERE enabled = true
         ";
@@ -267,12 +253,16 @@ impl Scheduler {
 
         let schedules = results.into_iter()
             .filter_map(|row| {
-                let source_name = row.get("source_name")?.as_str()?.to_string();
+                let source_id = row.get("source_id")?.as_str()?.parse::<Uuid>().ok()?;
+                let source_type = row.get("source_type")?.as_str()?.to_string();
+                let stream_name = row.get("stream_name")?.as_str()?.to_string();
                 let cron = row.get("cron_expression")?.as_str()?.to_string();
                 let enabled = row.get("enabled")?.as_bool()?;
 
                 Some(ScheduleConfig {
-                    source_name,
+                    source_id,
+                    source_type,
+                    stream_name,
                     cron_expression: cron,
                     enabled,
                     last_run: None,
@@ -285,44 +275,25 @@ impl Scheduler {
     }
 
     /// Manually trigger a sync for a source
-    pub async fn trigger_sync(&self, source_name: &str) -> Result<SyncResult> {
-        let tasks = self.tasks.read().await;
+    pub async fn trigger_sync(&self, source_id: Uuid) -> Result<SyncResult> {
+        let sources = self.sources.read().await;
 
-        let task = tasks.iter()
-            .find(|t| t.source_name() == source_name)
-            .ok_or_else(|| Error::Other(format!("No task for source: {}", source_name)))?;
+        let source = sources.iter()
+            .find(|s| s.source_id() == source_id)
+            .ok_or_else(|| Error::Other(format!("No source found: {source_id}")))?;
 
-        task.sync().await
+        // Use incremental mode by default
+        let mode = SyncMode::Incremental { cursor: None };
+        source.sync(&mode).await
     }
 
-    /// List all registered tasks
-    pub async fn list_tasks(&self) -> Vec<String> {
-        let tasks = self.tasks.read().await;
-        tasks.iter().map(|t| t.source_name().to_string()).collect()
+    /// List all registered sources
+    pub async fn list_sources(&self) -> Vec<(Uuid, String, String)> {
+        let sources = self.sources.read().await;
+        sources.iter()
+            .map(|s| (s.source_id(), s.source_type().to_string(), s.stream_name().to_string()))
+            .collect()
     }
-}
-
-/// Record sync result in database
-#[allow(dead_code)]
-async fn record_sync_result(_db: &Database, result: SyncResult) -> Result<()> {
-    let query = "
-        INSERT INTO sync_history
-        (source, records_synced, duration_ms, success, error, created_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
-    ";
-
-    _db.execute(
-        query,
-        &[
-            &result.source,
-            &result.records_synced.to_string(),
-            &result.duration_ms.to_string(),
-            &result.success.to_string(),
-            &result.error.unwrap_or_default(),
-        ]
-    ).await?;
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -331,15 +302,20 @@ mod tests {
 
     #[test]
     fn test_schedule_config() {
+        let source_id = Uuid::new_v4();
+
         let config = ScheduleConfig {
-            source_name: "google_calendar".to_string(),
+            source_id,
+            source_type: "google".to_string(),
+            stream_name: "calendar".to_string(),
             cron_expression: "0 */5 * * * *".to_string(),
             enabled: true,
             last_run: None,
             next_run: None,
         };
 
-        assert_eq!(config.source_name, "google_calendar");
+        assert_eq!(config.source_type, "google");
+        assert_eq!(config.stream_name, "calendar");
         assert!(config.enabled);
     }
 }

@@ -5,9 +5,8 @@
 
 use chrono::{DateTime, Duration, Utc};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::PgPool;
-use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
@@ -98,7 +97,7 @@ impl TokenManager {
         .bind(source_id)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| Error::Database(format!("Source not found: {}", source_id)))?;
+        .ok_or_else(|| Error::Database(format!("Source not found: {source_id}")))?;
 
         let (provider, access_token, refresh_token, token_expires_at) = record;
 
@@ -135,7 +134,7 @@ impl TokenManager {
             }))
             .send()
             .await
-            .map_err(|e| Error::Network(format!("Failed to refresh token: {}", e)))?;
+            .map_err(|e| Error::Network(format!("Failed to refresh token: {e}")))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -150,12 +149,12 @@ impl TokenManager {
             }
 
             return Err(Error::Authentication(
-                format!("Token refresh failed ({}): {}", status, error_text)
+                format!("Token refresh failed ({status}): {error_text}")
             ));
         }
 
         let refresh_response: TokenRefreshResponse = response.json().await
-            .map_err(|e| Error::Network(format!("Invalid refresh response: {}", e)))?;
+            .map_err(|e| Error::Network(format!("Invalid refresh response: {e}")))?;
 
         // Calculate new expiry time
         let expires_at = refresh_response.expires_in
@@ -273,8 +272,9 @@ impl TokenManager {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_needs_refresh() {
+    #[tokio::test]
+    async fn test_needs_refresh() {
+        // connect_lazy requires tokio runtime
         let pool = PgPool::connect_lazy("postgres://test:test@localhost/test").unwrap();
         let manager = TokenManager::new(pool);
 

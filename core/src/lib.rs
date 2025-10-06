@@ -8,6 +8,7 @@ pub mod database;
 pub mod error;
 pub mod oauth;
 pub mod pipeline;
+pub mod registry;
 pub mod scheduler;
 pub mod server;
 pub mod sources;
@@ -21,6 +22,7 @@ pub use error::{Error, Result};
 pub use api::{
     create_google_source_with_refresh_token, exchange_google_oauth_code, generate_google_oauth_url,
     sync_google_calendar, SyncStats,
+    list_available_sources, get_source_info, get_stream_info, list_all_streams,
 };
 
 // Version information

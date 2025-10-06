@@ -39,7 +39,7 @@ impl Database {
         sqlx::query("SELECT 1")
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Database(format!("Failed to connect: {}", e)))?;
+            .map_err(|e| Error::Database(format!("Failed to connect: {e}")))?;
 
         // Run migrations
         self.run_migrations().await?;
@@ -53,7 +53,7 @@ impl Database {
         sqlx::migrate!("./migrations")
             .run(&self.pool)
             .await
-            .map_err(|e| Error::Database(format!("Failed to run migrations: {}", e)))?;
+            .map_err(|e| Error::Database(format!("Failed to run migrations: {e}")))?;
 
         Ok(())
     }
@@ -122,7 +122,7 @@ impl Database {
             }),
             Err(e) => Ok(HealthStatus {
                 is_healthy: false,
-                message: format!("Connection failed: {}", e),
+                message: format!("Connection failed: {e}"),
             }),
         }
     }
@@ -139,8 +139,9 @@ pub struct HealthStatus {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_database_creation() {
+    #[tokio::test]
+    async fn test_database_creation() {
+        // Database::new uses connect_lazy which requires tokio runtime
         let result = Database::new("postgresql://localhost/test");
         assert!(result.is_ok());
     }

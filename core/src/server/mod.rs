@@ -29,7 +29,7 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
         .route("/oauth/callback", get(oauth::callback))
         .with_state(state);
 
-    let addr = format!("{}:{}", host, port);
+    let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
     tracing::info!("Server listening on {}", addr);

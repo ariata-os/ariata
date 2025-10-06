@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
+use crate::sources::base::Paginated;
 
 /// Search response
 #[derive(Debug, Deserialize)]
@@ -68,4 +69,24 @@ pub struct ParagraphBlock {
 pub struct RichText {
     pub plain_text: String,
     pub href: Option<String>,
+}
+
+// ============================================================================
+// Pagination Trait Implementations
+// ============================================================================
+
+impl Paginated for SearchResponse {
+    fn next_page_token(&self) -> Option<String> {
+        // Notion uses has_more flag + next_cursor
+        // Only return cursor if has_more is true
+        if self.has_more {
+            self.next_cursor.clone()
+        } else {
+            None
+        }
+    }
+
+    fn has_more(&self) -> bool {
+        self.has_more
+    }
 }

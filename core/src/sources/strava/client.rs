@@ -10,6 +10,12 @@ pub struct StravaApiClient {
     base_url: String,
 }
 
+impl Default for StravaApiClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StravaApiClient {
     /// Create a new Strava API client
     pub fn new() -> Self {
@@ -31,15 +37,15 @@ impl StravaApiClient {
             .bearer_auth(token)
             .send()
             .await
-            .map_err(|e| Error::Other(format!("Request failed: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Request failed: {e}")))?;
 
         if !response.status().is_success() {
             let error = response.text().await.unwrap_or_default();
-            return Err(Error::Other(format!("Strava API error: {}", error)));
+            return Err(Error::Other(format!("Strava API error: {error}")));
         }
 
         response.json::<T>().await
-            .map_err(|e| Error::Other(format!("Failed to parse response: {}", e)))
+            .map_err(|e| Error::Other(format!("Failed to parse response: {e}")))
     }
 
     /// Make an authenticated GET request with query parameters
@@ -60,14 +66,14 @@ impl StravaApiClient {
             .query(params)
             .send()
             .await
-            .map_err(|e| Error::Other(format!("Request failed: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Request failed: {e}")))?;
 
         if !response.status().is_success() {
             let error = response.text().await.unwrap_or_default();
-            return Err(Error::Other(format!("Strava API error: {}", error)));
+            return Err(Error::Other(format!("Strava API error: {error}")));
         }
 
         response.json::<T>().await
-            .map_err(|e| Error::Other(format!("Failed to parse response: {}", e)))
+            .map_err(|e| Error::Other(format!("Failed to parse response: {e}")))
     }
 }

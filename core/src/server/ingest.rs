@@ -35,6 +35,7 @@ pub struct IngestRequest {
     pub checkpoint: Option<String>,
 
     /// Timestamp of this batch
+    #[allow(dead_code)]
     pub timestamp: DateTime<Utc>,
 }
 
@@ -186,7 +187,7 @@ async fn validate_source_stream(
         .any(|(s, st)| *s == source && *st == stream);
 
     if !is_valid {
-        return Err(Error::Other(format!("Invalid source/stream: {}/{}", source, stream)));
+        return Err(Error::Other(format!("Invalid source/stream: {source}/{stream}")));
     }
 
     Ok(())
@@ -321,7 +322,7 @@ async fn update_checkpoint(
 /// Generate next checkpoint
 fn generate_next_checkpoint(current: &str) -> String {
     // Simple increment for now, will be more sophisticated based on source type
-    format!("{}_next", current)
+    format!("{current}_next")
 }
 
 /// Update pipeline activity status

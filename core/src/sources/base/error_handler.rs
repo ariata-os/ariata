@@ -55,7 +55,7 @@ pub trait ErrorHandler: Send + Sync {
     ///
     /// # Returns
     /// The classified error type
-    fn classify_error(&self, status: StatusCode, body: &str) -> ErrorClass {
+    fn classify_error(&self, status: StatusCode, _body: &str) -> ErrorClass {
         match status.as_u16() {
             401 => ErrorClass::AuthError,
             429 => ErrorClass::RateLimit,
