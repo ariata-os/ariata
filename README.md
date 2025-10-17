@@ -145,7 +145,7 @@ That's it! The system will:
 - **Configure data sources**: Visit Settings → Sources in the web UI
 - **iOS app**: Build from `apps/ios/` and point to `http://YOUR_IP:3000`
 - **Mac agent**: Get token from web UI, run `ariata-mac init TOKEN`
-- **Remote access (5G/anywhere)**: See [TAILSCALE_DEPLOY.md](./TAILSCALE_DEPLOY.md)
+- **Remote access (5G/anywhere)**
 
 ## 📦 Prerequisites
 
