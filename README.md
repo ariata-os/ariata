@@ -1,10 +1,10 @@
 ![Ariata Cover](.github/images/cover2.png)
 
-<p align="align center">
+<h4 align="center">
     <code>Ariata</code>
     The open source, personal ecosystem.
     A protocol for ingestion and management of personal data.
-</p>
+</h4>
 
 > [!WARNING]
 > **Experimental Phase**: Expect rapid iteration and sweeping changes. We are migrating to a high-performance Rust core library for managing the ETL/ELT of personal data.
