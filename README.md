@@ -1,7 +1,8 @@
 ![Ariata Cover](.github/images/cover2.png)
 
-<p align="center">
-    <b>Ariata - the open source, personal ecosystem. <br/>
+<p align="align center">
+    <code>Ariata</code>
+    The open source, personal ecosystem.
     A protocol for ingestion and management of personal data.
 </p>
 
