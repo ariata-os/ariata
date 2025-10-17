@@ -77,8 +77,6 @@ Users can add custom sources via Rust traits without modifying core code:
 2. **Dynamic loading**: Build as `.dylib` and load at runtime (optional)
 3. **Shared types**: Use Ariata's built-in OAuth, storage, and processing infrastructure
 
-See [`core/examples/custom_source.rs`](core/examples/custom_source.rs) for a plugin template.
-
 ## Status
 
 ### Implementation Overview
