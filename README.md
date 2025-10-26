@@ -1,8 +1,10 @@
+![Ariata Cover](.github/images/cover2.png)
+
 # Ariata
 
 Personal data ELT platform. Extract data from Google, iOS, Mac, Notion, Strava → Store in PostgreSQL + MinIO → Query with SQL.
 
-> **Status**: Active development. Rust core is production-ready with 67/67 tests passing.
+> **Status**: Active development.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white)](https://discord.gg/sSQKzDWqgv)
