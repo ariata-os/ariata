@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::{
     error::Result,
     oauth::token_manager::TokenManager,
+    sources::base::{SyncMode, SyncResult, SyncLogger},
 };
 use super::{
     client::GoogleClient,
@@ -88,14 +89,50 @@ impl GoogleCalendarSync {
     }
 
     /// Sync calendar events with automatic token refresh
-    pub async fn sync(&self) -> Result<SyncStats> {
-        // Token refresh is now handled automatically by the OAuthSource trait
-        self.sync_internal().await
+    #[tracing::instrument(skip(self), fields(source_id = %self.source_id))]
+    pub async fn sync(&self) -> Result<SyncResult> {
+        let started_at = Utc::now();
+        let logger = SyncLogger::new(self.db.clone());
+
+        // Get last sync token to determine mode
+        let last_sync_token = self.get_last_sync_token().await?;
+        let sync_mode = if let Some(token) = last_sync_token {
+            SyncMode::incremental(Some(token))
+        } else {
+            SyncMode::full_refresh()
+        };
+
+        tracing::info!(mode = ?sync_mode, "Starting calendar sync");
+
+        // Execute the sync
+        match self.sync_internal(&sync_mode).await {
+            Ok(result) => {
+                // Log success to database
+                if let Err(e) = logger.log_success(self.source_id, &sync_mode, &result).await {
+                    tracing::warn!(error = %e, "Failed to log sync success");
+                }
+
+                Ok(result)
+            }
+            Err(e) => {
+                // Log failure to database
+                if let Err(log_err) = logger.log_failure(self.source_id, &sync_mode, started_at, &e).await {
+                    tracing::warn!(error = %log_err, "Failed to log sync failure");
+                }
+
+                Err(e)
+            }
+        }
     }
 
     /// Internal sync implementation
-    async fn sync_internal(&self) -> Result<SyncStats> {
-        let mut stats = SyncStats::default();
+    #[tracing::instrument(skip(self), fields(source_id = %self.source_id, mode = ?sync_mode))]
+    async fn sync_internal(&self, sync_mode: &SyncMode) -> Result<SyncResult> {
+        let started_at = Utc::now();
+        let mut records_fetched = 0;
+        let mut records_written = 0;
+        let mut records_failed = 0;
+        let mut next_cursor = None;
 
         // Get last sync token from database
         let last_sync_token = self.get_last_sync_token().await?;
@@ -103,31 +140,55 @@ impl GoogleCalendarSync {
         // Use calendars from configuration
         let calendars = self.config.calendar_ids.clone();
 
-        for calendar_id in calendars {
+        for calendar_id in &calendars {
+            tracing::debug!(calendar_id = %calendar_id, "Syncing calendar");
+
             let result = if let Some(ref token) = last_sync_token {
                 // Incremental sync using sync token
-                self.sync_incremental(&calendar_id, token).await?
+                self.sync_incremental(calendar_id, token).await?
             } else {
-                // Full sync - get all events from last 90 days
-                self.sync_full(&calendar_id).await?
+                // Full sync - get all events from configured time bounds
+                self.sync_full(calendar_id).await?
             };
+
+            records_fetched += result.items.len();
 
             // Process events
             for event in result.items {
-                if self.upsert_event(&calendar_id, &event).await? {
-                    stats.upserted += 1;
-                } else {
-                    stats.skipped += 1;
+                match self.upsert_event(calendar_id, &event).await {
+                    Ok(true) => records_written += 1,
+                    Ok(false) => {
+                        // Event skipped (missing required fields)
+                        records_failed += 1;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            event_id = %event.id,
+                            error = %e,
+                            "Failed to upsert event"
+                        );
+                        records_failed += 1;
+                    }
                 }
             }
 
             // Save new sync token
             if let Some(token) = result.next_sync_token {
                 self.save_sync_token(&token).await?;
+                next_cursor = Some(token);
             }
         }
 
-        Ok(stats)
+        let completed_at = Utc::now();
+
+        Ok(SyncResult {
+            records_fetched,
+            records_written,
+            records_failed,
+            next_cursor,
+            started_at,
+            completed_at,
+        })
     }
 
     /// Get events using sync token (incremental sync)
@@ -137,7 +198,7 @@ impl GoogleCalendarSync {
         ];
 
         match self.client.get_with_params(
-            &format!("calendars/{}/events", calendar_id),
+            &format!("calendars/{calendar_id}/events"),
             &params
         ).await {
             Ok(response) => Ok(response),
@@ -173,7 +234,7 @@ impl GoogleCalendarSync {
             .collect();
 
         self.client.get_with_params(
-            &format!("calendars/{}/events", calendar_id),
+            &format!("calendars/{calendar_id}/events"),
             &param_refs
         ).await
     }
@@ -211,9 +272,11 @@ impl GoogleCalendarSync {
             None
         };
 
-        if start_time.is_none() || end_time.is_none() {
-            return Ok(false); // Skip events without proper times
-        }
+        // Destructure times - both must be present
+        let (start_time, end_time) = match (start_time, end_time) {
+            (Some(start), Some(end)) => (start, end),
+            _ => return Ok(false), // Skip events without proper times
+        };
 
         let all_day = event.start.as_ref()
             .and_then(|s| s.date.as_ref())
@@ -290,8 +353,8 @@ impl GoogleCalendarSync {
         .bind(event.description.as_deref())
         .bind(event.location.as_deref())
         .bind(&status)
-        .bind(start_time.unwrap())
-        .bind(end_time.unwrap())
+        .bind(start_time)
+        .bind(end_time)
         .bind(all_day)
         .bind(event.start.as_ref().and_then(|s| s.time_zone.as_deref()))
         .bind(organizer_email.as_deref())
@@ -354,12 +417,62 @@ impl GoogleCalendarSync {
 
 }
 
-/// Statistics from a sync operation
-#[derive(Debug, Default)]
-pub struct SyncStats {
-    pub upserted: usize,
-    pub skipped: usize,
-}
-
 #[cfg(test)]
-mod test;
+mod tests {
+    
+    use crate::sources::google::config::{GoogleCalendarConfig, SyncDirection};
+    use chrono::{Duration, Utc};
+
+    #[test]
+    fn test_config_time_bounds_past() {
+        // Test past sync
+        let config = GoogleCalendarConfig {
+            sync_window_days: 30,
+            sync_direction: SyncDirection::Past,
+            ..Default::default()
+        };
+
+        let (min, max) = config.calculate_time_bounds();
+        let now = Utc::now();
+
+        assert!(min.is_some());
+        assert!(max.is_some());
+
+        let min_time = min.unwrap();
+        let max_time = max.unwrap();
+
+        // Check that we're looking 30 days in the past
+        let expected_min = now - Duration::days(30);
+        let diff = (min_time - expected_min).num_seconds().abs();
+        assert!(diff < 60, "Min time should be ~30 days ago");
+
+        let diff = (max_time - now).num_seconds().abs();
+        assert!(diff < 60, "Max time should be ~now");
+    }
+
+    #[test]
+    fn test_config_time_bounds_future() {
+        // Test future sync
+        let config = GoogleCalendarConfig {
+            sync_window_days: 7,
+            sync_direction: SyncDirection::Future,
+            ..Default::default()
+        };
+
+        let (min, max) = config.calculate_time_bounds();
+        let now = Utc::now();
+
+        assert!(min.is_some());
+        assert!(max.is_some());
+
+        let min_time = min.unwrap();
+        let max_time = max.unwrap();
+
+        let diff = (min_time - now).num_seconds().abs();
+        assert!(diff < 60, "Min time should be ~now for future sync");
+
+        let expected_max = now + Duration::days(7);
+        let diff = (max_time - expected_max).num_seconds().abs();
+        assert!(diff < 60, "Max time should be ~7 days from now");
+    }
+}

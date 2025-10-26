@@ -35,6 +35,7 @@ pub struct IngestRequest {
     pub checkpoint: Option<String>,
 
     /// Timestamp of this batch
+    #[allow(dead_code)]
     pub timestamp: DateTime<Utc>,
 }
 
@@ -159,8 +160,15 @@ async fn validate_device_token(
     _token: &str,
     _device_id: &str,
 ) -> Result<()> {
-    // TODO: Implement actual validation
-    // For now, accept all tokens
+    // SECURITY: Token validation not implemented!
+    // Device sources currently have no authentication.
+    //
+    // For production deployment, implement one of:
+    // 1. JWT-based device tokens (signed by auth server)
+    // 2. API keys stored in database with rate limiting
+    // 3. mTLS client certificates for device authentication
+    //
+    // Current behavior: Accept all requests (suitable for single-user localhost only)
     Ok(())
 }
 
@@ -170,15 +178,25 @@ async fn validate_source_stream(
     source: &str,
     stream: &str,
 ) -> Result<()> {
-    // TODO: Query database to validate
-    // For now, accept known sources
+    // List of valid source/stream combinations
     let valid_combinations = [
+        // iOS streams
         ("ios", "healthkit"),
         ("ios", "location"),
-        ("ios", "mic"),
-        ("mac", "imessage"),
+        ("ios", "microphone"),
+        ("ios", "mic"),  // alias for microphone
+
+        // Mac streams
         ("mac", "apps"),
+        ("mac", "browser"),
+        ("mac", "imessage"),
+        ("mac", "screentime"),
+
+        // Cloud OAuth sources
         ("google", "calendar"),
+        ("google", "gmail"),
+        ("strava", "activities"),
+        ("notion", "pages"),
     ];
 
     let is_valid = valid_combinations
@@ -186,7 +204,7 @@ async fn validate_source_stream(
         .any(|(s, st)| *s == source && *st == stream);
 
     if !is_valid {
-        return Err(Error::Other(format!("Invalid source/stream: {}/{}", source, stream)));
+        return Err(Error::Other(format!("Invalid source/stream: {source}/{stream}")));
     }
 
     Ok(())
@@ -202,7 +220,13 @@ async fn create_pipeline_activity(
 ) -> Result<String> {
     let activity_id = uuid::Uuid::new_v4().to_string();
 
-    // TODO: Actually insert into database
+    // NOTE: Pipeline activity tracking not persisted to database yet.
+    // This would enable features like:
+    // - Ingestion history and audit trail
+    // - Progress tracking for large uploads
+    // - Retry logic for failed batches
+    //
+    // Current behavior: Log activity ID for debugging, return immediately
     tracing::info!(
         "Created pipeline activity {} for {}/{} from device {} with {} records",
         activity_id, source, stream, device_id, record_count
@@ -237,43 +261,39 @@ async fn process_records(
     Ok((accepted, rejected))
 }
 
-/// Process single record
+/// Process single record - routes to appropriate processor based on source/stream
 async fn process_single_record(
     state: &AppState,
-    strategy: &StorageStrategy,
+    _strategy: &StorageStrategy,
     source: &str,
     stream: &str,
     record: &Value,
 ) -> Result<()> {
-    match strategy {
-        StorageStrategy::PostgresOnly => {
-            // Store directly in PostgreSQL
-            let table_name = format!("stream_{}_{}", source.replace('.', "_"), stream);
-
-            // For now, just log
-            tracing::info!(
-                "Would store record in PostgreSQL table {}: {}",
-                table_name,
-                record
-            );
+    // Route to appropriate processor based on source and stream type
+    match (source, stream) {
+        ("ios", "healthkit") => {
+            crate::sources::ios::healthkit::process(&state.db, &state.storage, record).await?;
         }
-        StorageStrategy::Hybrid => {
-            // Store metadata in PostgreSQL, blob in storage
-            let blob_key = format!("{}/{}/{}.json", source, stream, uuid::Uuid::new_v4());
-
-            // Upload to storage
-            state.storage.upload(&blob_key, record.to_string().as_bytes().to_vec())
-                .await
-                .map_err(|e| Error::Storage(e.to_string()))?;
-
-            // Store reference in PostgreSQL
-            let table_name = format!("stream_{}_{}", source.replace('.', "_"), stream);
-
-            tracing::info!(
-                "Stored blob at {} and would reference in table {}",
-                blob_key,
-                table_name
-            );
+        ("ios", "location") => {
+            crate::sources::ios::location::process(&state.db, &state.storage, record).await?;
+        }
+        ("ios", "microphone") | ("ios", "mic") => {
+            crate::sources::ios::microphone::process(&state.db, &state.storage, record).await?;
+        }
+        ("mac", "apps") => {
+            crate::sources::mac::apps::process(&state.db, &state.storage, record).await?;
+        }
+        ("mac", "browser") => {
+            crate::sources::mac::browser::process(&state.db, &state.storage, record).await?;
+        }
+        ("mac", "imessage") => {
+            crate::sources::mac::imessage::process(&state.db, &state.storage, record).await?;
+        }
+        _ => {
+            tracing::warn!("Unknown source/stream: {}/{}", source, stream);
+            return Err(Error::Other(format!(
+                "Unsupported source/stream combination: {source}/{stream}"
+            )));
         }
     }
 
@@ -303,6 +323,11 @@ async fn get_storage_strategy(
 }
 
 /// Update sync checkpoint
+///
+/// NOTE: Checkpoint persistence not implemented yet.
+/// For device sources using push model, checkpoints are less critical since
+/// devices maintain their own state. For future pull-based device syncs,
+/// implement checkpoint storage in the `sources` table.
 async fn update_checkpoint(
     _db: &Database,
     source: &str,
@@ -310,9 +335,8 @@ async fn update_checkpoint(
     device_id: &str,
     checkpoint: &str,
 ) -> Result<()> {
-    // TODO: Actually update in database
-    tracing::info!(
-        "Would update checkpoint for {}/{} device {} to {}",
+    tracing::debug!(
+        "Checkpoint update (not persisted): {}/{} device {} -> {}",
         source, stream, device_id, checkpoint
     );
     Ok(())
@@ -321,19 +345,20 @@ async fn update_checkpoint(
 /// Generate next checkpoint
 fn generate_next_checkpoint(current: &str) -> String {
     // Simple increment for now, will be more sophisticated based on source type
-    format!("{}_next", current)
+    format!("{current}_next")
 }
 
 /// Update pipeline activity status
+///
+/// NOTE: Activity status tracking not persisted (see `create_pipeline_activity`).
 async fn update_pipeline_activity(
     _db: &Database,
     activity_id: &str,
     status: &str,
     records_processed: usize,
 ) -> Result<()> {
-    // TODO: Actually update in database
-    tracing::info!(
-        "Would update activity {} to status {} with {} records processed",
+    tracing::debug!(
+        "Activity update (not persisted): {} -> {} ({} records)",
         activity_id, status, records_processed
     );
     Ok(())

@@ -96,7 +96,9 @@ impl DataSource for StravaActivitiesSource {
     }
 
     async fn get_sync_state(&self) -> Result<SyncState> {
-        // TODO: Load from database
+        // IMPLEMENTATION GAP: Sync state not persisted for Strava source.
+        // This means each sync runs as a full refresh instead of incremental.
+        // To implement: Query sources table for last_sync_cursor or add strava_sync_state table.
         Ok(SyncState {
             source: self.name().to_string(),
             last_sync: None,
@@ -107,8 +109,8 @@ impl DataSource for StravaActivitiesSource {
     }
 
     async fn update_sync_state(&self, state: SyncState) -> Result<()> {
-        // TODO: Save to database
-        tracing::debug!("Updated sync state for {}: {:?}", self.name(), state);
+        // IMPLEMENTATION GAP: Sync state not persisted (see get_sync_state above).
+        tracing::debug!("Sync state update (not persisted) for {}: {:?}", self.name(), state);
         Ok(())
     }
 }

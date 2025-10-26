@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use serde_json::Value;
-use sqlx::{PgPool, postgres::PgPoolOptions, Row, Column};
+use sqlx::{postgres::PgPoolOptions, Column, PgPool, Row};
 
 use crate::error::{Error, Result};
 
@@ -39,7 +39,7 @@ impl Database {
         sqlx::query("SELECT 1")
             .execute(&self.pool)
             .await
-            .map_err(|e| Error::Database(format!("Failed to connect: {}", e)))?;
+            .map_err(|e| Error::Database(format!("Failed to connect: {e}")))?;
 
         // Run migrations
         self.run_migrations().await?;
@@ -53,16 +53,14 @@ impl Database {
         sqlx::migrate!("./migrations")
             .run(&self.pool)
             .await
-            .map_err(|e| Error::Database(format!("Failed to run migrations: {}", e)))?;
+            .map_err(|e| Error::Database(format!("Failed to run migrations: {e}")))?;
 
         Ok(())
     }
 
     /// Execute a query and return results
     pub async fn query(&self, sql: &str) -> Result<Vec<HashMap<String, Value>>> {
-        let rows = sqlx::query(sql)
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
 
         let mut results = Vec::new();
 
@@ -112,17 +110,14 @@ impl Database {
 
     /// Health check
     pub async fn health_check(&self) -> Result<HealthStatus> {
-        match sqlx::query("SELECT 1")
-            .fetch_one(&self.pool)
-            .await
-        {
+        match sqlx::query("SELECT 1").fetch_one(&self.pool).await {
             Ok(_) => Ok(HealthStatus {
                 is_healthy: true,
                 message: "Connected".to_string(),
             }),
             Err(e) => Ok(HealthStatus {
                 is_healthy: false,
-                message: format!("Connection failed: {}", e),
+                message: format!("Connection failed: {e}"),
             }),
         }
     }
@@ -139,8 +134,8 @@ pub struct HealthStatus {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_database_creation() {
+    #[tokio::test]
+    async fn test_database_creation() {
         let result = Database::new("postgresql://localhost/test");
         assert!(result.is_ok());
     }

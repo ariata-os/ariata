@@ -5,6 +5,8 @@ use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx;
+use uuid::Uuid;
 
 use crate::{
     error::{Error, Result},
@@ -59,7 +61,7 @@ impl Scheduler {
     /// Create a new scheduler
     pub async fn new(db: Arc<Database>, oauth: Arc<OAuthManager>) -> Result<Self> {
         let scheduler = JobScheduler::new().await
-            .map_err(|e| Error::Other(format!("Failed to create scheduler: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to create scheduler: {e}")))?;
 
         Ok(Self {
             db,
@@ -93,6 +95,7 @@ impl Scheduler {
 
             Box::pin(async move {
                 let start = std::time::Instant::now();
+                let started_at = Utc::now();
 
                 // Find the task for this source
                 let tasks_guard = tasks.read().await;
@@ -103,20 +106,48 @@ impl Scheduler {
                     if task.should_sync().await {
                         match task.sync().await {
                             Ok(result) => {
+                                let duration_ms = start.elapsed().as_millis() as i32;
+
                                 tracing::info!(
                                     "Sync completed for {}: {} records in {}ms",
-                                    source_name, result.records_synced, result.duration_ms
+                                    source_name, result.records_synced, duration_ms
                                 );
 
-                                // Record sync result
-                                // TODO: Implement database save
+                                // Get source_id for logging
+                                if let Ok(source_id) = get_source_id_for_logging(&db, &source_name).await {
+                                    // Record sync result to sync_logs table
+                                    let _ = sqlx::query(
+                                        "INSERT INTO sync_logs
+                                         (source_id, sync_mode, started_at, completed_at, duration_ms,
+                                          status, records_fetched, records_written, records_failed)
+                                         VALUES ($1, 'scheduled', $2, NOW(), $3, 'success', $4, $4, 0)"
+                                    )
+                                    .bind(source_id)
+                                    .bind(started_at)
+                                    .bind(duration_ms)
+                                    .bind(result.records_synced as i32)
+                                    .execute(db.pool())
+                                    .await;
+                                }
                             }
                             Err(e) => {
                                 tracing::error!("Sync failed for {}: {}", source_name, e);
 
-                                // Record failure
-                                // Record failure
-                                // TODO: Implement database save
+                                // Get source_id for logging
+                                if let Ok(source_id) = get_source_id_for_logging(&db, &source_name).await {
+                                    // Record failure to sync_logs table
+                                    let _ = sqlx::query(
+                                        "INSERT INTO sync_logs
+                                         (source_id, sync_mode, started_at, completed_at,
+                                          status, error_message, error_class)
+                                         VALUES ($1, 'scheduled', $2, NOW(), 'failed', $3, 'sync_error')"
+                                    )
+                                    .bind(source_id)
+                                    .bind(started_at)
+                                    .bind(e.to_string())
+                                    .execute(db.pool())
+                                    .await;
+                                }
                             }
                         }
                     }
@@ -124,11 +155,11 @@ impl Scheduler {
                     tracing::warn!("No task found for scheduled source: {}", source_name);
                 }
             })
-        }).map_err(|e| Error::Other(format!("Failed to create job: {}", e)))?;
+        }).map_err(|e| Error::Other(format!("Failed to create job: {e}")))?;
 
         let scheduler = self.scheduler.write().await;
         scheduler.add(job).await
-            .map_err(|e| Error::Other(format!("Failed to add job: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to add job: {e}")))?;
 
         // Store schedule in database
         self.save_schedule(&config).await?;
@@ -156,7 +187,7 @@ impl Scheduler {
         // Start the scheduler
         let scheduler = self.scheduler.write().await;
         scheduler.start().await
-            .map_err(|e| Error::Other(format!("Failed to start scheduler: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to start scheduler: {e}")))?;
 
         tracing::info!("Scheduler started with {} tasks", self.tasks.read().await.len());
 
@@ -167,7 +198,7 @@ impl Scheduler {
     pub async fn stop(&self) -> Result<()> {
         let mut scheduler = self.scheduler.write().await;
         scheduler.shutdown().await
-            .map_err(|e| Error::Other(format!("Failed to stop scheduler: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to stop scheduler: {e}")))?;
 
         tracing::info!("Scheduler stopped");
         Ok(())
@@ -199,11 +230,11 @@ impl Scheduler {
                     }
                 }
             })
-        }).map_err(|e| Error::Other(format!("Failed to create token refresh job: {}", e)))?;
+        }).map_err(|e| Error::Other(format!("Failed to create token refresh job: {e}")))?;
 
         let scheduler = self.scheduler.write().await;
         scheduler.add(job).await
-            .map_err(|e| Error::Other(format!("Failed to add token refresh job: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to add token refresh job: {e}")))?;
 
         Ok(())
     }
@@ -229,59 +260,55 @@ impl Scheduler {
                     Err(e) => tracing::error!("Cleanup failed: {}", e),
                 }
             })
-        }).map_err(|e| Error::Other(format!("Failed to create cleanup job: {}", e)))?;
+        }).map_err(|e| Error::Other(format!("Failed to create cleanup job: {e}")))?;
 
         let scheduler = self.scheduler.write().await;
         scheduler.add(job).await
-            .map_err(|e| Error::Other(format!("Failed to add cleanup job: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to add cleanup job: {e}")))?;
 
         Ok(())
     }
 
     /// Save schedule configuration to database
     async fn save_schedule(&self, config: &ScheduleConfig) -> Result<()> {
-        let query = "
-            INSERT INTO sync_schedules (source_name, cron_expression, enabled, updated_at)
-            VALUES ($1, $2, $3, NOW())
-            ON CONFLICT (source_name) DO UPDATE
-            SET cron_expression = $2, enabled = $3, updated_at = NOW()
-        ";
+        // Get source_id from source name
+        let source_id = self.get_source_id_by_name(&config.source_name).await?;
 
-        self.db.execute(
-            query,
-            &[&config.source_name, &config.cron_expression, &config.enabled.to_string()]
-        ).await?;
+        sqlx::query(
+            "INSERT INTO sync_schedules (source_id, cron_expression, enabled)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (source_id) DO UPDATE
+             SET cron_expression = $2, enabled = $3, updated_at = NOW()"
+        )
+        .bind(source_id)
+        .bind(&config.cron_expression)
+        .bind(config.enabled)
+        .execute(self.db.pool())
+        .await
+        .map_err(|e| Error::Database(format!("Failed to save schedule: {e}")))?;
 
         Ok(())
     }
 
     /// Load schedules from database
     async fn load_schedules(&self) -> Result<Vec<ScheduleConfig>> {
-        let query = "
-            SELECT source_name, cron_expression, enabled, last_run
-            FROM sync_schedules
-            WHERE enabled = true
-        ";
+        let rows = sqlx::query_as::<_, (String, String, bool, Option<DateTime<Utc>>)>(
+            "SELECT s.name as source_name, ss.cron_expression, ss.enabled, ss.last_run
+             FROM sync_schedules ss
+             JOIN sources s ON ss.source_id = s.id
+             WHERE ss.enabled = true"
+        )
+        .fetch_all(self.db.pool())
+        .await
+        .map_err(|e| Error::Database(format!("Failed to load schedules: {e}")))?;
 
-        let results = self.db.query(query).await?;
-
-        let schedules = results.into_iter()
-            .filter_map(|row| {
-                let source_name = row.get("source_name")?.as_str()?.to_string();
-                let cron = row.get("cron_expression")?.as_str()?.to_string();
-                let enabled = row.get("enabled")?.as_bool()?;
-
-                Some(ScheduleConfig {
-                    source_name,
-                    cron_expression: cron,
-                    enabled,
-                    last_run: None,
-                    next_run: None,
-                })
-            })
-            .collect();
-
-        Ok(schedules)
+        Ok(rows.into_iter().map(|(name, cron, enabled, last_run)| ScheduleConfig {
+            source_name: name,
+            cron_expression: cron,
+            enabled,
+            last_run,
+            next_run: None,
+        }).collect())
     }
 
     /// Manually trigger a sync for a source
@@ -290,7 +317,7 @@ impl Scheduler {
 
         let task = tasks.iter()
             .find(|t| t.source_name() == source_name)
-            .ok_or_else(|| Error::Other(format!("No task for source: {}", source_name)))?;
+            .ok_or_else(|| Error::Other(format!("No task for source: {source_name}")))?;
 
         task.sync().await
     }
@@ -300,29 +327,32 @@ impl Scheduler {
         let tasks = self.tasks.read().await;
         tasks.iter().map(|t| t.source_name().to_string()).collect()
     }
+
+    /// Helper: Get source_id from source name
+    async fn get_source_id_by_name(&self, name: &str) -> Result<Uuid> {
+        let row = sqlx::query_as::<_, (Uuid,)>(
+            "SELECT id FROM sources WHERE name = $1"
+        )
+        .bind(name)
+        .fetch_one(self.db.pool())
+        .await
+        .map_err(|e| Error::Database(format!("Source '{name}' not found: {e}")))?;
+
+        Ok(row.0)
+    }
 }
 
-/// Record sync result in database
-#[allow(dead_code)]
-async fn record_sync_result(_db: &Database, result: SyncResult) -> Result<()> {
-    let query = "
-        INSERT INTO sync_history
-        (source, records_synced, duration_ms, success, error, created_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
-    ";
+/// Helper function to get source_id from name (for use in closures)
+async fn get_source_id_for_logging(db: &Database, name: &str) -> Result<Uuid> {
+    let row = sqlx::query_as::<_, (Uuid,)>(
+        "SELECT id FROM sources WHERE name = $1"
+    )
+    .bind(name)
+    .fetch_one(db.pool())
+    .await
+    .map_err(|e| Error::Database(format!("Source '{name}' not found: {e}")))?;
 
-    _db.execute(
-        query,
-        &[
-            &result.source,
-            &result.records_synced.to_string(),
-            &result.duration_ms.to_string(),
-            &result.success.to_string(),
-            &result.error.unwrap_or_default(),
-        ]
-    ).await?;
-
-    Ok(())
+    Ok(row.0)
 }
 
 #[cfg(test)]

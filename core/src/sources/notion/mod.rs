@@ -4,6 +4,7 @@ pub mod auth;
 pub mod client;
 pub mod types;
 pub mod pages;
+pub mod registry;
 
 use std::sync::Arc;
 use crate::oauth::OAuthManager;

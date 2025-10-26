@@ -1,0 +1,62 @@
+//! Device source utilities for push-based data ingestion
+//!
+//! Provides shared helpers for iOS and Mac device sources that push data
+//! to the ingestion endpoint.
+
+use uuid::Uuid;
+use crate::{database::Database, error::{Error, Result}};
+
+/// Get or create a device source by device_id
+///
+/// This helper is used by all device processors (iOS, Mac) to automatically
+/// create source entries in the database when devices first send data.
+///
+/// # Arguments
+/// * `db` - Database connection
+/// * `source_type` - Source type ("ios" or "mac")
+/// * `device_id` - Unique device identifier sent by the device
+///
+/// # Returns
+/// The source_id (UUID) for this device, either existing or newly created
+///
+/// # Example
+/// ```
+/// let source_id = get_or_create_device_source(db, "ios", "iPhone-12345").await?;
+/// ```
+pub async fn get_or_create_device_source(
+    db: &Database,
+    source_type: &str,
+    device_id: &str,
+) -> Result<Uuid> {
+    use sqlx;
+
+    // Try to get existing source
+    let existing: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM sources WHERE type = $1 AND name = $2"
+    )
+    .bind(source_type)
+    .bind(device_id)
+    .fetch_optional(db.pool())
+    .await
+    .map_err(|e| Error::Database(format!("Failed to query source: {e}")))?;
+
+    if let Some((id,)) = existing {
+        return Ok(id);
+    }
+
+    // Create new device source
+    let new_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO sources (id, type, name, is_active)
+         VALUES ($1, $2, $3, true)
+         ON CONFLICT (name) DO NOTHING"
+    )
+    .bind(new_id)
+    .bind(source_type)
+    .bind(device_id)
+    .execute(db.pool())
+    .await
+    .map_err(|e| Error::Database(format!("Failed to create source: {e}")))?;
+
+    Ok(new_id)
+}

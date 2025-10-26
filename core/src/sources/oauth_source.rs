@@ -52,7 +52,7 @@ pub trait OAuthSource: Send + Sync {
             .bearer_auth(&token)
             .send()
             .await
-            .map_err(|e| Error::Network(format!("Request failed: {}", e)))?;
+            .map_err(|e| Error::Network(format!("Request failed: {e}")))?;
 
         // Check if we got a 401 (unauthorized)
         if response.status().as_u16() == 401 {
@@ -71,7 +71,7 @@ pub trait OAuthSource: Send + Sync {
                     .bearer_auth(&refreshed.access_token)
                     .send()
                     .await
-                    .map_err(|e| Error::Network(format!("Retry request failed: {}", e)))?;
+                    .map_err(|e| Error::Network(format!("Retry request failed: {e}")))?;
 
                 if response.status().is_success() {
                     return Ok(response);
@@ -176,6 +176,7 @@ impl OAuthSourceBuilder {
 mod tests {
     use super::*;
 
+    #[allow(dead_code)]
     struct TestOAuthSource {
         base: BaseOAuthSource,
     }

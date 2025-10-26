@@ -1,17 +1,15 @@
 //! Base infrastructure and utilities for all sources
 
-pub mod client;
-pub mod auth;
-pub mod processor;
-pub mod storage;
-pub mod sync;
+pub mod device;
 pub mod error_handler;
 pub mod oauth_client;
+pub mod sync_logger;
+pub mod sync_mode;
+pub mod validation;
 
-pub use client::HttpClient;
-pub use auth::{AuthHelper, AuthType};
-pub use processor::BaseProcessor;
-pub use storage::StorageHelper;
-pub use sync::SyncStateManager;
-pub use error_handler::{ErrorHandler, ErrorClass, DefaultErrorHandler};
+pub use device::get_or_create_device_source;
+pub use error_handler::{DefaultErrorHandler, ErrorClass, ErrorHandler};
 pub use oauth_client::{OAuthHttpClient, RetryConfig};
+pub use sync_logger::{SyncLog, SyncLogger};
+pub use sync_mode::{SyncMode, SyncResult};
+pub use validation::*;

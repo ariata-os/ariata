@@ -122,3 +122,156 @@ pub struct EntryPoint {
     pub label: Option<String>,     // Display label
     pub pin: Option<String>,       // Meeting PIN if any
 }
+
+// ============ Gmail Types ============
+
+/// Gmail messages list response
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagesListResponse {
+    pub messages: Option<Vec<MessageRef>>,
+    pub next_page_token: Option<String>,
+    pub result_size_estimate: Option<i32>,
+}
+
+/// Message reference in list response
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageRef {
+    pub id: String,
+    pub thread_id: String,
+}
+
+/// Gmail threads list response
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadsListResponse {
+    pub threads: Option<Vec<ThreadRef>>,
+    pub next_page_token: Option<String>,
+    pub result_size_estimate: Option<i32>,
+}
+
+/// Thread reference in list response
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadRef {
+    pub id: String,
+    pub snippet: Option<String>,
+    pub history_id: Option<String>,
+}
+
+/// Full Gmail message
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Message {
+    pub id: String,
+    pub thread_id: String,
+    pub label_ids: Option<Vec<String>>,
+    pub snippet: Option<String>,
+    pub history_id: Option<String>,
+    pub internal_date: Option<String>,  // Milliseconds since epoch as string
+    pub payload: Option<MessagePart>,
+    pub size_estimate: Option<i32>,
+    pub raw: Option<String>,  // Base64 encoded raw message
+}
+
+/// Message part (MIME structure)
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagePart {
+    pub part_id: Option<String>,
+    pub mime_type: Option<String>,
+    pub filename: Option<String>,
+    pub headers: Option<Vec<MessageHeader>>,
+    pub body: Option<MessageBody>,
+    pub parts: Option<Vec<MessagePart>>,  // Recursive for multipart
+}
+
+/// Message header
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageHeader {
+    pub name: String,
+    pub value: String,
+}
+
+/// Message body
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageBody {
+    pub attachment_id: Option<String>,
+    pub size: i32,
+    pub data: Option<String>,  // Base64url encoded
+}
+
+/// Gmail thread with messages
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Thread {
+    pub id: String,
+    pub snippet: Option<String>,
+    pub history_id: Option<String>,
+    pub messages: Option<Vec<Message>>,
+}
+
+/// Gmail label
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Label {
+    pub id: String,
+    pub name: String,
+    pub message_list_visibility: Option<String>,
+    pub label_list_visibility: Option<String>,
+    pub r#type: Option<String>,  // "system" or "user"
+}
+
+/// Gmail history record for incremental sync
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryRecord {
+    pub id: String,
+    pub messages: Option<Vec<Message>>,
+    pub messages_added: Option<Vec<HistoryMessageAdded>>,
+    pub messages_deleted: Option<Vec<HistoryMessageDeleted>>,
+    pub labels_added: Option<Vec<HistoryLabelAdded>>,
+    pub labels_removed: Option<Vec<HistoryLabelRemoved>>,
+}
+
+/// History message added
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryMessageAdded {
+    pub message: Message,
+}
+
+/// History message deleted
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryMessageDeleted {
+    pub message: MessageRef,
+}
+
+/// History label added
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryLabelAdded {
+    pub message: MessageRef,
+    pub label_ids: Vec<String>,
+}
+
+/// History label removed
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryLabelRemoved {
+    pub message: MessageRef,
+    pub label_ids: Vec<String>,
+}
+
+/// Gmail history response
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryResponse {
+    pub history: Option<Vec<HistoryRecord>>,
+    pub next_page_token: Option<String>,
+    pub history_id: Option<String>,
+}

@@ -5,12 +5,12 @@
 
 use chrono::{DateTime, Duration, Utc};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::PgPool;
-use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
+use super::encryption::TokenEncryptor;
 
 /// Token refresh response from OAuth proxy
 #[derive(Debug, Deserialize)]
@@ -33,7 +33,7 @@ pub struct OAuthToken {
 /// Configuration for the OAuth proxy
 #[derive(Debug, Clone)]
 pub struct OAuthProxyConfig {
-    /// Base URL of the OAuth proxy (e.g., https://auth.ariata.com)
+    /// Base URL of the OAuth proxy (e.g., <https://auth.ariata.com>)
     pub base_url: String,
 }
 
@@ -51,20 +51,37 @@ pub struct TokenManager {
     db: PgPool,
     client: Client,
     proxy_config: OAuthProxyConfig,
+    encryptor: Option<TokenEncryptor>,
 }
 
 impl TokenManager {
     /// Create a new token manager
+    ///
+    /// Attempts to load encryption key from ARIATA_ENCRYPTION_KEY environment variable.
+    /// If not set, tokens will be stored in plaintext (not recommended for production).
     pub fn new(db: PgPool) -> Self {
         Self::with_config(db, OAuthProxyConfig::default())
     }
 
     /// Create a new token manager with custom configuration
     pub fn with_config(db: PgPool, proxy_config: OAuthProxyConfig) -> Self {
+        // Try to load encryption key from environment
+        let encryptor = TokenEncryptor::from_env().ok();
+
+        if encryptor.is_none() {
+            tracing::warn!(
+                "Token encryption disabled: ARIATA_ENCRYPTION_KEY not set. \
+                 Tokens will be stored in plaintext. Generate key with: openssl rand -base64 32"
+            );
+        } else {
+            tracing::info!("Token encryption enabled");
+        }
+
         Self {
             db,
             client: Client::new(),
             proxy_config,
+            encryptor,
         }
     }
 
@@ -98,12 +115,29 @@ impl TokenManager {
         .bind(source_id)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| Error::Database(format!("Source not found: {}", source_id)))?;
+        .ok_or_else(|| Error::Database(format!("Source not found: {source_id}")))?;
 
-        let (provider, access_token, refresh_token, token_expires_at) = record;
+        let (provider, access_token_encrypted, refresh_token_encrypted, token_expires_at) = record;
 
-        let access_token = access_token
+        let access_token_encrypted = access_token_encrypted
             .ok_or_else(|| Error::Authentication("No access token found".to_string()))?;
+
+        // Decrypt tokens if encryptor is available
+        let access_token = if let Some(ref encryptor) = self.encryptor {
+            encryptor.decrypt(&access_token_encrypted)?
+        } else {
+            access_token_encrypted
+        };
+
+        let refresh_token = if let Some(ref encryptor) = self.encryptor {
+            if let Some(ref rt) = refresh_token_encrypted {
+                Some(encryptor.decrypt(rt)?)
+            } else {
+                None
+            }
+        } else {
+            refresh_token_encrypted
+        };
 
         Ok(OAuthToken {
             access_token,
@@ -121,6 +155,7 @@ impl TokenManager {
     }
 
     /// Refresh an OAuth token through the proxy
+    #[tracing::instrument(skip(self, token), fields(source_id = %source_id, provider = %token.provider))]
     pub async fn refresh_token(&self, source_id: Uuid, token: &OAuthToken) -> Result<OAuthToken> {
         let refresh_token = token.refresh_token.as_ref()
             .ok_or_else(|| Error::Authentication("No refresh token available".to_string()))?;
@@ -135,7 +170,7 @@ impl TokenManager {
             }))
             .send()
             .await
-            .map_err(|e| Error::Network(format!("Failed to refresh token: {}", e)))?;
+            .map_err(|e| Error::Network(format!("Failed to refresh token: {e}")))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -150,16 +185,35 @@ impl TokenManager {
             }
 
             return Err(Error::Authentication(
-                format!("Token refresh failed ({}): {}", status, error_text)
+                format!("Token refresh failed ({status}): {error_text}")
             ));
         }
 
         let refresh_response: TokenRefreshResponse = response.json().await
-            .map_err(|e| Error::Network(format!("Invalid refresh response: {}", e)))?;
+            .map_err(|e| Error::Network(format!("Invalid refresh response: {e}")))?;
 
         // Calculate new expiry time
         let expires_at = refresh_response.expires_in
             .map(|seconds| Utc::now() + Duration::seconds(seconds));
+
+        // Encrypt tokens before storing
+        let access_token_to_store = if let Some(ref encryptor) = self.encryptor {
+            encryptor.encrypt(&refresh_response.access_token)?
+        } else {
+            refresh_response.access_token.clone()
+        };
+
+        let refresh_token_to_store = if let Some(ref encryptor) = self.encryptor {
+            if let Some(ref rt) = refresh_response.refresh_token {
+                Some(encryptor.encrypt(rt)?)
+            } else if let Some(rt) = Some(refresh_token) {
+                Some(encryptor.encrypt(rt)?)
+            } else {
+                None
+            }
+        } else {
+            refresh_response.refresh_token.as_ref().or(Some(refresh_token)).cloned()
+        };
 
         // Update tokens in database
         sqlx::query(
@@ -173,8 +227,8 @@ impl TokenManager {
             WHERE id = $4
             "#
         )
-        .bind(&refresh_response.access_token)
-        .bind(refresh_response.refresh_token.as_ref().or(Some(refresh_token)))
+        .bind(&access_token_to_store)
+        .bind(refresh_token_to_store.as_ref())
         .bind(expires_at)
         .bind(source_id)
         .execute(&self.db)
@@ -199,6 +253,23 @@ impl TokenManager {
     ) -> Result<Uuid> {
         let expires_at = expires_in.map(|seconds| Utc::now() + Duration::seconds(seconds));
 
+        // Encrypt tokens before storing
+        let access_token_to_store = if let Some(ref encryptor) = self.encryptor {
+            encryptor.encrypt(&access_token)?
+        } else {
+            access_token
+        };
+
+        let refresh_token_to_store = if let Some(ref encryptor) = self.encryptor {
+            if let Some(ref rt) = refresh_token {
+                Some(encryptor.encrypt(rt)?)
+            } else {
+                None
+            }
+        } else {
+            refresh_token
+        };
+
         let source_id: Uuid = sqlx::query_scalar(
             r#"
             INSERT INTO sources (
@@ -220,8 +291,8 @@ impl TokenManager {
         )
         .bind(provider)
         .bind(source_name)
-        .bind(access_token)
-        .bind(refresh_token)
+        .bind(access_token_to_store)
+        .bind(refresh_token_to_store)
         .bind(expires_at)
         .fetch_one(&self.db)
         .await?;
@@ -273,8 +344,8 @@ impl TokenManager {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_needs_refresh() {
+    #[tokio::test]
+    async fn test_needs_refresh() {
         let pool = PgPool::connect_lazy("postgres://test:test@localhost/test").unwrap();
         let manager = TokenManager::new(pool);
 

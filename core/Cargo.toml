@@ -14,12 +14,18 @@ build = "build.rs"
 name = "ariata"
 path = "src/lib.rs"
 
+[[bin]]
+name = "ariata"
+path = "src/main.rs"
 
 [dependencies]
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+
 # Async runtime
 tokio = { version = "1.40", features = ["full"] }
 async-trait = "0.1"
-futures = "0.3"
 
 # Database
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "migrate", "chrono", "json", "macros", "uuid"] }
@@ -31,9 +37,6 @@ aws-config = "1.5"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-# Compression
-zstd = "0.13"
 
 # Error handling
 anyhow = "1.0"
@@ -51,12 +54,10 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
-bytes = "1.7"
 
 # OAuth
 oauth2 = "4.4"
 reqwest = { version = "0.12", features = ["json"] }
-urlencoding = "2.1"
 
 # Environment
 dotenv = "0.15"
@@ -70,7 +71,6 @@ base64 = "0.22"
 
 [dev-dependencies]
 # Testing
-criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.12"
 testcontainers = "0.21"
 testcontainers-modules = { version = "0.11", features = ["postgres", "minio"] }
@@ -78,9 +78,6 @@ dotenv = "0.15"
 
 # Async testing
 tokio-test = "0.4"
-
-# Property testing
-proptest = "1.5"
 
 [profile.release]
 opt-level = 3

@@ -1,6 +1,0 @@
-{
-    "python.defaultInterpreterPath": "${workspaceFolder}/notebooks/.venv/bin/python",
-    "jupyter.kernels.excludePythonEnvironments": [
-        "${workspaceFolder}/notebooks/.venv/bin/python"
-    ]
-}

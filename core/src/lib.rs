@@ -8,6 +8,7 @@ pub mod database;
 pub mod error;
 pub mod oauth;
 pub mod pipeline;
+pub mod registry;
 pub mod scheduler;
 pub mod server;
 pub mod sources;
@@ -17,10 +18,22 @@ pub mod storage;
 pub use client::{Ariata, AriataBuilder};
 pub use error::{Error, Result};
 
+// Re-export scheduler types
+pub use scheduler::Scheduler;
+
+// Re-export OAuth types (for CLI)
+pub use oauth::OAuthManager;
+
 // Re-export library API functions
 pub use api::{
-    create_google_source_with_refresh_token, exchange_google_oauth_code, generate_google_oauth_url,
-    sync_google_calendar, SyncStats,
+    // Generic source management
+    list_sources, get_source, delete_source, get_source_status, sync_source, get_sync_history,
+
+    // Registry/catalog
+    list_available_sources, get_source_info, get_stream_info, list_all_streams,
+
+    // Types
+    Source, SourceStatus, SyncLog,
 };
 
 // Version information

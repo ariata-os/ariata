@@ -197,7 +197,7 @@ impl StorageBackend for S3Storage {
             }),
             Err(e) => Ok(HealthStatus {
                 is_healthy: false,
-                message: format!("S3 error: {}", e),
+                message: format!("S3 error: {e}"),
             }),
         }
     }
@@ -255,7 +255,7 @@ impl StorageBackend for LocalStorage {
         while let Some(entry) = dir.next_entry().await? {
             if entry.file_type().await?.is_file() {
                 if let Some(name) = entry.file_name().to_str() {
-                    files.push(format!("{}/{}", prefix, name));
+                    files.push(format!("{prefix}/{name}"));
                 }
             }
         }

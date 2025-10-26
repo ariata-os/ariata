@@ -5,259 +5,309 @@
 
 use sqlx::PgPool;
 use uuid::Uuid;
-use chrono::{DateTime, Duration, Utc};
-use serde_json::json;
-use std::env;
+use chrono::{DateTime, Utc};
 
-use crate::{
-    error::{Error, Result},
-    sources::google::GoogleCalendarSync,
-    oauth::token_manager::{TokenManager, OAuthProxyConfig},
-};
+use crate::error::{Error, Result};
 
-/// Generate a Google OAuth authorization URL
+
+// ============================================================================
+// Source Management API (Generic - works with any source)
+// ============================================================================
+
+/// Represents a configured data source
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct Source {
+    pub id: Uuid,
+    #[serde(rename = "type")]
+    pub source_type: String,
+    pub name: String,
+    pub is_active: bool,
+    pub last_sync_at: Option<DateTime<Utc>>,
+    pub error_message: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Source status with sync statistics
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct SourceStatus {
+    pub id: Uuid,
+    pub name: String,
+    pub source_type: String,
+    pub is_active: bool,
+    pub last_sync_at: Option<DateTime<Utc>>,
+    pub error_message: Option<String>,
+    pub total_syncs: i64,
+    pub successful_syncs: i64,
+    pub failed_syncs: i64,
+    pub last_sync_status: Option<String>,
+    pub last_sync_duration_ms: Option<i32>,
+}
+
+/// Sync log entry
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct SyncLog {
+    pub id: Uuid,
+    pub source_id: Uuid,
+    pub sync_mode: String,
+    pub started_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub duration_ms: Option<i32>,
+    pub status: String,
+    pub records_fetched: Option<i32>,
+    pub records_written: Option<i32>,
+    pub records_failed: Option<i32>,
+    pub error_message: Option<String>,
+}
+
+/// List all configured sources
 ///
-/// This creates the URL users should visit to authorize access to their Google account.
-/// Returns the authorization URL that should be opened in a browser.
-///
-/// # Arguments
-/// * `redirect_uri` - The URI Google will redirect to after authorization (optional, defaults to auth.ariata.com)
+/// Returns all sources in the database, regardless of type (OAuth, device, etc.)
 ///
 /// # Example
 /// ```
-/// let auth_url = ariata::generate_google_oauth_url(None).await?;
-/// println!("Visit this URL to authorize: {}", auth_url);
+/// let sources = ariata::list_sources(&db).await?;
+/// for source in sources {
+///     println!("{} - {} ({})", source.id, source.name, source.source_type);
+/// }
 /// ```
-pub async fn generate_google_oauth_url(redirect_uri: Option<&str>) -> Result<String> {
-    let client_id = env::var("GOOGLE_CLIENT_ID")
-        .map_err(|_| Error::Other("GOOGLE_CLIENT_ID not set".to_string()))?;
+pub async fn list_sources(db: &PgPool) -> Result<Vec<Source>> {
+    let sources = sqlx::query_as::<_, Source>(
+        r#"
+        SELECT id, type as source_type, name, is_active, last_sync_at,
+               error_message, created_at, updated_at
+        FROM sources
+        ORDER BY created_at DESC
+        "#
+    )
+    .fetch_all(db)
+    .await
+    .map_err(|e| Error::Database(format!("Failed to list sources: {e}")))?;
 
-    let redirect = redirect_uri.unwrap_or("https://auth.ariata.com/google/callback");
-
-    // Google OAuth2 authorization endpoint with required parameters
-    let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth\
-        ?client_id={}\
-        &redirect_uri={}\
-        &response_type=code\
-        &scope=https://www.googleapis.com/auth/calendar.readonly\
-        &access_type=offline\
-        &prompt=consent",
-        client_id,
-        urlencoding::encode(redirect)
-    );
-
-    Ok(auth_url)
+    Ok(sources)
 }
 
-/// Exchange a Google OAuth authorization code for tokens and create a source
-///
-/// Takes the authorization code from the OAuth callback and exchanges it for
-/// access and refresh tokens, then stores them in the database as a new source.
+/// Get a specific source by ID
 ///
 /// # Arguments
 /// * `db` - Database connection pool
-/// * `code` - Authorization code from Google OAuth callback
-///
-/// # Returns
-/// The UUID of the newly created source
+/// * `source_id` - UUID of the source
 ///
 /// # Example
 /// ```
-/// let source_id = ariata::exchange_google_oauth_code(&db, "auth_code_here").await?;
-/// println!("Created Google source: {}", source_id);
+/// let source = ariata::get_source(&db, source_id).await?;
+/// println!("Source: {} ({})", source.name, source.source_type);
 /// ```
-pub async fn exchange_google_oauth_code(db: &PgPool, code: &str) -> Result<Uuid> {
-    let client_id = env::var("GOOGLE_CLIENT_ID")
-        .map_err(|_| Error::Other("GOOGLE_CLIENT_ID not set".to_string()))?;
-    let client_secret = env::var("GOOGLE_CLIENT_SECRET")
-        .map_err(|_| Error::Other("GOOGLE_CLIENT_SECRET not set".to_string()))?;
-
-    // Exchange code for tokens via OAuth proxy
-    let oauth_proxy_url = env::var("OAUTH_PROXY_URL")
-        .unwrap_or_else(|_| "https://auth.ariata.com".to_string());
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(format!("{}/google/token", oauth_proxy_url))
-        .json(&json!({
-            "code": code,
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uri": "https://auth.ariata.com/google/callback"
-        }))
-        .send()
-        .await
-        .map_err(|e| Error::Network(format!("Failed to exchange code: {}", e)))?;
-
-    if !response.status().is_success() {
-        let error_text = response.text().await.unwrap_or_default();
-        return Err(Error::Other(format!("OAuth exchange failed: {}", error_text)));
-    }
-
-    let token_response: serde_json::Value = response.json().await
-        .map_err(|e| Error::Other(format!("Failed to parse token response: {}", e)))?;
-
-    let access_token = token_response["access_token"].as_str()
-        .ok_or_else(|| Error::Other("Missing access token".to_string()))?;
-    let refresh_token = token_response["refresh_token"].as_str();
-    let expires_in = token_response["expires_in"].as_i64().unwrap_or(3600);
-
-    // Create a new source in the database
-    let source_id = Uuid::new_v4();
-    let expires_at = Utc::now() + Duration::seconds(expires_in);
-
-    sqlx::query(
+pub async fn get_source(db: &PgPool, source_id: Uuid) -> Result<Source> {
+    let source = sqlx::query_as::<_, Source>(
         r#"
-        INSERT INTO sources (id, type, name, access_token, refresh_token, token_expires_at, is_active)
-        VALUES ($1, 'google', 'Google Account', $2, $3, $4, true)
-        ON CONFLICT (id) DO UPDATE SET
-            access_token = $2,
-            refresh_token = COALESCE($3, sources.refresh_token),
-            token_expires_at = $4,
-            updated_at = NOW()
+        SELECT id, type as source_type, name, is_active, last_sync_at,
+               error_message, created_at, updated_at
+        FROM sources
+        WHERE id = $1
         "#
     )
     .bind(source_id)
-    .bind(access_token)
-    .bind(refresh_token)
-    .bind(expires_at)
-    .execute(db)
+    .fetch_one(db)
     .await
-    .map_err(|e| Error::Database(format!("Failed to create source: {}", e)))?;
+    .map_err(|e| Error::Database(format!("Failed to get source: {e}")))?;
 
-    Ok(source_id)
+    Ok(source)
 }
 
-/// Sync Google Calendar data for a source
+/// Delete a source by ID
 ///
-/// Performs a full or incremental sync of Google Calendar events for the given source.
-/// This will fetch events from the past 30 days by default.
+/// This will cascade delete all associated data in stream tables.
 ///
 /// # Arguments
 /// * `db` - Database connection pool
-/// * `source_id` - UUID of the Google source to sync
-///
-/// # Returns
-/// A summary of the sync operation including number of events synced
+/// * `source_id` - UUID of the source to delete
 ///
 /// # Example
 /// ```
-/// let stats = ariata::sync_google_calendar(&db, source_id).await?;
-/// println!("Synced {} events", stats.events_count);
+/// ariata::delete_source(&db, source_id).await?;
+/// println!("Source deleted");
 /// ```
-pub async fn sync_google_calendar(db: &PgPool, source_id: Uuid) -> Result<SyncStats> {
-    // Initialize the token manager
-    let oauth_proxy_url = env::var("OAUTH_PROXY_URL")
-        .unwrap_or_else(|_| "https://auth.ariata.com".to_string());
-
-    let proxy_config = OAuthProxyConfig {
-        base_url: oauth_proxy_url,
-    };
-
-    let token_manager = std::sync::Arc::new(TokenManager::with_config(
-        db.clone(),
-        proxy_config,
-    ));
-
-    // Create the sync client
-    let sync = GoogleCalendarSync::new(
-        source_id,
-        db.clone(),
-        token_manager,
-    );
-
-    // Perform the sync (automatically syncs past 30 days of events)
-    let stats = sync.sync().await?;
-
-    Ok(SyncStats {
-        events_count: stats.upserted,
-        start_date: Utc::now() - Duration::days(30),
-        end_date: Utc::now(),
-    })
-}
-
-/// Create a Google source using a refresh token
-///
-/// This is a convenience function for testing or when you already have a refresh token.
-/// It creates a source in the database with the provided refresh token.
-///
-/// # Arguments
-/// * `db` - Database connection pool
-/// * `refresh_token` - Google OAuth refresh token
-///
-/// # Returns
-/// The UUID of the newly created source
-///
-/// # Example
-/// ```
-/// let source_id = ariata::create_google_source_with_refresh_token(
-///     &db,
-///     "1//refresh_token_here"
-/// ).await?;
-/// ```
-pub async fn create_google_source_with_refresh_token(
-    db: &PgPool,
-    refresh_token: &str
-) -> Result<Uuid> {
-    let source_id = Uuid::new_v4();
-
-    // Get initial access token using the refresh token
-    let oauth_proxy_url = env::var("OAUTH_PROXY_URL")
-        .unwrap_or_else(|_| "https://auth.ariata.com".to_string());
-
-    let client_id = env::var("GOOGLE_CLIENT_ID")
-        .map_err(|_| Error::Other("GOOGLE_CLIENT_ID not set".to_string()))?;
-    let client_secret = env::var("GOOGLE_CLIENT_SECRET")
-        .map_err(|_| Error::Other("GOOGLE_CLIENT_SECRET not set".to_string()))?;
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(format!("{}/google/refresh", oauth_proxy_url))
-        .json(&json!({
-            "refresh_token": refresh_token,
-            "client_id": client_id,
-            "client_secret": client_secret
-        }))
-        .send()
+pub async fn delete_source(db: &PgPool, source_id: Uuid) -> Result<()> {
+    sqlx::query("DELETE FROM sources WHERE id = $1")
+        .bind(source_id)
+        .execute(db)
         .await
-        .map_err(|e| Error::Network(format!("Failed to refresh token: {}", e)))?;
+        .map_err(|e| Error::Database(format!("Failed to delete source: {e}")))?;
 
-    if !response.status().is_success() {
-        let error_text = response.text().await.unwrap_or_default();
-        return Err(Error::Other(format!("Token refresh failed: {}", error_text)));
-    }
+    Ok(())
+}
 
-    let token_response: serde_json::Value = response.json().await
-        .map_err(|e| Error::Other(format!("Failed to parse token response: {}", e)))?;
-
-    let access_token = token_response["access_token"].as_str()
-        .ok_or_else(|| Error::Other("Missing access token".to_string()))?;
-    let expires_in = token_response["expires_in"].as_i64().unwrap_or(3600);
-    let expires_at = Utc::now() + Duration::seconds(expires_in);
-
-    // Create the source in the database
-    sqlx::query(
+/// Get source status with sync statistics
+///
+/// Returns detailed status including sync history and success rates.
+///
+/// # Arguments
+/// * `db` - Database connection pool
+/// * `source_id` - UUID of the source
+///
+/// # Example
+/// ```
+/// let status = ariata::get_source_status(&db, source_id).await?;
+/// println!("Total syncs: {}, Success rate: {:.1}%",
+///     status.total_syncs,
+///     (status.successful_syncs as f64 / status.total_syncs as f64) * 100.0
+/// );
+/// ```
+pub async fn get_source_status(db: &PgPool, source_id: Uuid) -> Result<SourceStatus> {
+    let status = sqlx::query_as::<_, SourceStatus>(
         r#"
-        INSERT INTO sources (id, type, name, access_token, refresh_token, token_expires_at, is_active)
-        VALUES ($1, 'google', 'Google Account (from refresh token)', $2, $3, $4, true)
+        SELECT
+            s.id,
+            s.name,
+            s.type as source_type,
+            s.is_active,
+            s.last_sync_at,
+            s.error_message,
+            COUNT(sl.id) as total_syncs,
+            COALESCE(SUM(CASE WHEN sl.status = 'success' THEN 1 ELSE 0 END), 0) as successful_syncs,
+            COALESCE(SUM(CASE WHEN sl.status = 'failed' THEN 1 ELSE 0 END), 0) as failed_syncs,
+            (SELECT status FROM sync_logs WHERE source_id = s.id ORDER BY started_at DESC LIMIT 1) as last_sync_status,
+            (SELECT duration_ms FROM sync_logs WHERE source_id = s.id ORDER BY started_at DESC LIMIT 1) as last_sync_duration_ms
+        FROM sources s
+        LEFT JOIN sync_logs sl ON s.id = sl.source_id
+        WHERE s.id = $1
+        GROUP BY s.id, s.name, s.type, s.is_active, s.last_sync_at, s.error_message
         "#
     )
     .bind(source_id)
-    .bind(access_token)
-    .bind(refresh_token)
-    .bind(expires_at)
-    .execute(db)
+    .fetch_one(db)
     .await
-    .map_err(|e| Error::Database(format!("Failed to create source: {}", e)))?;
+    .map_err(|e| Error::Database(format!("Failed to get source status: {e}")))?;
 
-    Ok(source_id)
+    Ok(status)
 }
 
-/// Summary statistics for a sync operation
-#[derive(Debug)]
-pub struct SyncStats {
-    pub events_count: usize,
-    pub start_date: DateTime<Utc>,
-    pub end_date: DateTime<Utc>,
+/// Trigger a sync for any source by ID
+///
+/// Note: Direct sync triggering is not implemented at the API level.
+/// Use the scheduler for automatic periodic syncs, or call source-specific
+/// sync implementations directly from their modules (e.g., GoogleCalendarSync::new().sync()).
+///
+/// # Arguments
+/// * `_db` - Database connection pool
+/// * `source_id` - UUID of the source to sync
+///
+/// # Returns
+/// Currently returns an error - sync should be triggered via scheduler
+pub async fn sync_source(_db: &PgPool, source_id: Uuid) -> Result<()> {
+    Err(Error::Other(format!(
+        "Direct sync not implemented. Use scheduler for automatic syncs. Source ID: {source_id}"
+    )))
+}
+
+/// Get sync history for a source
+///
+/// Returns recent sync operations with results and timing information.
+///
+/// # Arguments
+/// * `db` - Database connection pool
+/// * `source_id` - UUID of the source
+/// * `limit` - Maximum number of logs to return
+///
+/// # Example
+/// ```
+/// let logs = ariata::get_sync_history(&db, source_id, 10).await?;
+/// for log in logs {
+///     println!("{}: {} - {} records in {}ms",
+///         log.started_at, log.status, log.records_written.unwrap_or(0), log.duration_ms.unwrap_or(0)
+///     );
+/// }
+/// ```
+pub async fn get_sync_history(db: &PgPool, source_id: Uuid, limit: i64) -> Result<Vec<SyncLog>> {
+    let logs = sqlx::query_as::<_, SyncLog>(
+        r#"
+        SELECT id, source_id, sync_mode, started_at, completed_at, duration_ms,
+               status, records_fetched, records_written, records_failed, error_message
+        FROM sync_logs
+        WHERE source_id = $1
+        ORDER BY started_at DESC
+        LIMIT $2
+        "#
+    )
+    .bind(source_id)
+    .bind(limit)
+    .fetch_all(db)
+    .await
+    .map_err(|e| Error::Database(format!("Failed to get sync history: {e}")))?;
+
+    Ok(logs)
+}
+
+// ============================================================================
+// Catalog / Registry API
+// ============================================================================
+
+/// List all available sources in the catalog
+///
+/// Returns metadata about all sources that can be configured, including
+/// their authentication requirements, available streams, and configuration options.
+///
+/// # Example
+/// ```
+/// let sources = ariata::list_available_sources();
+/// for source in sources {
+///     println!("Source: {} ({})", source.display_name, source.name);
+///     println!("  Auth: {:?}", source.auth_type);
+///     println!("  Streams: {}", source.streams.len());
+/// }
+/// ```
+pub fn list_available_sources() -> Vec<&'static crate::registry::SourceDescriptor> {
+    crate::registry::list_sources()
+}
+
+/// Get information about a specific source
+///
+/// # Arguments
+/// * `name` - The source identifier (e.g., "google", "strava", "notion")
+///
+/// # Returns
+/// Source metadata including available streams and configuration schemas, or None if not found
+///
+/// # Example
+/// ```
+/// let google = ariata::get_source_info("google").unwrap();
+/// println!("Google has {} streams available", google.streams.len());
+/// ```
+pub fn get_source_info(name: &str) -> Option<&'static crate::registry::SourceDescriptor> {
+    crate::registry::get_source(name)
+}
+
+/// Get information about a specific stream
+///
+/// # Arguments
+/// * `source_name` - The source identifier (e.g., "google")
+/// * `stream_name` - The stream identifier (e.g., "calendar")
+///
+/// # Returns
+/// Stream metadata including configuration schema and database table name, or None if not found
+///
+/// # Example
+/// ```
+/// let calendar = ariata::get_stream_info("google", "calendar").unwrap();
+/// println!("Table: {}", calendar.table_name);
+/// println!("Config schema: {}", calendar.config_schema);
+/// ```
+pub fn get_stream_info(source_name: &str, stream_name: &str) -> Option<&'static crate::registry::StreamDescriptor> {
+    crate::registry::get_stream(source_name, stream_name)
+}
+
+/// List all streams across all sources
+///
+/// Returns a list of (source_name, stream_descriptor) tuples for all registered streams.
+///
+/// # Example
+/// ```
+/// let all_streams = ariata::list_all_streams();
+/// for (source, stream) in all_streams {
+///     println!("{}.{} -> {}", source, stream.name, stream.table_name);
+/// }
+/// ```
+pub fn list_all_streams() -> Vec<(&'static str, &'static crate::registry::StreamDescriptor)> {
+    crate::registry::list_all_streams()
 }

@@ -43,7 +43,7 @@ impl GoogleClient {
     pub fn with_api(source_id: Uuid, token_manager: Arc<TokenManager>, api: &str, version: &str) -> Self {
         Self {
             http: OAuthHttpClient::new(source_id, token_manager)
-                .with_base_url(&format!("https://www.googleapis.com/{}/{}", api, version))
+                .with_base_url(&format!("https://www.googleapis.com/{api}/{version}"))
                 .with_retry_config(RetryConfig::default())
                 .with_error_handler(Box::new(GoogleErrorHandler)),
         }
