@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config(); // Load environment variables FIRST
 
-import express, { Application as ExpressApplication, Request as ExpressRequest, Response as ExpressResponse } from 'express';
+import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -12,7 +12,7 @@ import { stravaRouter } from './routes/strava';
 import { errorHandler } from './middleware/error-handler';
 import { logger } from './middleware/logger';
 
-const app: ExpressApplication = express();
+const app: Application = express();
 const PORT = process.env.PORT || 3000;
 
 // Security middleware
@@ -35,7 +35,7 @@ app.use(express.json());
 app.use(logger);
 
 // Health check
-app.get('/health', (req: ExpressRequest, res: ExpressResponse) => {
+app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -48,7 +48,7 @@ app.use('/strava', stravaRouter);
 app.use(errorHandler);
 
 // 404 handler
-app.use('*', (req: ExpressRequest, res: ExpressResponse) => {
+app.use('*', (req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });
 });
 

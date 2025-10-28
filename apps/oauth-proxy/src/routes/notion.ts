@@ -1,4 +1,4 @@
-import express, { Router as ExpressRouter, Request as ExpressRequest, Response as ExpressResponse } from 'express';
+import express, { Router, Request, Response } from 'express';
 import { randomBytes } from 'crypto';
 import { oauthConfigs } from '../config/oauth-apps';
 import { createError } from '../middleware/error-handler';
@@ -11,7 +11,7 @@ interface NotionTokenResponse {
   bot_id?: string;
 }
 
-const router: ExpressRouter = express.Router();
+const router: Router = express.Router();
 
 // In-memory store for state parameters (in production, use Redis or similar)
 const stateStore = new Map<string, { returnUrl: string; originalState?: string; timestamp: number }>();
@@ -31,7 +31,7 @@ setInterval(() => {
  * @route GET /notion/auth
  * @param return_url - The URL to redirect back to after auth
  */
-router.get('/auth', (req: ExpressRequest, res: ExpressResponse) => {
+router.get('/auth', (req: Request, res: Response) => {
   const returnUrl = req.query.return_url as string;
   const originalState = req.query.state as string;
 
@@ -64,7 +64,7 @@ router.get('/auth', (req: ExpressRequest, res: ExpressResponse) => {
  * Handle Notion OAuth callback
  * @route GET /notion/callback
  */
-router.get('/callback', async (req: ExpressRequest, res: ExpressResponse) => {
+router.get('/callback', async (req: Request, res: Response) => {
   try {
     const { code, state, error } = req.query;
 
@@ -138,7 +138,7 @@ router.get('/callback', async (req: ExpressRequest, res: ExpressResponse) => {
  * Refresh Notion access token
  * @route POST /notion/refresh
  */
-router.post('/refresh', async (req: ExpressRequest, res: ExpressResponse) => {
+router.post('/refresh', async (req: Request, res: Response) => {
   const { refresh_token } = req.body;
 
   if (!refresh_token) {
@@ -165,7 +165,7 @@ router.post('/refresh', async (req: ExpressRequest, res: ExpressResponse) => {
  * Used by CLI and other clients that can't use the redirect flow
  * @route POST /notion/token
  */
-router.post('/token', async (req: ExpressRequest, res: ExpressResponse) => {
+router.post('/token', async (req: Request, res: Response) => {
   const { code } = req.body;
 
   if (!code) {
