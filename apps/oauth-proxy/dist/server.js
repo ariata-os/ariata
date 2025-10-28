@@ -16,6 +16,8 @@ const error_handler_1 = require("./middleware/error-handler");
 const logger_1 = require("./middleware/logger");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
+// Trust proxy for Vercel/serverless environments
+app.set('trust proxy', 1);
 // Security middleware
 app.use((0, helmet_1.default)());
 app.use((0, cors_1.default)({
