@@ -155,4 +155,47 @@ router.post('/refresh', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Exchange authorization code for access token
+ * Used by CLI and other clients that can't use the redirect flow
+ * @route POST /notion/token
+ */
+router.post('/token', async (req: Request, res: Response) => {
+  const { code } = req.body;
+
+  if (!code) {
+    return res.status(400).json({ error: 'Missing code parameter' });
+  }
+
+  const config = oauthConfigs.notion;
+
+  try {
+    // Exchange code for access token
+    const tokenResponse = await fetch(config.tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: code as string,
+        redirect_uri: config.redirectUri
+      })
+    });
+
+    if (!tokenResponse.ok) {
+      const error = await tokenResponse.text();
+      console.error('Token exchange failed:', error);
+      return res.status(tokenResponse.status).json({ error: 'Token exchange failed' });
+    }
+
+    const tokenData = await tokenResponse.json() as NotionTokenResponse;
+    res.json(tokenData);
+  } catch (error) {
+    console.error('Error exchanging code for token:', error);
+    res.status(500).json({ error: 'Failed to exchange code for token' });
+  }
+});
+
 export default router;
