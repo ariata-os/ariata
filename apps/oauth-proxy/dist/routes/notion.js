@@ -78,17 +78,18 @@ router.get('/callback', async (req, res) => {
         }
         const config = oauth_apps_1.oauthConfigs.notion;
         // Exchange code for access token
+        // Note: Notion requires form-encoded body, not JSON
         const tokenResponse = await fetch(config.tokenUrl, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`
             },
-            body: JSON.stringify({
+            body: new URLSearchParams({
                 grant_type: 'authorization_code',
                 code: code,
                 redirect_uri: config.redirectUri
-            })
+            }).toString()
         });
         if (!tokenResponse.ok) {
             const error = await tokenResponse.text();
@@ -151,17 +152,18 @@ router.post('/token', async (req, res) => {
     const config = oauth_apps_1.oauthConfigs.notion;
     try {
         // Exchange code for access token
+        // Note: Notion requires form-encoded body, not JSON
         const tokenResponse = await fetch(config.tokenUrl, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`
             },
-            body: JSON.stringify({
+            body: new URLSearchParams({
                 grant_type: 'authorization_code',
                 code: code,
                 redirect_uri: config.redirectUri
-            })
+            }).toString()
         });
         if (!tokenResponse.ok) {
             const error = await tokenResponse.text();
