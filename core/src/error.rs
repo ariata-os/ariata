@@ -64,15 +64,3 @@ pub enum Error {
 
 /// Result type alias for Ariata operations
 pub type Result<T> = std::result::Result<T, Error>;
-
-impl From<String> for Error {
-    fn from(s: String) -> Self {
-        Error::Other(s)
-    }
-}
-
-impl From<&str> for Error {
-    fn from(s: &str) -> Self {
-        Error::Other(s.to_string())
-    }
-}

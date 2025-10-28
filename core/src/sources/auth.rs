@@ -154,7 +154,7 @@ mod tests {
     #[tokio::test]
     async fn test_auth_type_checks() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let tm = Arc::new(TokenManager::new(pool));
+        let tm = Arc::new(TokenManager::new_insecure(pool));
         let auth = SourceAuth::oauth2(Uuid::new_v4(), tm);
         assert!(auth.is_oauth());
         assert!(!auth.is_device());
@@ -171,7 +171,7 @@ mod tests {
     #[tokio::test]
     async fn test_source_id_extraction() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let tm = Arc::new(TokenManager::new(pool));
+        let tm = Arc::new(TokenManager::new_insecure(pool));
         let source_id = Uuid::new_v4();
         let auth = SourceAuth::oauth2(source_id, tm);
         assert_eq!(auth.source_id(), Some(source_id));

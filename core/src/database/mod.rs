@@ -59,6 +59,17 @@ impl Database {
     }
 
     /// Execute a query and return results
+    ///
+    /// # Warning
+    /// This method is deprecated and should only be used for testing or debugging.
+    /// For production code, use sqlx::query_as!() macros for type-safe queries.
+    ///
+    /// # Security
+    /// This method does not provide SQL injection protection. Only use with trusted input.
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use sqlx::query_as!() macros for type-safe queries instead"
+    )]
     pub async fn query(&self, sql: &str) -> Result<Vec<HashMap<String, Value>>> {
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
 

@@ -133,14 +133,7 @@ pub async fn oauth_callback_handler(
     State(state): State<AppState>,
     Query(params): Query<crate::api::OAuthCallbackParams>,
 ) -> Response {
-    match crate::api::handle_oauth_callback(
-        state.db.pool(),
-        &params.code,
-        &params.provider,
-        params.state,
-    )
-    .await
-    {
+    match crate::api::handle_oauth_callback(state.db.pool(), &params).await {
         Ok(source) => (StatusCode::CREATED, Json(source)).into_response(),
         Err(e) => (
             StatusCode::BAD_REQUEST,

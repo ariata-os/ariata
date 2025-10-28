@@ -14,6 +14,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Interactive setup wizard
+    Init,
+
     /// Run database migrations
     Migrate,
 
@@ -275,17 +278,11 @@ async fn handle_add_source(
     let mut redirect_url = String::new();
     io::stdin().read_line(&mut redirect_url)?;
 
-    // Extract code from URL
-    let code = extract_code_from_url(&redirect_url)?;
+    // Parse callback URL parameters
+    let callback_params = parse_callback_url(&redirect_url, source_type)?;
 
     // Handle callback and create source
-    let source = ariata::handle_oauth_callback(
-        ariata.database.pool(),
-        &code,
-        source_type,
-        Some(response.state),
-    )
-    .await?;
+    let source = ariata::handle_oauth_callback(ariata.database.pool(), &callback_params).await?;
 
     println!("\n✅ Source created successfully!");
     println!("   Name: {}", source.name);
@@ -315,20 +312,48 @@ async fn handle_add_source(
     Ok(())
 }
 
-fn extract_code_from_url(url: &str) -> Result<String, Box<dyn std::error::Error>> {
-    use regex::Regex;
+fn parse_callback_url(
+    url: &str,
+    provider: &str,
+) -> Result<ariata::OAuthCallbackParams, Box<dyn std::error::Error>> {
+    use oauth2::url::Url;
+
     // Trim whitespace (including newline from stdin)
     let url = url.trim();
-    println!("DEBUG: Extracting from URL: {}", url);
-    let re = Regex::new(r"code=([^&]+)")?;
-    if let Some(cap) = re.captures(url) {
-        let code = cap[1].to_string();
-        println!("DEBUG: Found code: {}", code);
-        Ok(code)
-    } else {
-        println!("DEBUG: No match found");
-        Err("Could not find authorization code in URL".into())
+
+    let parsed_url = Url::parse(url)?;
+    let params: std::collections::HashMap<_, _> = parsed_url.query_pairs().collect();
+
+    // Extract common OAuth parameters
+    let code = params.get("code").map(|s| s.to_string());
+    let access_token = params.get("access_token").map(|s| s.to_string());
+    let refresh_token = params.get("refresh_token").map(|s| s.to_string());
+    let expires_in = params
+        .get("expires_in")
+        .and_then(|s| s.parse::<i64>().ok());
+    let state = params.get("state").map(|s| s.to_string());
+
+    // Notion-specific fields
+    let workspace_id = params.get("workspace_id").map(|s| s.to_string());
+    let workspace_name = params.get("workspace_name").map(|s| s.to_string());
+    let bot_id = params.get("bot_id").map(|s| s.to_string());
+
+    // Validate that we have either code or access_token
+    if code.is_none() && access_token.is_none() {
+        return Err("OAuth callback URL must contain either 'code' or 'access_token' parameter".into());
     }
+
+    Ok(ariata::OAuthCallbackParams {
+        code,
+        access_token,
+        refresh_token,
+        expires_in,
+        provider: provider.to_string(),
+        state,
+        workspace_id,
+        workspace_name,
+        bot_id,
+    })
 }
 
 #[tokio::main]
@@ -346,6 +371,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = Cli::parse();
 
+    // Handle Init command early (doesn't need Ariata client)
+    if matches!(cli.command, Commands::Init) {
+        let config = ariata::setup::run_init().await?;
+
+        // Save configuration
+        ariata::setup::save_config(&config)?;
+
+        // Run migrations if requested
+        if config.run_migrations {
+            println!();
+            println!("📊 Running migrations...");
+            let db = ariata::database::Database::new(&config.database_url)?;
+            db.initialize().await?;
+            ariata::setup::validation::display_success("Migrations complete");
+        }
+
+        ariata::setup::display_completion();
+        return Ok(());
+    }
+
     // Get database URL from environment
     let database_url =
         env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://localhost/ariata".to_string());
@@ -354,6 +399,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ariata = AriataBuilder::new().postgres(&database_url).build().await?;
 
     match cli.command {
+        Commands::Init => unreachable!(), // Handled above
+
         Commands::Migrate => {
             println!("Running database migrations...");
             ariata.database.initialize().await?;

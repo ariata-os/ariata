@@ -348,7 +348,7 @@ mod tests {
     #[tokio::test]
     async fn test_backoff_calculation() {
         let pool = sqlx::PgPool::connect_lazy("postgres://test").unwrap();
-        let token_manager = Arc::new(TokenManager::new(pool));
+        let token_manager = Arc::new(TokenManager::new_insecure(pool));
         let client = OAuthHttpClient::new(Uuid::new_v4(), token_manager);
 
         assert_eq!(client.calculate_backoff(0), Duration::from_secs(1));
@@ -363,7 +363,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_url() {
         let pool = sqlx::PgPool::connect_lazy("postgres://test").unwrap();
-        let token_manager = Arc::new(TokenManager::new(pool));
+        let token_manager = Arc::new(TokenManager::new_insecure(pool));
         let client = OAuthHttpClient::new(Uuid::new_v4(), token_manager)
             .with_base_url("https://api.example.com/v1");
 

@@ -52,10 +52,6 @@ impl Storage {
         self.backend.upload(key, data).await
     }
 
-    pub async fn put_object(&self, key: &str, data: &[u8]) -> Result<()> {
-        self.backend.upload(key, data.to_vec()).await
-    }
-
     pub async fn download(&self, key: &str) -> Result<Vec<u8>> {
         self.backend.download(key).await
     }

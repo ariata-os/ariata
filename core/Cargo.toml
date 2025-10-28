@@ -55,9 +55,6 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
 
-# Concurrency
-dashmap = "6.1"
-
 # OAuth
 oauth2 = "4.4"
 reqwest = { version = "0.12", features = ["json"] }
@@ -80,6 +77,10 @@ urlencoding = "2.1"
 
 # Regular expressions
 regex = "1.0"
+
+# Interactive CLI setup
+dialoguer = "0.11"
+console = "0.15"
 
 [dev-dependencies]
 # Testing

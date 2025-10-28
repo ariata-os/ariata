@@ -26,9 +26,16 @@ pub struct OAuthAuthorizeResponse {
 /// OAuth callback query parameters
 #[derive(Debug, serde::Deserialize)]
 pub struct OAuthCallbackParams {
-    pub code: String,
+    pub code: Option<String>,
+    pub access_token: Option<String>,
+    pub refresh_token: Option<String>,
+    pub expires_in: Option<i64>,
     pub provider: String,
     pub state: Option<String>,
+    // Notion-specific fields
+    pub workspace_id: Option<String>,
+    pub workspace_name: Option<String>,
+    pub bot_id: Option<String>,
 }
 
 /// Request for creating a source manually
@@ -97,70 +104,89 @@ pub async fn initiate_oauth_flow(
 }
 
 /// Handle OAuth callback and create source
+/// Supports both direct token flow and code exchange flow
 pub async fn handle_oauth_callback(
     db: &PgPool,
-    code: &str,
-    provider: &str,
-    _state: Option<String>,
+    params: &OAuthCallbackParams,
 ) -> Result<Source> {
-    let descriptor = crate::registry::get_source(provider)
-        .ok_or_else(|| Error::Other(format!("Unknown provider: {provider}")))?;
+    let descriptor = crate::registry::get_source(&params.provider)
+        .ok_or_else(|| Error::Other(format!("Unknown provider: {}", params.provider)))?;
 
-    // Exchange code for tokens via OAuth proxy
-    let proxy_url =
-        std::env::var("OAUTH_PROXY_URL").unwrap_or_else(|_| "https://auth.ariata.com".to_string());
+    // Get tokens either directly from callback or by exchanging code
+    let (access_token, refresh_token, expires_in) = if let Some(token) = &params.access_token {
+        // Direct token flow (used by Notion, Google)
+        (
+            token.clone(),
+            params.refresh_token.clone(),
+            params.expires_in,
+        )
+    } else if let Some(code) = &params.code {
+        // Code exchange flow
+        let proxy_url = std::env::var("OAUTH_PROXY_URL")
+            .unwrap_or_else(|_| "https://auth.ariata.com".to_string());
 
-    let client = reqwest::Client::new();
+        let client = reqwest::Client::new();
 
-    let response = client
-        .post(&format!("{}/{}/token", proxy_url, provider))
-        .json(&serde_json::json!({
-            "code": code,
-        }))
-        .send()
-        .await
-        .map_err(|e| Error::Http(format!("Failed to exchange code for tokens: {}", e)))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let error_text = response
-            .text()
+        let response = client
+            .post(&format!("{}/{}/token", proxy_url, params.provider))
+            .json(&serde_json::json!({
+                "code": code,
+            }))
+            .send()
             .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(Error::Http(format!(
-            "Token exchange failed: {} {}",
-            status, error_text
-        )));
-    }
+            .map_err(|e| Error::Http(format!("Failed to exchange code for tokens: {}", e)))?;
 
-    #[derive(serde::Deserialize)]
-    struct TokenResponse {
-        access_token: String,
-        #[serde(default)]
-        refresh_token: Option<String>,
-        #[serde(default)]
-        expires_in: Option<i64>,
-    }
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(Error::Http(format!(
+                "Token exchange failed: {} {}",
+                status, error_text
+            )));
+        }
 
-    let token_data: TokenResponse = response
-        .json()
-        .await
-        .map_err(|e| Error::Http(format!("Failed to parse token response: {e}")))?;
+        #[derive(serde::Deserialize)]
+        struct TokenResponse {
+            access_token: String,
+            #[serde(default)]
+            refresh_token: Option<String>,
+            #[serde(default)]
+            expires_in: Option<i64>,
+        }
+
+        let token_data: TokenResponse = response
+            .json()
+            .await
+            .map_err(|e| Error::Http(format!("Failed to parse token response: {e}")))?;
+
+        (
+            token_data.access_token,
+            token_data.refresh_token,
+            token_data.expires_in,
+        )
+    } else {
+        return Err(Error::Other(
+            "OAuth callback must include either 'code' or 'access_token'".to_string(),
+        ));
+    };
 
     let source_name = format!("{} Account", descriptor.display_name);
     let token_manager = std::sync::Arc::new(TokenManager::new(db.clone()));
 
     let source_id = token_manager
         .store_initial_tokens(
-            provider,
+            &params.provider,
             &source_name,
-            token_data.access_token,
-            token_data.refresh_token,
-            token_data.expires_in,
+            access_token,
+            refresh_token,
+            expires_in,
         )
         .await?;
 
-    super::streams::enable_default_streams(db, source_id, provider).await?;
+    super::streams::enable_default_streams(db, source_id, &params.provider).await?;
 
     get_source(db, source_id).await
 }

@@ -10,6 +10,7 @@ pub mod oauth;
 pub mod registry;
 pub mod scheduler;
 pub mod server;
+pub mod setup;
 pub mod sources;
 pub mod storage;
 
@@ -57,6 +58,7 @@ pub use api::{
     CreateSourceRequest,
     EnableStreamRequest,
     OAuthAuthorizeResponse,
+    OAuthCallbackParams,
     RegisterDeviceRequest,
 
     // Types

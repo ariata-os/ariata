@@ -4,7 +4,6 @@
 //! source type and stream name, handling authentication and configuration loading.
 
 use std::sync::Arc;
-use dashmap::DashMap;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -24,7 +23,6 @@ use super::{
 /// - Loading source information from the database
 /// - Creating appropriate authentication (OAuth2, Device, etc.)
 /// - Instantiating the correct stream implementation
-/// - Caching TokenManagers for OAuth sources
 ///
 /// # Example
 ///
@@ -40,16 +38,12 @@ use super::{
 /// ```
 pub struct StreamFactory {
     db: PgPool,
-    token_manager_cache: Arc<DashMap<Uuid, Arc<TokenManager>>>,
 }
 
 impl StreamFactory {
     /// Create a new stream factory
     pub fn new(db: PgPool) -> Self {
-        Self {
-            db,
-            token_manager_cache: Arc::new(DashMap::new()),
-        }
+        Self { db }
     }
 
     /// Create a stream instance for syncing
@@ -106,7 +100,8 @@ impl StreamFactory {
     async fn create_auth(&self, source_id: Uuid, source_type: &str) -> Result<SourceAuth> {
         match source_type {
             "google" | "strava" | "notion" => {
-                let token_manager = self.get_or_create_token_manager(source_id).await?;
+                // Create a new TokenManager (cheap operation - just wraps the db pool)
+                let token_manager = Arc::new(TokenManager::new(self.db.clone()));
                 Ok(SourceAuth::oauth2(source_id, token_manager))
             }
             "ios" | "mac" => {
@@ -171,38 +166,12 @@ impl StreamFactory {
         }
     }
 
-    /// Get or create a TokenManager for a source
-    ///
-    /// TokenManagers are cached to avoid recreating them for each stream.
-    async fn get_or_create_token_manager(&self, source_id: Uuid) -> Result<Arc<TokenManager>> {
-        // Check cache first
-        if let Some(tm) = self.token_manager_cache.get(&source_id) {
-            return Ok(tm.value().clone());
-        }
-
-        // Create new token manager
-        let token_manager = Arc::new(TokenManager::new(self.db.clone()));
-
-        // Store in cache using entry API for atomic insert-if-absent
-        self.token_manager_cache
-            .entry(source_id)
-            .or_insert_with(|| token_manager.clone());
-
-        Ok(token_manager)
-    }
-
-    /// Clear the token manager cache (useful for testing)
-    #[cfg(test)]
-    pub fn clear_cache(&self) {
-        self.token_manager_cache.clear();
-    }
 }
 
 impl Clone for StreamFactory {
     fn clone(&self) -> Self {
         Self {
             db: self.db.clone(),
-            token_manager_cache: self.token_manager_cache.clone(),
         }
     }
 }
@@ -232,6 +201,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_auth_oauth2() {
+        // Set insecure mode for testing
+        std::env::set_var("ARIATA_ALLOW_INSECURE", "true");
+
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
         let factory = StreamFactory::new(pool);
 
@@ -241,6 +213,9 @@ mod tests {
         let auth = auth.unwrap();
         assert!(auth.is_oauth());
         assert!(!auth.is_device());
+
+        // Clean up
+        std::env::remove_var("ARIATA_ALLOW_INSECURE");
     }
 
     #[tokio::test]
@@ -271,34 +246,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_token_manager_caching() {
-        let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let factory = StreamFactory::new(pool);
-
-        let source_id = Uuid::new_v4();
-
-        // Get token manager twice
-        let tm1 = factory.get_or_create_token_manager(source_id).await.unwrap();
-        let tm2 = factory.get_or_create_token_manager(source_id).await.unwrap();
-
-        // Should be the same instance (both Arc clones point to same data)
-        assert!(Arc::ptr_eq(&tm1, &tm2), "Should return same cached instance");
-
-        // Clear cache and get again
-        factory.clear_cache();
-        let tm3 = factory.get_or_create_token_manager(source_id).await.unwrap();
-
-        // Should be a new instance (different pointer)
-        assert!(!Arc::ptr_eq(&tm1, &tm3), "Should create new instance after cache clear");
-    }
-
-    #[tokio::test]
     async fn test_create_stream_impl_google_calendar() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
         let factory = StreamFactory::new(pool.clone());
 
         let source_id = Uuid::new_v4();
-        let tm = Arc::new(TokenManager::new(pool));
+        let tm = Arc::new(TokenManager::new_insecure(pool));
         let auth = SourceAuth::oauth2(source_id, tm);
 
         let result = factory
@@ -318,7 +271,7 @@ mod tests {
         let factory = StreamFactory::new(pool.clone());
 
         let source_id = Uuid::new_v4();
-        let tm = Arc::new(TokenManager::new(pool));
+        let tm = Arc::new(TokenManager::new_insecure(pool));
         let auth = SourceAuth::oauth2(source_id, tm);
 
         let result = factory

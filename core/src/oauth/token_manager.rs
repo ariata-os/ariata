@@ -52,29 +52,47 @@ pub struct TokenManager {
     client: Client,
     proxy_config: OAuthProxyConfig,
     encryptor: Option<TokenEncryptor>,
+    allow_insecure: bool,
 }
 
 impl TokenManager {
     /// Create a new token manager
     ///
-    /// Attempts to load encryption key from ARIATA_ENCRYPTION_KEY environment variable.
-    /// If not set, tokens will be stored in plaintext (not recommended for production).
+    /// Requires ARIATA_ENCRYPTION_KEY environment variable to be set.
+    /// For development/testing, use `new_insecure()` instead.
+    ///
+    /// # Panics
+    /// Panics if encryption key is not set and ARIATA_ALLOW_INSECURE is not "true"
     pub fn new(db: PgPool) -> Self {
         Self::with_config(db, OAuthProxyConfig::default())
     }
 
     /// Create a new token manager with custom configuration
+    ///
+    /// # Security
+    /// Requires ARIATA_ENCRYPTION_KEY to be set unless ARIATA_ALLOW_INSECURE=true
     pub fn with_config(db: PgPool, proxy_config: OAuthProxyConfig) -> Self {
         // Try to load encryption key from environment
         let encryptor = TokenEncryptor::from_env().ok();
+        let allow_insecure = std::env::var("ARIATA_ALLOW_INSECURE")
+            .unwrap_or_default()
+            .to_lowercase() == "true";
 
         if encryptor.is_none() {
-            tracing::warn!(
-                "Token encryption disabled: ARIATA_ENCRYPTION_KEY not set. \
-                 Tokens will be stored in plaintext. Generate key with: openssl rand -base64 32"
-            );
+            if allow_insecure {
+                tracing::warn!(
+                    "⚠️  INSECURE MODE: Token encryption disabled via ARIATA_ALLOW_INSECURE=true. \
+                     Tokens will be stored in plaintext. DO NOT USE IN PRODUCTION!"
+                );
+            } else {
+                panic!(
+                    "SECURITY ERROR: ARIATA_ENCRYPTION_KEY environment variable is required. \
+                     \nGenerate one with: openssl rand -base64 32 \
+                     \nFor development only, you can bypass this with ARIATA_ALLOW_INSECURE=true"
+                );
+            }
         } else {
-            tracing::info!("Token encryption enabled");
+            tracing::info!("✅ Token encryption enabled");
         }
 
         Self {
@@ -82,6 +100,23 @@ impl TokenManager {
             client: Client::new(),
             proxy_config,
             encryptor,
+            allow_insecure,
+        }
+    }
+
+    /// Create a token manager in insecure mode (for testing only)
+    ///
+    /// # Warning
+    /// This stores tokens in plaintext. NEVER use in production!
+    #[cfg(any(test, debug_assertions))]
+    pub fn new_insecure(db: PgPool) -> Self {
+        tracing::warn!("Creating TokenManager in INSECURE mode - tokens will be stored in plaintext");
+        Self {
+            db: db.clone(),
+            client: Client::new(),
+            proxy_config: OAuthProxyConfig::default(),
+            encryptor: None,
+            allow_insecure: true,
         }
     }
 
@@ -348,7 +383,7 @@ mod tests {
     #[tokio::test]
     async fn test_needs_refresh() {
         let pool = PgPool::connect_lazy("postgres://test:test@localhost/test").unwrap();
-        let manager = TokenManager::new(pool);
+        let manager = TokenManager::new_insecure(pool);
 
         // Token expiring in 1 minute - should refresh
         let token = OAuthToken {
