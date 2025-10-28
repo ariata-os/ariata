@@ -263,4 +263,18 @@ function isValidReturnUrl(url: string): boolean {
   }
 }
 
+// Temporary debug endpoint - REMOVE IN PRODUCTION
+router.get('/debug-config', (req: Request, res: Response) => {
+  const config = oauthConfigs.notion;
+  res.json({
+    tokenUrl: config.tokenUrl,
+    redirectUri: config.redirectUri,
+    clientIdSet: !!config.clientId,
+    clientSecretSet: !!config.clientSecret,
+    clientIdLength: config.clientId?.length || 0,
+    clientIdPrefix: config.clientId?.substring(0, 8) + '...',
+    clientSecretLength: config.clientSecret?.length || 0
+  });
+});
+
 export default router;
