@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ariata-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ariata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-schemas.sh:/docker-entrypoint-initdb.d/init-schemas.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ariata-network
+
+  # MinIO object storage
+  minio:
+    image: minio/minio:latest
+    container_name: ariata-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console UI
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ariata-network
+
+  # Rust backend (core)
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: ariata-core
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ariata
+      ARIATA_ENCRYPTION_KEY: ${ARIATA_ENCRYPTION_KEY}
+      RUST_LOG: info,ariata=debug
+      # OAuth endpoints
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      NOTION_CLIENT_ID: ${NOTION_CLIENT_ID}
+      NOTION_CLIENT_SECRET: ${NOTION_CLIENT_SECRET}
+      # MinIO connection
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: ariata-data
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - ariata-network
+    volumes:
+      # Mount for hot reload during development (optional)
+      - ./core:/app
+      - cargo_cache:/usr/local/cargo/registry
+      - target_cache:/app/target
+
+  # SvelteKit web app
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: development
+    container_name: ariata-web
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ariata
+      ELT_API_URL: http://core:8000
+      PUBLIC_ELT_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      core:
+        condition: service_started
+    networks:
+      - ariata-network
+    volumes:
+      # Mount for hot reload during development
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.svelte-kit
+    command: pnpm dev --host 0.0.0.0
+
+volumes:
+  postgres_data:
+  minio_data:
+  cargo_cache:
+  target_cache:
+
+networks:
+  ariata-network:
+    driver: bridge

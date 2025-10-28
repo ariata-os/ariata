@@ -1,3 +1,6 @@
+-- Use the elt schema for all ELT operations
+SET search_path TO elt, public;
+
 -- Sync schedule configuration for periodic source syncs
 -- Stores cron-based scheduling information for each source
 

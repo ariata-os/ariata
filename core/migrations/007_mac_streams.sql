@@ -1,3 +1,6 @@
+-- Use the elt schema for all ELT operations
+SET search_path TO elt, public;
+
 -- macOS stream tables for device data ingestion
 -- These tables store data from the Mac companion app
 

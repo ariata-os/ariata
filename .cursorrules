@@ -1,0 +1,344 @@
+# Ariata - Cursor Rules
+
+## Core Principles
+
+- Do what has been asked; nothing more, nothing less
+- ALWAYS prefer editing an existing file to creating a new one
+- NEVER create files unless absolutely necessary
+- NEVER proactively create documentation files unless explicitly requested
+
+## Project Overview
+
+Ariata is a **single-user personal data ELT platform** built with:
+
+- **Backend**: Rust (async/tokio, sqlx, axum)
+- **Frontend**: TypeScript/SvelteKit (Drizzle ORM)
+- **Database**: PostgreSQL with pgvector
+- **Infrastructure**: Docker Compose, Make
+
+**Architecture**: Monolithic Rust library (not Docker-per-source) for device coupling, cross-stream correlation, and superior performance.
+
+## Database Schema Architecture 🔴 CRITICAL
+
+**Single PostgreSQL database with multiple schemas:**
+
+```txt
+Database: ariata
+  ├─ Schema: elt (Rust/sqlx manages)
+  │   ├─ sources (auth + OAuth tokens)
+  │   ├─ streams (config + cron schedules)
+  │   ├─ sync_logs (audit trail)
+  │   └─ stream_* tables (time-series data)
+  │
+  ├─ Schema: app (SvelteKit/Drizzle manages)
+  │   ├─ preferences (UI settings)
+  │   ├─ dashboards (saved layouts)
+  │   └─ saved_queries (user queries)
+  │
+  └─ Schema: transform (Future - Python)
+      └─ Transformed/aggregated data
+```
+
+**Why schemas over databases:**
+
+- ✅ Simpler infrastructure (one DB, one backup)
+- ✅ Cross-schema queries (Python can join elt.*and app.*)
+- ✅ Logical separation without physical isolation
+- ✅ Open-source library preserved (Rust only uses elt schema)
+
+**Implementation Rules:**
+
+- **Rust migrations**: Always start with `SET search_path TO elt, public;`
+- **Drizzle tables**: Always include `schema: 'app'` in table definition
+- **Connection URLs**: Same database, different schemas via `search_path`
+
+## Core Abstractions
+
+### Source vs Stream Model
+
+**Source** = Authentication boundary (one set of credentials)
+
+- Examples: "My Google Account", "Work iPhone", "Personal Notion"
+- Stores: OAuth tokens, device IDs, API keys
+- Table: `elt.sources`
+
+**Stream** = Time-series data table
+
+- Examples: Google Calendar events, Gmail messages, iOS HealthKit metrics
+- Table naming: `stream_{source}_{stream}` (e.g., `stream_google_calendar`)
+- Stores: Actual time-series data in `elt` schema
+
+**Data Flow:**
+
+```txt
+sources (auth + OAuth tokens)
+    ↓
+streams (enabled streams + cron schedules + config)
+    ↓
+stream_* tables (actual time-series data)
+```
+
+### Authentication Types (SourceAuth)
+
+1. **OAuth2** (Google, Notion): `SourceAuth::oauth2(source_id, token_manager)`
+   - Automatic token refresh, retry, backoff
+   - Uses `OAuthHttpClient` + `ErrorHandler` trait
+
+2. **Device** (iOS, Mac): `SourceAuth::device("device-id")`
+   - No external auth, devices push to `/ingest`
+
+3. **API Key** (Future): `SourceAuth::api_key("key")`
+
+4. **None** (Public data): `SourceAuth::none()`
+
+## Key Patterns
+
+### OAuth Composability
+
+Always use `OAuthHttpClient` with provider-specific `ErrorHandler`:
+
+```rust
+let client = OAuthHttpClient::new(source_id, token_manager)
+    .with_base_url("https://api.provider.com")
+    .with_error_handler(Box::new(ProviderErrorHandler));
+
+let response = client.get("endpoint").await?;
+```
+
+**ErrorHandler trait** classifies errors:
+
+- `AuthError` (401) → refresh token
+- `RateLimitError` (429) → back off
+- `SyncTokenError` (400/410) → clear token, full refresh
+- `ServerError` (500+) → retry
+- `ClientError` (400) → don't retry
+
+### Two-Layer Logging
+
+1. **Tracing** (ephemeral): `#[tracing::instrument]` for real-time debugging
+2. **Database** (permanent): `SyncLogger` writes to `sync_logs` table for analytics
+
+### Stream Implementation
+
+To add a new stream:
+
+1. **Implement `Stream` trait** in `core/src/sources/{provider}/{stream}/mod.rs`
+2. **Register in `StreamFactory`** at `core/src/sources/factory.rs`
+3. **Register in registry** at `core/src/sources/{provider}/registry.rs`
+4. **Create migration** with `SET search_path TO elt, public;` at top
+5. **Add default cron schedule** in registry
+
+## Code Style
+
+### Rust
+
+- Use `async/await` with tokio runtime
+- Error handling: `Result<T>` with `anyhow` or `thiserror`
+- Database: `sqlx` with compile-time checked queries
+- HTTP: `axum` for server, `reqwest` for client
+- Follow existing patterns in similar files
+
+### TypeScript/SvelteKit
+
+- Strict mode enabled
+- Drizzle ORM for `app` schema database operations
+- All tables must use `schema: 'app'`:
+
+  ```typescript
+  export const preferences = pgTable(
+    'preferences',
+    { /* columns */ },
+    () => [],
+    { schema: 'app' }  // REQUIRED
+  );
+  ```
+
+- Use SvelteKit load functions for SSR data fetching
+
+## Directory Structure
+
+```txt
+core/                  # Rust backend
+  src/
+    sources/           # Source implementations
+      base/            # Shared OAuth/sync logic
+      google/          # Google Calendar, Gmail
+      notion/          # Notion pages
+      ios/             # iOS HealthKit, Location
+      mac/             # macOS apps
+    server/            # Axum HTTP server
+    scheduler/         # Cron job scheduler
+  migrations/          # SQL migrations (elt schema)
+
+apps/web/              # SvelteKit frontend
+  src/
+    lib/
+      db/              # Drizzle schema (app schema)
+      api/             # API client for Rust backend
+    routes/            # SvelteKit pages
+  drizzle/             # Generated migrations (app schema)
+```
+
+## Development Workflow
+
+### Common Commands
+
+```bash
+# Start all services (background)
+make dev
+
+# Start and follow logs
+make dev-watch
+
+# Stop all services
+make stop
+
+# Run migrations (Rust + Drizzle)
+make migrate
+
+# Check database schemas
+make db-status
+
+# View logs
+make logs
+
+# Shell into containers
+make shell-core       # Rust
+make shell-web        # SvelteKit
+make shell-postgres   # PostgreSQL
+```
+
+### Running Tests
+
+```bash
+# Rust tests
+cargo test                    # All tests
+cargo test --lib             # Unit tests only
+make test-rust               # Via Make
+
+# Web tests
+cd apps/web && pnpm test     # SvelteKit tests
+make test-web                # Via Make
+```
+
+### Database Operations
+
+```bash
+# psql into ariata database
+make shell-postgres
+
+# View tables in schemas
+\dt elt.*    # ELT schema tables
+\dt app.*    # App schema tables
+
+# Cross-schema query
+SELECT e.*, a.*
+FROM elt.sources e
+JOIN app.preferences a ON true;
+```
+
+## File Creation Guidelines
+
+**When to create files:**
+
+- ✅ New stream implementation (required for functionality)
+- ✅ New migration (database schema changes)
+- ✅ New API endpoint (new functionality)
+
+**NEVER create:**
+
+- ❌ Documentation files (*.md, README, etc.) unless explicitly asked
+- ❌ Test files without being asked
+- ❌ Config files without being asked
+
+**Always prefer:**
+
+- ✅ Editing existing files
+- ✅ Following existing patterns
+- ✅ Looking at similar implementations for examples
+
+## Common Locations
+
+**Need to add OAuth source?**
+
+- Look at: `core/src/sources/google/` or `core/src/sources/notion/`
+- Pattern: Implement `Stream` trait, register in factory & registry
+
+**Need to add API endpoint?**
+
+- Look at: `core/src/server/api.rs`
+- Pattern: Axum route handlers
+
+**Need to add UI component?**
+
+- Look at: `apps/web/src/routes/data/sources/`
+- Pattern: SvelteKit pages with TypeScript
+
+**Need to add database table?**
+
+- **ELT schema**: Create migration in `core/migrations/`
+  - Must start with: `SET search_path TO elt, public;`
+- **App schema**: Update `apps/web/src/lib/db/schema.ts`
+  - Must include: `schema: 'app'` in table options
+
+## Sync Operations
+
+### Manual Sync
+
+```bash
+# CLI
+ariata source sync <source_id> --stream calendar
+
+# Rust API
+ariata::sync_stream(&db, source_id, "calendar", None).await?
+
+# HTTP API
+POST /api/sources/:source_id/streams/:stream_name/sync
+```
+
+### Automatic Sync
+
+Streams with `cron_schedule` sync automatically:
+
+```sql
+UPDATE elt.streams
+SET cron_schedule = '*/15 * * * *',
+    is_enabled = true
+WHERE source_id = 'uuid' AND stream_name = 'gmail';
+```
+
+**Cron format:**
+
+- `*/15 * * * *` - Every 15 minutes
+- `0 */6 * * *` - Every 6 hours
+- `0 9 * * 1` - Every Monday at 9 AM
+
+## Working Streams
+
+| Source | Stream | Table | Incremental |
+|--------|--------|-------|-------------|
+| Google | calendar | `stream_google_calendar` | ✅ Yes |
+| Google | gmail | `stream_google_gmail` | ✅ Yes |
+| Notion | pages | `stream_notion_pages` | ❌ No |
+| iOS | healthkit | `stream_ios_healthkit` | 🚧 Pending |
+| iOS | location | `stream_ios_location` | 🚧 Pending |
+| Mac | apps | `stream_mac_apps` | 🚧 Pending |
+
+## Environment Variables
+
+```bash
+# Root .env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ariata
+ARIATA_ENCRYPTION_KEY=<generate with: openssl rand -base64 32>
+
+# OAuth
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+NOTION_CLIENT_ID=...
+NOTION_CLIENT_SECRET=...
+
+# MinIO (S3-compatible storage)
+MINIO_ENDPOINT=http://localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+```

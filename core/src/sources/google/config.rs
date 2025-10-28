@@ -28,6 +28,11 @@ pub struct GoogleCalendarConfig {
     #[serde(default = "default_sync_window_days")]
     pub sync_window_days: u32,
 
+    /// Number of days for initial sync lookback (default: 365)
+    /// Used only on the first sync when no sync token exists
+    #[serde(default = "default_initial_sync_window_days")]
+    pub initial_sync_window_days: u32,
+
     /// Direction to sync events (past, future, or both)
     #[serde(default)]
     pub sync_direction: SyncDirection,
@@ -50,6 +55,7 @@ impl Default for GoogleCalendarConfig {
         Self {
             calendar_ids: default_calendar_ids(),
             sync_window_days: default_sync_window_days(),
+            initial_sync_window_days: default_initial_sync_window_days(),
             sync_direction: SyncDirection::default(),
             include_declined: false,
             include_cancelled: false,
@@ -97,6 +103,10 @@ fn default_sync_window_days() -> u32 {
     90
 }
 
+fn default_initial_sync_window_days() -> u32 {
+    365
+}
+
 fn default_max_events() -> u32 {
     500
 }
@@ -138,6 +148,11 @@ pub struct GoogleGmailConfig {
     #[serde(default = "default_sync_window_days")]
     pub sync_window_days: u32,
 
+    /// Number of days for initial sync lookback (default: 365)
+    /// Used only on the first sync when no history ID exists
+    #[serde(default = "default_initial_sync_window_days")]
+    pub initial_sync_window_days: u32,
+
     /// Maximum number of messages per sync batch (default: 500)
     #[serde(default = "default_max_messages")]
     pub max_messages_per_sync: u32,
@@ -154,6 +169,7 @@ impl Default for GoogleGmailConfig {
             sync_mode: GmailSyncMode::default(),
             fetch_body: default_fetch_body(),
             sync_window_days: default_sync_window_days(),
+            initial_sync_window_days: default_initial_sync_window_days(),
             max_messages_per_sync: default_max_messages(),
             query: None,
         }

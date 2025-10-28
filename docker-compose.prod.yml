@@ -1,0 +1,75 @@
+version: '3.8'
+
+# Production override - use with:
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  postgres:
+    restart: always
+    # Use persistent volume with backup strategy
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-schemas.sh:/docker-entrypoint-initdb.d/init-schemas.sh
+    # Production settings
+    command: postgres -c max_connections=200 -c shared_buffers=2GB
+
+  minio:
+    restart: always
+
+  core:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+      target: ""  # Use default (production) target
+    restart: always
+    # Remove development volumes
+    volumes: []
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ariata
+      ARIATA_ENCRYPTION_KEY: ${ARIATA_ENCRYPTION_KEY}
+      RUST_LOG: info,ariata=info
+      # OAuth endpoints
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      NOTION_CLIENT_ID: ${NOTION_CLIENT_ID}
+      NOTION_CLIENT_SECRET: ${NOTION_CLIENT_SECRET}
+      # MinIO connection
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ariata-data
+    # Production health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: production
+    restart: always
+    # Remove development volumes
+    volumes: []
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ariata
+      ELT_API_URL: http://core:8000
+      PUBLIC_ELT_API_URL: ${PUBLIC_ELT_API_URL:-http://localhost:8000}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    # Override command for production
+    command: node build
+
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  ariata-network:
+    driver: bridge

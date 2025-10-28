@@ -63,63 +63,8 @@ impl Ariata {
         })
     }
 
-    /// List available source types
-    pub async fn list_available_sources(&self) -> Result<Vec<String>> {
-        // TODO: Load from registry
-        Ok(vec![
-            "ios".to_string(),
-            "google_calendar".to_string(),
-            "notion".to_string(),
-        ])
-    }
-
-    /// List active sources
-    pub async fn list_active_sources(&self) -> Result<Vec<Source>> {
-        let results = self.database.query(
-            "SELECT id, name, source_type, status FROM sources WHERE status = 'active'"
-        ).await?;
-
-        results.into_iter()
-            .map(|row| {
-                Ok(Source {
-                    id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    name: row.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    source_type: row.get("source_type").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    status: row.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                })
-            })
-            .collect()
-    }
-
-    /// Add a new source
-    pub async fn add_source(&self, name: &str, source_type: &str) -> Result<Source> {
-        let id = uuid::Uuid::new_v4().to_string();
-
-        self.database.execute(
-            "INSERT INTO sources (id, name, source_type, status) VALUES ($1, $2, $3, $4)",
-            &[&id, name, source_type, "active"]
-        ).await?;
-
-        Ok(Source {
-            id,
-            name: name.to_string(),
-            source_type: source_type.to_string(),
-            status: "active".to_string(),
-        })
-    }
-
-    /// Sync data from a source
-    pub async fn sync_source(&self, name: &str) -> Result<SyncResult> {
-        let start = std::time::Instant::now();
-
-        // TODO: Implement actual sync logic
-
-        Ok(SyncResult {
-            records_synced: 0,
-            duration: start.elapsed(),
-            source: name.to_string(),
-        })
-    }
+    // Source management operations are now in api.rs
+    // Use ariata::list_sources(), ariata::sync_stream(), etc.
 
     /// Run the HTTP ingestion server
     pub async fn run_server(&self, host: &str, port: u16) -> Result<()> {
@@ -240,22 +185,8 @@ pub struct IngestResult {
     pub source: String,
 }
 
-/// Result of a sync operation
-#[derive(Debug, Serialize)]
-pub struct SyncResult {
-    pub records_synced: usize,
-    pub duration: std::time::Duration,
-    pub source: String,
-}
-
-/// Represents a data source
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Source {
-    pub id: String,
-    pub name: String,
-    pub source_type: String,
-    pub status: String,
-}
+// Source and sync types are now in api.rs
+// Use ariata::Source, ariata::SyncLog, etc.
 
 #[cfg(test)]
 mod tests {

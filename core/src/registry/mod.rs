@@ -85,6 +85,9 @@ pub struct StreamDescriptor {
 
     /// Whether this stream supports full refresh
     pub supports_full_refresh: bool,
+
+    /// Default cron schedule for this stream (e.g., "0 */6 * * *")
+    pub default_cron_schedule: Option<&'static str>,
 }
 
 impl StreamDescriptor {
@@ -99,6 +102,7 @@ impl StreamDescriptor {
             config_example: serde_json::json!({}),
             supports_incremental: true,
             supports_full_refresh: true,
+            default_cron_schedule: None,
         }
     }
 }
@@ -113,6 +117,7 @@ pub struct StreamDescriptorBuilder {
     config_example: serde_json::Value,
     supports_incremental: bool,
     supports_full_refresh: bool,
+    default_cron_schedule: Option<&'static str>,
 }
 
 impl StreamDescriptorBuilder {
@@ -151,6 +156,11 @@ impl StreamDescriptorBuilder {
         self
     }
 
+    pub fn default_cron_schedule(mut self, schedule: &'static str) -> Self {
+        self.default_cron_schedule = Some(schedule);
+        self
+    }
+
     pub fn build(self) -> StreamDescriptor {
         StreamDescriptor {
             name: self.name,
@@ -161,6 +171,7 @@ impl StreamDescriptorBuilder {
             config_example: self.config_example,
             supports_incremental: self.supports_incremental,
             supports_full_refresh: self.supports_full_refresh,
+            default_cron_schedule: self.default_cron_schedule,
         }
     }
 }
@@ -230,7 +241,6 @@ fn init_registry() -> Registry {
 
     // Register OAuth sources
     registry.register(crate::sources::google::registry::GoogleSource::descriptor());
-    registry.register(crate::sources::strava::registry::StravaSource::descriptor());
     registry.register(crate::sources::notion::registry::NotionSource::descriptor());
 
     // Register device sources

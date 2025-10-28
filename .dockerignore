@@ -1,0 +1,28 @@
+# Root .dockerignore
+.git/
+.github/
+.vscode/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Development files
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+target/
+node_modules/
+.svelte-kit/
+build/
+dist/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

@@ -4,18 +4,34 @@ mod api;
 mod ingest;
 
 use axum::{
-    Router,
-    routing::{get, post, delete},
-    Json,
     response::IntoResponse,
+    routing::{delete, get, post, put},
+    Json, Router,
 };
 
-use crate::Ariata;
-use crate::error::Result;
 use self::ingest::AppState;
+use crate::error::Result;
+use crate::Ariata;
 
-/// Run the HTTP ingestion server
+/// Run the HTTP ingestion server with integrated scheduler
 pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
+    // Start the scheduler in the background
+    let db_pool = client.database.pool().clone();
+    let _scheduler_handle = tokio::spawn(async move {
+        match crate::Scheduler::new(db_pool).await {
+            Ok(sched) => {
+                if let Err(e) = sched.start().await {
+                    tracing::warn!("Failed to start scheduler: {}", e);
+                } else {
+                    tracing::info!("Scheduler started successfully");
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to create scheduler: {}", e);
+            }
+        }
+    });
+
     // Create app state with database and storage
     let state = AppState {
         db: client.database.clone(),
@@ -25,18 +41,58 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
     let app = Router::new()
         // Health check
         .route("/health", get(health))
-
         // Data ingestion
         .route("/ingest", post(ingest::ingest))
-
+        // OAuth flow
+        .route(
+            "/api/sources/:provider/authorize",
+            post(api::oauth_authorize_handler),
+        )
+        .route("/api/sources/callback", get(api::oauth_callback_handler))
         // Source management API
         .route("/api/sources", get(api::list_sources_handler))
+        .route("/api/sources", post(api::create_source_handler))
+        .route(
+            "/api/sources/register-device",
+            post(api::register_device_handler),
+        )
         .route("/api/sources/:id", get(api::get_source_handler))
         .route("/api/sources/:id", delete(api::delete_source_handler))
-        .route("/api/sources/:id/status", get(api::get_source_status_handler))
+        .route(
+            "/api/sources/:id/status",
+            get(api::get_source_status_handler),
+        )
         .route("/api/sources/:id/sync", post(api::sync_source_handler))
-        .route("/api/sources/:id/history", get(api::get_sync_history_handler))
-
+        .route(
+            "/api/sources/:id/history",
+            get(api::get_sync_history_handler),
+        )
+        // Stream management API
+        .route("/api/sources/:id/streams", get(api::list_streams_handler))
+        .route(
+            "/api/sources/:id/streams/:name",
+            get(api::get_stream_handler),
+        )
+        .route(
+            "/api/sources/:id/streams/:name/enable",
+            post(api::enable_stream_handler),
+        )
+        .route(
+            "/api/sources/:id/streams/:name",
+            delete(api::disable_stream_handler),
+        )
+        .route(
+            "/api/sources/:id/streams/:name/config",
+            put(api::update_stream_config_handler),
+        )
+        .route(
+            "/api/sources/:id/streams/:name/schedule",
+            put(api::update_stream_schedule_handler),
+        )
+        .route(
+            "/api/sources/:id/streams/:name/history",
+            get(api::get_stream_sync_history_handler),
+        )
         .with_state(state);
 
     let addr = format!("{host}:{port}");
@@ -44,7 +100,11 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
 
     tracing::info!("Server listening on {}", addr);
 
+    // Run the server (this blocks forever until shutdown)
     axum::serve(listener, app).await?;
+
+    // Note: scheduler runs in background and will stop when the process exits
+    // The handle is dropped here, but the task continues running
 
     Ok(())
 }

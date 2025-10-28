@@ -1,37 +1,47 @@
-//! Google Gmail sync implementation
+//! Google Gmail stream implementation
 
+use async_trait::async_trait;
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use std::collections::HashMap;
-use std::sync::Arc;
 use uuid::Uuid;
 
 use super::{
     client::GoogleClient,
     config::{GmailSyncMode, GoogleGmailConfig},
     types::{
-        HistoryResponse, Message, MessagePart, MessagesListResponse, Thread,
-        ThreadsListResponse,
+        HistoryResponse, Message, MessagePart, MessagesListResponse, Thread, ThreadsListResponse,
     },
 };
 use crate::{
     error::Result,
-    oauth::token_manager::TokenManager,
-    sources::base::{SyncLogger, SyncMode, SyncResult},
+    sources::{
+        auth::SourceAuth,
+        base::{SyncLogger, SyncMode, SyncResult},
+        stream::Stream,
+    },
 };
 
-/// Google Gmail synchronization
-pub struct GoogleGmailSync {
+/// Google Gmail stream
+///
+/// Syncs email messages from Gmail API to the stream_google_gmail table.
+pub struct GoogleGmailStream {
     source_id: Uuid,
     client: GoogleClient,
     db: PgPool,
     config: GoogleGmailConfig,
 }
 
-impl GoogleGmailSync {
-    /// Create a new Gmail sync instance with a token manager
-    pub fn new(source_id: Uuid, db: PgPool, token_manager: Arc<TokenManager>) -> Self {
+impl GoogleGmailStream {
+    /// Create a new Gmail stream with SourceAuth
+    pub fn new(source_id: Uuid, db: PgPool, auth: SourceAuth) -> Self {
+        // Extract token manager from auth
+        let token_manager = auth
+            .token_manager()
+            .expect("GoogleGmailStream requires OAuth2 auth")
+            .clone();
+
         let client = GoogleClient::with_api(source_id, token_manager, "gmail", "v1");
 
         Self {
@@ -42,36 +52,15 @@ impl GoogleGmailSync {
         }
     }
 
-    /// Create with custom configuration
-    pub fn with_config(
-        source_id: Uuid,
-        db: PgPool,
-        token_manager: Arc<TokenManager>,
-        config: GoogleGmailConfig,
-    ) -> Self {
-        let client = GoogleClient::with_api(source_id, token_manager, "gmail", "v1");
-
-        Self {
-            source_id,
-            client,
-            db,
-            config,
-        }
-    }
-
-    /// Create with default token manager
-    pub fn with_default_manager(source_id: Uuid, db: PgPool) -> Self {
-        let token_manager = Arc::new(TokenManager::new(db.clone()));
-        Self::new(source_id, db, token_manager)
-    }
-
-    /// Load configuration from database
-    pub async fn load_config(&mut self) -> Result<()> {
-        let result =
-            sqlx::query_as::<_, (serde_json::Value,)>("SELECT config FROM sources WHERE id = $1")
-                .bind(self.source_id)
-                .fetch_optional(&self.db)
-                .await?;
+    /// Load configuration from database (called by Stream trait)
+    async fn load_config_internal(&mut self, db: &PgPool, source_id: Uuid) -> Result<()> {
+        // Try loading from streams table first (new pattern)
+        let result = sqlx::query_as::<_, (serde_json::Value,)>(
+            "SELECT config FROM streams WHERE source_id = $1 AND stream_name = 'gmail'",
+        )
+        .bind(source_id)
+        .fetch_optional(db)
+        .await?;
 
         if let Some((config_json,)) = result {
             if let Ok(config) = GoogleGmailConfig::from_json(&config_json) {
@@ -82,28 +71,20 @@ impl GoogleGmailSync {
         Ok(())
     }
 
-    /// Sync Gmail messages with automatic token refresh
-    #[tracing::instrument(skip(self), fields(source_id = %self.source_id))]
-    pub async fn sync(&self) -> Result<SyncResult> {
+    /// Sync Gmail messages with explicit sync mode
+    #[tracing::instrument(skip(self), fields(source_id = %self.source_id, mode = ?sync_mode))]
+    pub async fn sync_with_mode(&self, sync_mode: &SyncMode) -> Result<SyncResult> {
         let started_at = Utc::now();
         let logger = SyncLogger::new(self.db.clone());
 
-        // Get last history ID to determine mode
-        let last_history_id = self.get_last_history_id().await?;
-        let sync_mode = if let Some(history_id) = last_history_id {
-            SyncMode::incremental(Some(history_id))
-        } else {
-            SyncMode::full_refresh()
-        };
-
-        tracing::info!(mode = ?sync_mode, "Starting Gmail sync");
+        tracing::info!("Starting Gmail sync");
 
         // Execute the sync
         match self.sync_internal(&sync_mode).await {
             Ok(result) => {
                 // Log success to database
                 if let Err(e) = logger
-                    .log_success(self.source_id, &sync_mode, &result)
+                    .log_success(self.source_id, "gmail", &sync_mode, &result)
                     .await
                 {
                     tracing::warn!(error = %e, "Failed to log sync success");
@@ -114,7 +95,7 @@ impl GoogleGmailSync {
             Err(e) => {
                 // Log failure to database
                 if let Err(log_err) = logger
-                    .log_failure(self.source_id, &sync_mode, started_at, &e)
+                    .log_failure(self.source_id, "gmail", &sync_mode, started_at, &e)
                     .await
                 {
                     tracing::warn!(error = %log_err, "Failed to log sync failure");
@@ -135,7 +116,9 @@ impl GoogleGmailSync {
         let next_cursor;
 
         match sync_mode {
-            SyncMode::Incremental { cursor: Some(ref history_id) } => {
+            SyncMode::Incremental {
+                cursor: Some(ref history_id),
+            } => {
                 // Use history API for incremental sync
                 let result = self.sync_incremental(history_id).await?;
 
@@ -681,25 +664,64 @@ impl GoogleGmailSync {
 
     /// Get the last history ID from the database
     async fn get_last_history_id(&self) -> Result<Option<String>> {
+        // Try streams table first (new pattern)
         let row = sqlx::query_as::<_, (Option<String>,)>(
-            "SELECT last_sync_token FROM sources WHERE id = $1",
+            "SELECT last_sync_token FROM streams WHERE source_id = $1 AND stream_name = 'gmail'",
         )
         .bind(self.source_id)
-        .fetch_one(&self.db)
+        .fetch_optional(&self.db)
         .await?;
 
-        Ok(row.0)
+        if let Some((token,)) = row {
+            return Ok(token);
+        }
+
+        Ok(None)
     }
 
     /// Save the history ID to the database
     async fn save_history_id(&self, history_id: &str) -> Result<()> {
-        sqlx::query("UPDATE sources SET last_sync_token = $1, last_sync_at = $2 WHERE id = $3")
-            .bind(history_id)
-            .bind(Utc::now())
-            .bind(self.source_id)
-            .execute(&self.db)
-            .await?;
+        sqlx::query(
+            "UPDATE streams SET last_sync_token = $1, last_sync_at = $2 WHERE source_id = $3 AND stream_name = 'gmail'",
+        )
+        .bind(history_id)
+        .bind(Utc::now())
+        .bind(self.source_id)
+        .execute(&self.db)
+        .await?;
 
         Ok(())
+    }
+}
+
+// Implement Stream trait for GoogleGmailStream
+#[async_trait]
+impl Stream for GoogleGmailStream {
+    async fn sync(&self, mode: SyncMode) -> Result<SyncResult> {
+        self.sync_with_mode(&mode).await
+    }
+
+    fn table_name(&self) -> &str {
+        "stream_google_gmail"
+    }
+
+    fn stream_name(&self) -> &str {
+        "gmail"
+    }
+
+    fn source_name(&self) -> &str {
+        "google"
+    }
+
+    async fn load_config(&mut self, db: &PgPool, source_id: Uuid) -> Result<()> {
+        self.load_config_internal(db, source_id).await
+    }
+
+    fn supports_incremental(&self) -> bool {
+        true
+    }
+
+    fn supports_full_refresh(&self) -> bool {
+        true
     }
 }

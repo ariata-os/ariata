@@ -107,11 +107,18 @@ impl OAuthHttpClient {
     /// * `source_id` - UUID of the source for token lookups
     /// * `token_manager` - Shared token manager for OAuth token operations
     pub fn new(source_id: Uuid, token_manager: Arc<TokenManager>) -> Self {
+        // Configure HTTP client with timeouts to prevent infinite hangs
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(10))  // TCP connection timeout
+            .timeout(Duration::from_secs(60))           // Total request timeout
+            .build()
+            .expect("Failed to build HTTP client");
+
         Self {
             source_id,
             token_manager,
             base_url: String::new(),
-            client: Client::new(),
+            client,
             config: RetryConfig::default(),
             custom_headers: HeaderMap::new(),
             error_handler: Box::new(DefaultErrorHandler),

@@ -1,3 +1,6 @@
+-- Use the elt schema for all ELT operations
+SET search_path TO elt, public;
+
 -- Google Calendar stream table
 -- Stores calendar events with full fidelity
 

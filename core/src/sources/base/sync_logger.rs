@@ -25,10 +25,11 @@ impl SyncLogger {
     }
 
     /// Log a successful sync operation
-    #[tracing::instrument(skip(self, result), fields(source_id = %source_id, mode = ?mode))]
+    #[tracing::instrument(skip(self, result), fields(source_id = %source_id, stream_name = %stream_name, mode = ?mode))]
     pub async fn log_success(
         &self,
         source_id: Uuid,
+        stream_name: &str,
         mode: &SyncMode,
         result: &SyncResult,
     ) -> Result<Uuid> {
@@ -46,6 +47,7 @@ impl SyncLogger {
             r#"
             INSERT INTO sync_logs (
                 source_id,
+                stream_name,
                 sync_mode,
                 started_at,
                 completed_at,
@@ -56,11 +58,12 @@ impl SyncLogger {
                 records_failed,
                 sync_cursor_before,
                 sync_cursor_after
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             RETURNING id
             "#
         )
         .bind(source_id)
+        .bind(stream_name)
         .bind(sync_mode_str)
         .bind(result.started_at)
         .bind(result.completed_at)
@@ -76,6 +79,7 @@ impl SyncLogger {
 
         tracing::info!(
             log_id = %log_id,
+            stream_name = %stream_name,
             records_fetched = result.records_fetched,
             records_written = result.records_written,
             duration_ms = result.duration_ms(),
@@ -86,10 +90,11 @@ impl SyncLogger {
     }
 
     /// Log a failed sync operation
-    #[tracing::instrument(skip(self, error), fields(source_id = %source_id, mode = ?mode))]
+    #[tracing::instrument(skip(self, error), fields(source_id = %source_id, stream_name = %stream_name, mode = ?mode))]
     pub async fn log_failure(
         &self,
         source_id: Uuid,
+        stream_name: &str,
         mode: &SyncMode,
         started_at: DateTime<Utc>,
         error: &crate::error::Error,
@@ -115,6 +120,7 @@ impl SyncLogger {
             r#"
             INSERT INTO sync_logs (
                 source_id,
+                stream_name,
                 sync_mode,
                 started_at,
                 completed_at,
@@ -126,11 +132,12 @@ impl SyncLogger {
                 error_message,
                 error_class,
                 sync_cursor_before
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING id
             "#
         )
         .bind(source_id)
+        .bind(stream_name)
         .bind(sync_mode_str)
         .bind(started_at)
         .bind(completed_at)
@@ -147,6 +154,7 @@ impl SyncLogger {
 
         tracing::error!(
             log_id = %log_id,
+            stream_name = %stream_name,
             error_class = error_class,
             duration_ms = duration_ms,
             error = %error,
@@ -157,10 +165,11 @@ impl SyncLogger {
     }
 
     /// Log a partial sync (some records succeeded, some failed)
-    #[tracing::instrument(skip(self, result), fields(source_id = %source_id, mode = ?mode))]
+    #[tracing::instrument(skip(self, result), fields(source_id = %source_id, stream_name = %stream_name, mode = ?mode))]
     pub async fn log_partial(
         &self,
         source_id: Uuid,
+        stream_name: &str,
         mode: &SyncMode,
         result: &SyncResult,
         error_message: Option<&str>,
@@ -179,6 +188,7 @@ impl SyncLogger {
             r#"
             INSERT INTO sync_logs (
                 source_id,
+                stream_name,
                 sync_mode,
                 started_at,
                 completed_at,
@@ -190,11 +200,12 @@ impl SyncLogger {
                 error_message,
                 sync_cursor_before,
                 sync_cursor_after
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING id
             "#
         )
         .bind(source_id)
+        .bind(stream_name)
         .bind(sync_mode_str)
         .bind(result.started_at)
         .bind(result.completed_at)
@@ -211,6 +222,7 @@ impl SyncLogger {
 
         tracing::warn!(
             log_id = %log_id,
+            stream_name = %stream_name,
             records_written = result.records_written,
             records_failed = result.records_failed,
             success_rate = result.success_rate(),

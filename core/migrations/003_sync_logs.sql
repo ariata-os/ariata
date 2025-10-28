@@ -1,3 +1,6 @@
+-- Use the elt schema for all ELT operations
+SET search_path TO elt, public;
+
 -- Sync logs table for observability and audit trail
 -- Stores the history of every sync operation across all sources
 

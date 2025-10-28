@@ -1,3 +1,6 @@
+-- Use the elt schema for all ELT operations
+SET search_path TO elt, public;
+
 -- Google Gmail stream table
 -- Stores email messages and threads with full fidelity
 

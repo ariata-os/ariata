@@ -1,0 +1,18 @@
+@import 'tailwindcss';
+
+@font-face {
+  font-family: 'PP Writer';
+  src: url('/fonts/PPWriter-Book.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+	--color-canvas: #1c1917;
+
+	--font-mono: 'IBM Plex Mono', monospace;
+	--font-sans: 'Avenir', sans-serif;
+	--font-serif: 'PP Writer', serif;
+}
+

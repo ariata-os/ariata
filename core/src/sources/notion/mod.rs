@@ -1,17 +1,10 @@
 //! Notion integration
 
-pub mod auth;
 pub mod client;
+pub mod config;
 pub mod types;
 pub mod pages;
 pub mod registry;
 
-use std::sync::Arc;
-use crate::oauth::OAuthManager;
-
-pub use pages::NotionPagesSource;
-
-/// Create a new Notion pages source
-pub fn pages_source(oauth: Arc<OAuthManager>) -> NotionPagesSource {
-    NotionPagesSource::new(oauth)
-}
+pub use config::NotionPagesConfig;
+pub use pages::NotionPagesStream;

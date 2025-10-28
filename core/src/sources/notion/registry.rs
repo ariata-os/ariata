@@ -28,8 +28,9 @@ impl SourceRegistry for NotionSource {
                     .table_name("stream_notion_pages")
                     .config_schema(pages_config_schema())
                     .config_example(pages_config_example())
-                    .supports_incremental(true)
+                    .supports_incremental(false)  // Notion API doesn't provide incremental sync
                     .supports_full_refresh(true)
+                    .default_cron_schedule("0 */12 * * *")  // Every 12 hours (full refresh is expensive)
                     .build(),
             ],
         }
@@ -104,7 +105,7 @@ mod tests {
 
         let p = pages.unwrap();
         assert_eq!(p.table_name, "stream_notion_pages");
-        assert!(p.supports_incremental);
+        assert!(!p.supports_incremental);  // Notion doesn't support incremental sync
         assert!(p.supports_full_refresh);
     }
 }

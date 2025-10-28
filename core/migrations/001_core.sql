@@ -1,24 +1,25 @@
 -- Core schema for Ariata
 -- This is the minimal foundation - just the sources table
 
+-- Create schema for all ELT operations
+CREATE SCHEMA IF NOT EXISTS elt;
+
+-- Use the elt schema for all ELT operations
+SET search_path TO elt, public;
+
 -- Enable UUID generation extension
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Sources table: Registered data sources with embedded OAuth tokens
 CREATE TABLE IF NOT EXISTS sources (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type TEXT NOT NULL,  -- 'google', 'strava', 'notion', 'ios', 'mac'
+    type TEXT NOT NULL,  -- 'google', 'notion', 'ios', 'mac'
     name TEXT NOT NULL UNIQUE,  -- User-friendly name like "Personal Gmail"
 
     -- OAuth credentials (null for device sources)
     access_token TEXT,
     refresh_token TEXT,
     token_expires_at TIMESTAMPTZ,
-
-    -- Configuration and metadata
-    config JSONB DEFAULT '{}',  -- Source-specific config
-    last_sync_token TEXT,  -- For incremental syncs
-    last_sync_at TIMESTAMPTZ,
 
     -- Status tracking
     is_active BOOLEAN DEFAULT true,
@@ -51,10 +52,8 @@ CREATE TRIGGER sources_updated_at
     EXECUTE FUNCTION update_updated_at();
 
 -- Add helpful comments
-COMMENT ON TABLE sources IS 'Data sources with embedded OAuth tokens for simplicity';
-COMMENT ON COLUMN sources.type IS 'Source type: google, strava, notion, ios, mac';
+COMMENT ON TABLE sources IS 'Authentication boundary for data sources - stores OAuth tokens and device IDs';
+COMMENT ON COLUMN sources.type IS 'Source type: google, notion, ios, mac';
 COMMENT ON COLUMN sources.name IS 'User-friendly unique name for this source';
 COMMENT ON COLUMN sources.access_token IS 'OAuth access token (encrypted in production)';
 COMMENT ON COLUMN sources.refresh_token IS 'OAuth refresh token for getting new access tokens';
-COMMENT ON COLUMN sources.last_sync_token IS 'Token/cursor for incremental sync (source-specific format)';
-COMMENT ON COLUMN sources.config IS 'Source-specific configuration (calendars to sync, etc)';

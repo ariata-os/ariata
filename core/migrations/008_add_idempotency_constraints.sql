@@ -1,3 +1,6 @@
+-- Use the elt schema for all ELT operations
+SET search_path TO elt, public;
+
 -- Add unique constraints for idempotent inserts
 -- This ensures we can safely re-run syncs without creating duplicates
 

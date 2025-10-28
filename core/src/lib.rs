@@ -18,19 +18,31 @@ pub mod storage;
 pub use client::{Ariata, AriataBuilder};
 pub use error::{Error, Result};
 
-// Re-export scheduler types
-pub use scheduler::Scheduler;
+// Re-export OAuth types
+pub use oauth::TokenManager;
 
-// Re-export OAuth types (for CLI)
-pub use oauth::OAuthManager;
+// Re-export Scheduler
+pub use scheduler::Scheduler;
 
 // Re-export library API functions
 pub use api::{
     // Generic source management
-    list_sources, get_source, delete_source, get_source_status, sync_source, get_sync_history,
+    list_sources, get_source, delete_source, get_source_status, get_sync_history, get_stream_sync_history,
+
+    // OAuth & source registration
+    initiate_oauth_flow, handle_oauth_callback, create_source, register_device,
+    OAuthAuthorizeResponse, CreateSourceRequest, RegisterDeviceRequest,
+
+    // Stream management
+    list_source_streams, get_stream_info, enable_stream, disable_stream,
+    update_stream_config, update_stream_schedule,
+    StreamInfo, EnableStreamRequest, UpdateStreamConfigRequest, UpdateStreamScheduleRequest,
+
+    // Stream sync (new pattern - use this!)
+    sync_stream,
 
     // Registry/catalog
-    list_available_sources, get_source_info, get_stream_info, list_all_streams,
+    list_available_sources, get_source_info, get_stream_descriptor, list_all_streams,
 
     // Types
     Source, SourceStatus, SyncLog,

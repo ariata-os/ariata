@@ -8,7 +8,7 @@ pub mod error_handler;
 pub mod gmail;
 pub mod registry;
 
-pub use calendar::GoogleCalendarSync;
+pub use calendar::GoogleCalendarStream;
 pub use config::{GoogleCalendarConfig, GoogleGmailConfig};
 pub use error_handler::GoogleErrorHandler;
-pub use gmail::GoogleGmailSync;
+pub use gmail::GoogleGmailStream;
