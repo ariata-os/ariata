@@ -13,7 +13,7 @@ interface NotionTokenResponse {
 const router: Router = Router();
 
 // In-memory store for state parameters (in production, use Redis or similar)
-const stateStore = new Map<string, { returnUrl: string; timestamp: number }>();
+const stateStore = new Map<string, { returnUrl: string; originalState?: string; timestamp: number }>();
 
 // Clean up old state entries every 5 minutes
 setInterval(() => {
