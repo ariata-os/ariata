@@ -7,11 +7,10 @@
   },
   "buildCommand": "pnpm run build",
   "installCommand": "pnpm install --frozen-lockfile",
-  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/dist/server.js"
+      "destination": "/api/index"
     }
   ],
   "env": {

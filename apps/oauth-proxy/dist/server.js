@@ -46,10 +46,13 @@ app.use(error_handler_1.errorHandler);
 app.use('*', (req, res) => {
     res.status(404).json({ error: 'Route not found' });
 });
-app.listen(PORT, () => {
-    console.log(`🚀 OAuth proxy server running on port ${PORT}`);
-    console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`📦 Providers: Google, Notion, Microsoft, GitHub, Strava`);
-});
+// Only start server if not in serverless environment (Vercel)
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`🚀 OAuth proxy server running on port ${PORT}`);
+        console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+        console.log(`📦 Providers: Google, Notion, Microsoft, GitHub, Strava`);
+    });
+}
 exports.default = app;
 //# sourceMappingURL=server.js.map
