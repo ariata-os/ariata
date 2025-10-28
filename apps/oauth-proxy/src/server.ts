@@ -1,8 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config(); // Load environment variables FIRST
 
-import express from 'express';
-import type { Application as ExpressApplication, Request as ExpressRequest, Response as ExpressResponse } from 'express';
+import express, { Application as ExpressApplication, Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';

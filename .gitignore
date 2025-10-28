@@ -72,10 +72,6 @@ __pycache__/
 # Python lock files
 uv.lock
 
-# Celery
-celerybeat-schedule
-celerybeat-schedule.db
-celerybeat.pid
 
 .Python
 build/
@@ -102,7 +98,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Other
 /apps/oauth-proxy/.pnpm-store
-/target
 /target
 /target/rust-analyzer
