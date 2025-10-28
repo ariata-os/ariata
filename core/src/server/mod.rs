@@ -62,7 +62,6 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
             "/api/sources/:id/status",
             get(api::get_source_status_handler),
         )
-        .route("/api/sources/:id/sync", post(api::sync_source_handler))
         .route(
             "/api/sources/:id/history",
             get(api::get_sync_history_handler),

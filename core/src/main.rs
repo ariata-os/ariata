@@ -24,7 +24,7 @@ enum Commands {
         host: String,
 
         /// Port to bind to
-        #[arg(long, default_value = "3000")]
+        #[arg(long, default_value = "8000")]
         port: u16,
     },
 
@@ -86,12 +86,6 @@ enum SourceCommands {
 
     /// Get source status with sync statistics
     Status {
-        /// Source ID (UUID)
-        id: String,
-    },
-
-    /// Trigger a manual sync for a source
-    Sync {
         /// Source ID (UUID)
         id: String,
     },
@@ -176,6 +170,15 @@ enum StreamCommands {
         /// Number of recent syncs to show
         #[arg(long, default_value = "10")]
         limit: i64,
+    },
+
+    /// Trigger a manual sync for a specific stream
+    Sync {
+        /// Source ID (UUID)
+        source_id: String,
+
+        /// Stream name (e.g., calendar, gmail)
+        stream_name: String,
     },
 }
 
@@ -472,20 +475,6 @@ async fn handle_source_command(
             }
         }
 
-        SourceCommands::Sync { id } => {
-            eprintln!(
-                "❌ Source-level sync is not implemented (source ID: {})",
-                id
-            );
-            eprintln!();
-            eprintln!("Note: Use stream-specific sync instead:");
-            eprintln!("      ariata stream sync <source_id> <stream_name>");
-            eprintln!();
-            eprintln!("The scheduler automatically runs enabled streams with cron schedules");
-            eprintln!("when the server is started.");
-            std::process::exit(1);
-        }
-
         SourceCommands::Delete { id, yes } => {
             let source_id = id.parse()?;
 
@@ -775,6 +764,29 @@ async fn handle_stream_command(
                 )
                 .await?;
                 println!("✅ Schedule cleared (stream will be manual only)");
+            }
+        }
+
+        StreamCommands::Sync {
+            source_id,
+            stream_name,
+        } => {
+            let source_id = source_id.parse()?;
+
+            println!("Syncing stream: {} / {}...", source_id, stream_name);
+
+            let log =
+                ariata::sync_stream(ariata.database.pool(), source_id, &stream_name, None).await?;
+
+            println!("\n✅ Sync completed!");
+            println!("  Status: {}", log.status);
+            println!("  Records fetched: {}", log.records_fetched.unwrap_or(0));
+            println!("  Records written: {}", log.records_written.unwrap_or(0));
+            if let Some(duration) = log.duration_ms {
+                println!("  Duration: {}ms", duration);
+            }
+            if let Some(error) = log.error_message {
+                println!("  Error: {}", error);
             }
         }
 

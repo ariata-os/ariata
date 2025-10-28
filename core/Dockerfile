@@ -12,6 +12,7 @@ WORKDIR /app
 
 # Copy manifests
 COPY Cargo.toml Cargo.lock ./
+COPY build.rs ./
 
 # Copy source code
 COPY src ./src

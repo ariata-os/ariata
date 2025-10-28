@@ -78,20 +78,6 @@ pub trait Stream: Send + Sync {
     }
 }
 
-/// Helper trait for creating stream instances
-///
-/// This is implemented by stream structs to enable factory pattern creation.
-pub trait StreamConstructor: Send + Sync {
-    /// Create a new instance of this stream
-    fn create(
-        source_id: Uuid,
-        db: PgPool,
-        auth: super::auth::SourceAuth,
-    ) -> Box<dyn Stream>
-    where
-        Self: Sized;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

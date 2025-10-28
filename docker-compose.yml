@@ -1,10 +1,11 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # PostgreSQL with pgvector extension
   postgres:
     image: pgvector/pgvector:pg16
     container_name: ariata-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -26,13 +27,14 @@ services:
   minio:
     image: minio/minio:latest
     container_name: ariata-minio
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console UI
+      - "9000:9000" # API
+      - "9001:9001" # Console UI
     volumes:
       - minio_data:/data
     healthcheck:
@@ -49,6 +51,7 @@ services:
       context: ./core
       dockerfile: Dockerfile
     container_name: ariata-core
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ariata
       ARIATA_ENCRYPTION_KEY: ${ARIATA_ENCRYPTION_KEY}
@@ -85,6 +88,7 @@ services:
       dockerfile: Dockerfile
       target: development
     container_name: ariata-web
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ariata
       ELT_API_URL: http://core:8000

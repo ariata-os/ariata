@@ -7,7 +7,6 @@ pub mod google;
 pub mod ios;
 pub mod mac;
 pub mod notion;
-pub mod oauth_source;
 pub mod stream;
 
 // Re-export commonly used types

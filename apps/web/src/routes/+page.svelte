@@ -8,15 +8,9 @@
             Welcome to Ariata
         </h1>
 
-        <p class="text-lg text-neutral-700 mb-4">
-            Ariata is a personal data ELT platform. Extract data from Google,
-            iOS, Mac, Notion, Strava and store it in PostgreSQL for querying
-            with SQL.
-        </p>
-
-        <p class="text-lg text-neutral-700 mb-4">
-            Self-hosted, open source, Rust-based. Your data stays on your
-            infrastructure.
+        <p class="text-base text-neutral-700 mb-4">
+            Ariata uses your personal informationt to fuel AI alignment in facts
+            and values.
         </p>
     </div>
 </Page>

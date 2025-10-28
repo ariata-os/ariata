@@ -203,16 +203,17 @@ impl TokenManager {
             refresh_response.access_token.clone()
         };
 
+        // Determine the refresh token to keep (new one if provided, otherwise keep old one)
+        let new_refresh_token = refresh_response.refresh_token.clone().or_else(|| token.refresh_token.clone());
+
         let refresh_token_to_store = if let Some(ref encryptor) = self.encryptor {
-            if let Some(ref rt) = refresh_response.refresh_token {
-                Some(encryptor.encrypt(rt)?)
-            } else if let Some(rt) = Some(refresh_token) {
+            if let Some(ref rt) = &new_refresh_token {
                 Some(encryptor.encrypt(rt)?)
             } else {
                 None
             }
         } else {
-            refresh_response.refresh_token.as_ref().or(Some(refresh_token)).cloned()
+            new_refresh_token.clone()
         };
 
         // Update tokens in database
@@ -236,7 +237,7 @@ impl TokenManager {
 
         Ok(OAuthToken {
             access_token: refresh_response.access_token,
-            refresh_token: refresh_response.refresh_token.or_else(|| token.refresh_token.clone()),
+            refresh_token: new_refresh_token,
             expires_at,
             provider: token.provider.clone(),
         })

@@ -1,76 +1,65 @@
-//! Notion API client
+//! Notion API client - thin wrapper over OAuthHttpClient
+//!
+//! This client delegates all OAuth HTTP operations to the base OAuthHttpClient,
+//! providing Notion-specific configuration and error handling.
 
-use reqwest::{Client, header};
 use serde::de::DeserializeOwned;
-use crate::error::{Error, Result};
+use serde::Serialize;
+use std::sync::Arc;
+use uuid::Uuid;
 
-/// Notion API client
+use super::error_handler::NotionErrorHandler;
+use crate::{
+    error::Result,
+    oauth::token_manager::TokenManager,
+    sources::base::{OAuthHttpClient, RetryConfig},
+};
+
+/// Notion API client with automatic token refresh and retry logic
+///
+/// This is a thin wrapper that configures OAuthHttpClient for Notion APIs.
+/// All HTTP logic (retry, token refresh, error handling) is delegated to the base client.
 pub struct NotionApiClient {
-    client: Client,
-    base_url: String,
-}
-
-impl Default for NotionApiClient {
-    fn default() -> Self {
-        Self::new()
-    }
+    http: OAuthHttpClient,
 }
 
 impl NotionApiClient {
     /// Create a new Notion API client
-    pub fn new() -> Self {
+    pub fn new(source_id: Uuid, token_manager: Arc<TokenManager>) -> Self {
         Self {
-            client: Client::new(),
-            base_url: "https://api.notion.com/v1".to_string(),
+            http: OAuthHttpClient::new(source_id, token_manager)
+                .with_base_url("https://api.notion.com/v1")
+                .with_retry_config(RetryConfig::default())
+                .with_header("Notion-Version", "2022-06-28")
+                .with_error_handler(Box::new(NotionErrorHandler)),
         }
     }
 
     /// Make an authenticated GET request
-    pub async fn get<T>(&self, path: &str, token: &str) -> Result<T>
+    pub async fn get<T>(&self, path: &str) -> Result<T>
     where
         T: DeserializeOwned,
     {
-        let url = format!("{}/{}", self.base_url, path.trim_start_matches('/'));
-
-        let response = self.client
-            .get(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {token}"))
-            .header("Notion-Version", "2022-06-28")
-            .send()
-            .await
-            .map_err(|e| Error::Other(format!("Request failed: {e}")))?;
-
-        if !response.status().is_success() {
-            let error = response.text().await.unwrap_or_default();
-            return Err(Error::Other(format!("Notion API error: {error}")));
-        }
-
-        response.json::<T>().await
-            .map_err(|e| Error::Other(format!("Failed to parse response: {e}")))
+        self.http.get(path).await
     }
 
-    /// Make an authenticated POST request for searches
-    pub async fn post_json<T>(&self, path: &str, token: &str, body: &serde_json::Value) -> Result<T>
+    /// Make an authenticated POST request with JSON body
+    pub async fn post_json<T>(&self, path: &str, body: &impl Serialize) -> Result<T>
     where
         T: DeserializeOwned,
     {
-        let url = format!("{}/{}", self.base_url, path.trim_start_matches('/'));
+        self.http.post(path, body).await
+    }
+}
 
-        let response = self.client
-            .post(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {token}"))
-            .header("Notion-Version", "2022-06-28")
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| Error::Other(format!("Request failed: {e}")))?;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        if !response.status().is_success() {
-            let error = response.text().await.unwrap_or_default();
-            return Err(Error::Other(format!("Notion API error: {error}")));
-        }
-
-        response.json::<T>().await
-            .map_err(|e| Error::Other(format!("Failed to parse response: {e}")))
+    #[tokio::test]
+    async fn test_client_creation() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://test").unwrap();
+        let token_manager = Arc::new(TokenManager::new(pool));
+        let _client = NotionApiClient::new(Uuid::new_v4(), token_manager);
     }
 }

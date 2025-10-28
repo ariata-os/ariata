@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::{
     error::Result,
     sources::{
-        auth::{Credentials, SourceAuth},
+        auth::SourceAuth,
         base::{SyncLogger, SyncMode, SyncResult},
         stream::Stream,
     },
@@ -20,56 +20,47 @@ use super::{client::NotionApiClient, types::SearchResponse};
 /// Notion pages stream
 pub struct NotionPagesStream {
     source_id: Uuid,
-    db: PgPool,
-    auth: SourceAuth,
     client: NotionApiClient,
+    db: PgPool,
 }
 
 impl NotionPagesStream {
-    /// Create a new Notion pages stream
+    /// Create a new Notion pages stream with SourceAuth
     pub fn new(source_id: Uuid, db: PgPool, auth: SourceAuth) -> Self {
+        // Extract token manager from auth
+        let token_manager = auth
+            .token_manager()
+            .expect("NotionPagesStream requires OAuth2 auth")
+            .clone();
+
+        let client = NotionApiClient::new(source_id, token_manager);
+
         Self {
             source_id,
+            client,
             db,
-            auth,
-            client: NotionApiClient::new(),
         }
     }
 
     /// Sync with explicit mode
     #[tracing::instrument(skip(self), fields(source_id = %self.source_id))]
-    pub async fn sync_with_mode(&self, _mode: &SyncMode) -> Result<SyncResult> {
+    pub async fn sync_with_mode(&self, mode: &SyncMode) -> Result<SyncResult> {
         let started_at = Utc::now();
         let logger = SyncLogger::new(self.db.clone());
 
         tracing::info!("Starting Notion pages sync");
 
-        // Get auth token
-        let credentials = self.auth.get_credentials().await?;
-        let token = match credentials {
-            Credentials::BearerToken(t) => t,
-            Credentials::ApiKey(k) => k,
-            _ => {
-                return Err(crate::error::Error::Other(
-                    "Invalid auth type for Notion".to_string(),
-                ))
-            }
-        };
-
         let mut all_pages = Vec::new();
         let mut cursor = None;
         let mut records_fetched = 0;
-        let mut records_written = 0;
 
         // Paginate through all pages
         loop {
-            let response = self.search_pages(cursor, &token).await?;
+            let response = self.search_pages(cursor).await?;
             records_fetched += response.results.len();
 
             // TODO: Write pages to stream_notion_pages table
             // For now, just count them
-            records_written += response.results.len();
-
             all_pages.extend(response.results);
 
             if !response.has_more {
@@ -79,6 +70,7 @@ impl NotionPagesStream {
             cursor = response.next_cursor;
         }
 
+        let records_written = all_pages.len();
         let completed_at = Utc::now();
         let result = SyncResult {
             records_fetched,
@@ -91,7 +83,7 @@ impl NotionPagesStream {
 
         // Log success
         if let Err(e) = logger
-            .log_success(self.source_id, "pages", _mode, &result)
+            .log_success(self.source_id, "pages", mode, &result)
             .await
         {
             tracing::warn!(error = %e, "Failed to log sync success");
@@ -101,7 +93,7 @@ impl NotionPagesStream {
     }
 
     /// Search for pages
-    async fn search_pages(&self, cursor: Option<String>, token: &str) -> Result<SearchResponse> {
+    async fn search_pages(&self, cursor: Option<String>) -> Result<SearchResponse> {
         let mut body = json!({
             "filter": {
                 "property": "object",
@@ -114,7 +106,7 @@ impl NotionPagesStream {
             body["start_cursor"] = json!(cursor);
         }
 
-        self.client.post_json("search", token, &body).await
+        self.client.post_json("search", &body).await
     }
 }
 

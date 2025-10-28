@@ -93,22 +93,6 @@ pub async fn get_source_status_handler(
     }
 }
 
-/// Trigger a sync for a source
-///
-/// DEPRECATED: This endpoint is not implemented. Use stream-specific sync endpoints instead.
-pub async fn sync_source_handler(
-    State(_state): State<AppState>,
-    Path(_source_id): Path<Uuid>,
-) -> Response {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(serde_json::json!({
-            "message": "Source-level sync not implemented. Use per-stream sync endpoints: POST /api/sources/:source_id/streams/:stream_name/sync"
-        })),
-    )
-        .into_response()
-}
-
 /// Get sync history for a source
 pub async fn get_sync_history_handler(
     State(state): State<AppState>,

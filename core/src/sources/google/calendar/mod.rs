@@ -133,6 +133,13 @@ impl GoogleCalendarStream {
 
             records_fetched += result.items.len();
 
+            tracing::debug!(
+                items = result.items.len(),
+                has_page_token = result.next_page_token.is_some(),
+                has_sync_token = result.next_sync_token.is_some(),
+                "Response metadata"
+            );
+
             // Process events within transaction
             for event in result.items {
                 match self
@@ -157,8 +164,11 @@ impl GoogleCalendarStream {
 
             // Save new sync token within transaction
             if let Some(token) = result.next_sync_token {
+                tracing::info!("Saving sync token: {}", &token);
                 self.save_sync_token_with_tx(&token, &mut tx).await?;
                 next_cursor = Some(token);
+            } else {
+                tracing::warn!("No sync token returned from API response");
             }
         }
 
@@ -208,7 +218,9 @@ impl GoogleCalendarStream {
         let mut params = vec![
             ("maxResults", self.config.max_events_per_sync.to_string()),
             ("singleEvents", "true".to_string()),
-            ("orderBy", "startTime".to_string()),
+            ("orderBy", "updated".to_string()),
+            ("showDeleted", "false".to_string()),
+            ("showHiddenInvitations", "false".to_string()),
         ];
 
         if let Some(min) = min_time_dt {

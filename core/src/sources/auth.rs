@@ -7,7 +7,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
-    error::{Error, Result},
+    error::Result,
     oauth::token_manager::TokenManager,
 };
 

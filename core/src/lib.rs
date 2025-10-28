@@ -7,7 +7,6 @@ pub mod client;
 pub mod database;
 pub mod error;
 pub mod oauth;
-pub mod pipeline;
 pub mod registry;
 pub mod scheduler;
 pub mod server;
@@ -26,26 +25,47 @@ pub use scheduler::Scheduler;
 
 // Re-export library API functions
 pub use api::{
-    // Generic source management
-    list_sources, get_source, delete_source, get_source_status, get_sync_history, get_stream_sync_history,
+    create_source,
+    delete_source,
+    disable_stream,
+    enable_stream,
+    get_source,
+    get_source_info,
+    get_source_status,
+    get_stream_descriptor,
+    get_stream_info,
+    get_stream_sync_history,
 
+    get_sync_history,
+    handle_oauth_callback,
     // OAuth & source registration
-    initiate_oauth_flow, handle_oauth_callback, create_source, register_device,
-    OAuthAuthorizeResponse, CreateSourceRequest, RegisterDeviceRequest,
+    initiate_oauth_flow,
+    list_all_streams,
 
+    // Registry/catalog
+    list_available_sources,
     // Stream management
-    list_source_streams, get_stream_info, enable_stream, disable_stream,
-    update_stream_config, update_stream_schedule,
-    StreamInfo, EnableStreamRequest, UpdateStreamConfigRequest, UpdateStreamScheduleRequest,
-
+    list_source_streams,
+    // Generic source management
+    list_sources,
+    register_device,
     // Stream sync (new pattern - use this!)
     sync_stream,
 
-    // Registry/catalog
-    list_available_sources, get_source_info, get_stream_descriptor, list_all_streams,
+    update_stream_config,
+    update_stream_schedule,
+    CreateSourceRequest,
+    EnableStreamRequest,
+    OAuthAuthorizeResponse,
+    RegisterDeviceRequest,
 
     // Types
-    Source, SourceStatus, SyncLog,
+    Source,
+    SourceStatus,
+    StreamInfo,
+    SyncLog,
+    UpdateStreamConfigRequest,
+    UpdateStreamScheduleRequest,
 };
 
 // Version information
