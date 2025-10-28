@@ -1,9 +1,8 @@
-import express, { Router } from 'express';
-import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
+import express, { Router as ExpressRouter, Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { oauthConfigs } from '../config/oauth-apps';
 import { createError } from '../middleware/error-handler';
 
-const router: Router = express.Router();
+const router: ExpressRouter = express.Router();
 
 // Generate state parameter for CSRF protection
 const generateState = () => {

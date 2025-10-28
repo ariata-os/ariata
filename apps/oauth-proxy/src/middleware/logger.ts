@@ -1,4 +1,4 @@
-import type { Request as ExpressRequest, Response as ExpressResponse, NextFunction } from 'express';
+import { Request as ExpressRequest, Response as ExpressResponse, NextFunction } from 'express';
 
 export const logger = (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => {
   const start = Date.now();

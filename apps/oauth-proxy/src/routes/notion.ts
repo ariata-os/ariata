@@ -1,5 +1,4 @@
-import express, { Router } from 'express';
-import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
+import express, { Router as ExpressRouter, Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { randomBytes } from 'crypto';
 import { oauthConfigs } from '../config/oauth-apps';
 import { createError } from '../middleware/error-handler';
@@ -12,7 +11,7 @@ interface NotionTokenResponse {
   bot_id?: string;
 }
 
-const router: Router = express.Router();
+const router: ExpressRouter = express.Router();
 
 // In-memory store for state parameters (in production, use Redis or similar)
 const stateStore = new Map<string, { returnUrl: string; originalState?: string; timestamp: number }>();
