@@ -1,8 +1,9 @@
-import express, { Request, Response } from 'express';
+import express, { Router } from 'express';
+import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { oauthConfigs } from '../config/oauth-apps';
 import { createError } from '../middleware/error-handler';
 
-const router = express.Router();
+const router: Router = express.Router();
 
 // Generate state parameter for CSRF protection
 const generateState = () => {
@@ -11,7 +12,7 @@ const generateState = () => {
 };
 
 // Initiate Strava OAuth flow
-router.get('/auth', (req: Request, res: Response) => {
+router.get('/auth', (req: ExpressRequest, res: ExpressResponse) => {
   try {
     const { return_url, state: originalState } = req.query;
     
@@ -61,7 +62,7 @@ router.get('/auth', (req: Request, res: Response) => {
 });
 
 // Handle Strava OAuth callback
-router.get('/callback', async (req: Request, res: Response) => {
+router.get('/callback', async (req: ExpressRequest, res: ExpressResponse) => {
   try {
     const { code, state, error } = req.query;
     
@@ -158,7 +159,7 @@ async function exchangeCodeForTokens(code: string) {
 }
 
 // Refresh access token using refresh token
-router.post('/refresh', async (req: Request, res: Response) => {
+router.post('/refresh', async (req: ExpressRequest, res: ExpressResponse) => {
   try {
     const { refresh_token } = req.body;
     

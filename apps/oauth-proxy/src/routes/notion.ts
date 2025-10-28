@@ -1,6 +1,8 @@
-import { Router, Request, Response } from 'express';
-import crypto from 'crypto';
+import express, { Router } from 'express';
+import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
+import { randomBytes } from 'crypto';
 import { oauthConfigs } from '../config/oauth-apps';
+import { createError } from '../middleware/error-handler';
 
 // Type for Notion OAuth token response
 interface NotionTokenResponse {
@@ -10,7 +12,7 @@ interface NotionTokenResponse {
   bot_id?: string;
 }
 
-const router: Router = Router();
+const router: Router = express.Router();
 
 // In-memory store for state parameters (in production, use Redis or similar)
 const stateStore = new Map<string, { returnUrl: string; originalState?: string; timestamp: number }>();
@@ -30,7 +32,7 @@ setInterval(() => {
  * @route GET /notion/auth
  * @param return_url - The URL to redirect back to after auth
  */
-router.get('/auth', (req: Request, res: Response) => {
+router.get('/auth', (req: ExpressRequest, res: ExpressResponse) => {
   const returnUrl = req.query.return_url as string;
   const originalState = req.query.state as string;
 
@@ -39,7 +41,7 @@ router.get('/auth', (req: Request, res: Response) => {
   }
 
   // Generate state for CSRF protection
-  const state = crypto.randomBytes(32).toString('hex');
+  const state = randomBytes(32).toString('hex');
   stateStore.set(state, { returnUrl, originalState, timestamp: Date.now() });
 
   const config = oauthConfigs.notion;
@@ -63,30 +65,34 @@ router.get('/auth', (req: Request, res: Response) => {
  * Handle Notion OAuth callback
  * @route GET /notion/callback
  */
-router.get('/callback', async (req: Request, res: Response) => {
-  const { code, state, error } = req.query;
-
-  if (error) {
-    console.error('Notion OAuth error:', error);
-    return res.status(400).send(`OAuth error: ${error}`);
-  }
-
-  if (!code || !state) {
-    return res.status(400).json({ error: 'Missing code or state parameter' });
-  }
-
-  // Verify state
-  const stateData = stateStore.get(state as string);
-  if (!stateData) {
-    return res.status(400).json({ error: 'Invalid state parameter' });
-  }
-
-  // Clean up state
-  stateStore.delete(state as string);
-
-  const config = oauthConfigs.notion;
-
+router.get('/callback', async (req: ExpressRequest, res: ExpressResponse) => {
   try {
+    const { code, state, error } = req.query;
+
+    if (error) {
+      throw createError(`OAuth error: ${error}`, 400);
+    }
+
+    if (!code || !state) {
+      throw createError('Missing code or state parameter', 400);
+    }
+
+    // Verify state
+    const stateData = stateStore.get(state as string);
+    if (!stateData) {
+      throw createError('Invalid state parameter', 400);
+    }
+
+    // Clean up state
+    stateStore.delete(state as string);
+
+    // Validate return URL
+    if (!isValidReturnUrl(stateData.returnUrl)) {
+      throw createError('Invalid return URL', 400);
+    }
+
+    const config = oauthConfigs.notion;
+
     // Exchange code for access token
     const tokenResponse = await fetch(config.tokenUrl, {
       method: 'POST',
@@ -133,7 +139,7 @@ router.get('/callback', async (req: Request, res: Response) => {
  * Refresh Notion access token
  * @route POST /notion/refresh
  */
-router.post('/refresh', async (req: Request, res: Response) => {
+router.post('/refresh', async (req: ExpressRequest, res: ExpressResponse) => {
   const { refresh_token } = req.body;
 
   if (!refresh_token) {
@@ -160,7 +166,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
  * Used by CLI and other clients that can't use the redirect flow
  * @route POST /notion/token
  */
-router.post('/token', async (req: Request, res: Response) => {
+router.post('/token', async (req: ExpressRequest, res: ExpressResponse) => {
   const { code } = req.body;
 
   if (!code) {
@@ -197,5 +203,28 @@ router.post('/token', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to exchange code for token' });
   }
 });
+
+// Helper function to validate return URLs
+function isValidReturnUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    
+    // Allow localhost for development
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+      return true;
+    }
+    
+    // Allow specific domains
+    const allowedPatterns = [
+      /^.*\.ariata\.com$/,
+      /^.*\.local$/,
+      /^.*\.localhost$/
+    ];
+    
+    return allowedPatterns.some(pattern => pattern.test(parsed.hostname));
+  } catch {
+    return false;
+  }
+}
 
 export default router;

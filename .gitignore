@@ -102,3 +102,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+/apps/oauth-proxy/.pnpm-store
+/target
+/target
+/target/rust-analyzer

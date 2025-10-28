@@ -1,6 +1,6 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request as ExpressRequest, Response as ExpressResponse, NextFunction } from 'express';
 
-export const logger = (req: Request, res: Response, next: NextFunction) => {
+export const logger = (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => {
   const start = Date.now();
   
   res.on('finish', () => {
