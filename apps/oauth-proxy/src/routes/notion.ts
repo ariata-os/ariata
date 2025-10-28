@@ -99,6 +99,16 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     const config = oauthConfigs.notion;
 
+    // Debug: Log configuration (without exposing secrets)
+    console.log('Notion token exchange config:', {
+      tokenUrl: config.tokenUrl,
+      redirectUri: config.redirectUri,
+      clientIdSet: !!config.clientId,
+      clientSecretSet: !!config.clientSecret,
+      clientIdLength: config.clientId?.length,
+      code: code as string
+    });
+
     // Exchange code for access token
     // Note: Notion requires form-encoded body, not JSON
     const tokenResponse = await fetch(config.tokenUrl, {
@@ -116,8 +126,12 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     if (!tokenResponse.ok) {
       const error = await tokenResponse.text();
-      console.error('Token exchange failed:', error);
-      throw new Error(`Token exchange failed: ${tokenResponse.status}`);
+      console.error('Notion token exchange failed:', {
+        status: tokenResponse.status,
+        statusText: tokenResponse.statusText,
+        error: error
+      });
+      throw new Error(`Token exchange failed: ${tokenResponse.status} - ${error}`);
     }
 
     const tokenData = await tokenResponse.json() as NotionTokenResponse;
@@ -183,6 +197,16 @@ router.post('/token', async (req: Request, res: Response) => {
   const config = oauthConfigs.notion;
 
   try {
+    // Debug: Log configuration (without exposing secrets)
+    console.log('Notion /token endpoint config:', {
+      tokenUrl: config.tokenUrl,
+      redirectUri: config.redirectUri,
+      clientIdSet: !!config.clientId,
+      clientSecretSet: !!config.clientSecret,
+      clientIdLength: config.clientId?.length,
+      code
+    });
+
     // Exchange code for access token
     // Note: Notion requires form-encoded body, not JSON
     const tokenResponse = await fetch(config.tokenUrl, {
@@ -200,8 +224,12 @@ router.post('/token', async (req: Request, res: Response) => {
 
     if (!tokenResponse.ok) {
       const error = await tokenResponse.text();
-      console.error('Token exchange failed:', error);
-      return res.status(tokenResponse.status).json({ error: 'Token exchange failed' });
+      console.error('Notion /token exchange failed:', {
+        status: tokenResponse.status,
+        statusText: tokenResponse.statusText,
+        error: error
+      });
+      return res.status(tokenResponse.status).json({ error: 'Token exchange failed', details: error });
     }
 
     const tokenData = await tokenResponse.json() as NotionTokenResponse;
