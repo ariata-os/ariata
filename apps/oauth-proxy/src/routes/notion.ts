@@ -1,5 +1,4 @@
 import express, { Router, Request, Response } from 'express';
-import { randomBytes } from 'crypto';
 import { oauthConfigs } from '../config/oauth-apps';
 import { createError } from '../middleware/error-handler';
 
@@ -39,9 +38,13 @@ router.get('/auth', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing return_url parameter' });
   }
 
-  // Generate state for CSRF protection
-  const state = randomBytes(32).toString('hex');
-  stateStore.set(state, { returnUrl, originalState, timestamp: Date.now() });
+  // Encode state data in the state parameter (like Google/Strava) to work with serverless
+  const stateData = {
+    return_url: returnUrl,
+    state: originalState,
+    timestamp: Date.now()
+  };
+  const encodedState = Buffer.from(JSON.stringify(stateData)).toString('base64');
 
   const config = oauthConfigs.notion;
 
@@ -50,7 +53,7 @@ router.get('/auth', (req: Request, res: Response) => {
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     response_type: 'code',
-    state: state,
+    state: encodedState,
     owner: 'user' // Notion-specific: 'user' for personal integrations
   });
 
@@ -76,17 +79,21 @@ router.get('/callback', async (req: Request, res: Response) => {
       throw createError('Missing code or state parameter', 400);
     }
 
-    // Verify state
-    const stateData = stateStore.get(state as string);
-    if (!stateData) {
+    // Decode state from parameter (serverless-compatible)
+    const stateData = JSON.parse(Buffer.from(state as string, 'base64').toString());
+    const { return_url, state: originalState, timestamp } = stateData;
+
+    if (!return_url) {
       throw createError('Invalid state parameter', 400);
     }
 
-    // Clean up state
-    stateStore.delete(state as string);
+    // Validate timestamp (reject if > 10 minutes old)
+    if (Date.now() - timestamp > 10 * 60 * 1000) {
+      throw createError('State parameter expired', 400);
+    }
 
     // Validate return URL
-    if (!isValidReturnUrl(stateData.returnUrl)) {
+    if (!isValidReturnUrl(return_url)) {
       throw createError('Invalid return URL', 400);
     }
 
@@ -115,15 +122,15 @@ router.get('/callback', async (req: Request, res: Response) => {
     const tokenData = await tokenResponse.json() as NotionTokenResponse;
 
     // Redirect back to the user's instance with the access token
-    const redirectUrl = new URL(stateData.returnUrl);
+    const redirectUrl = new URL(return_url);
     redirectUrl.searchParams.set('access_token', tokenData.access_token);
     redirectUrl.searchParams.set('workspace_id', tokenData.workspace_id || '');
     redirectUrl.searchParams.set('workspace_name', tokenData.workspace_name || '');
     redirectUrl.searchParams.set('bot_id', tokenData.bot_id || '');
     redirectUrl.searchParams.set('provider', 'notion');
     // Pass the original state back to the user's callback
-    if (stateData.originalState) {
-      redirectUrl.searchParams.set('state', stateData.originalState);
+    if (originalState) {
+      redirectUrl.searchParams.set('state', originalState);
     }
 
     console.log('Redirecting back to:', redirectUrl.toString());
