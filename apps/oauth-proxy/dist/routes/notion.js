@@ -224,5 +224,18 @@ function isValidReturnUrl(url) {
         return false;
     }
 }
+// Temporary debug endpoint - REMOVE IN PRODUCTION
+router.get('/debug-config', (req, res) => {
+    const config = oauth_apps_1.oauthConfigs.notion;
+    res.json({
+        tokenUrl: config.tokenUrl,
+        redirectUri: config.redirectUri,
+        clientIdSet: !!config.clientId,
+        clientSecretSet: !!config.clientSecret,
+        clientIdLength: config.clientId?.length || 0,
+        clientIdPrefix: config.clientId?.substring(0, 8) + '...',
+        clientSecretLength: config.clientSecret?.length || 0
+    });
+});
 exports.default = router;
 //# sourceMappingURL=notion.js.map

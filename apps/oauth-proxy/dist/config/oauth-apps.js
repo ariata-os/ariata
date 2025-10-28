@@ -6,15 +6,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.oauthConfigs = void 0;
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
-// Load from the main .env file in the root directory
-dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../../../../.env') });
+// Load from .env file for local development (Vercel provides env vars directly)
+if (process.env.NODE_ENV !== 'production') {
+    dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../../../../.env') });
+}
 // Debug: Check if env vars are loaded
-console.log('Environment variables check:', {
+console.log('[oauth-apps.ts] Environment variables check:', {
+    NODE_ENV: process.env.NODE_ENV,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ? 'LOADED' : 'NOT_LOADED',
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ? 'LOADED' : 'NOT_LOADED',
     GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'NOT_SET',
     NOTION_CLIENT_ID: process.env.NOTION_CLIENT_ID ? 'LOADED' : 'NOT_LOADED',
     NOTION_CLIENT_SECRET: process.env.NOTION_CLIENT_SECRET ? 'LOADED' : 'NOT_LOADED',
+    NOTION_CLIENT_ID_LENGTH: process.env.NOTION_CLIENT_ID?.length || 0,
     STRAVA_CLIENT_ID: process.env.STRAVA_CLIENT_ID ? 'LOADED' : 'NOT_LOADED',
     STRAVA_CLIENT_SECRET: process.env.STRAVA_CLIENT_SECRET ? 'LOADED' : 'NOT_LOADED'
 });
