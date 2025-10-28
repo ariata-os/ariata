@@ -58,8 +58,6 @@ router.get('/auth', (req: Request, res: Response) => {
   });
 
   const authUrl = `${config.authUrl}?${params.toString()}`;
-
-  console.log('Redirecting to Notion OAuth:', authUrl);
   res.redirect(authUrl);
 });
 
@@ -99,16 +97,6 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     const config = oauthConfigs.notion;
 
-    // Debug: Log configuration (without exposing secrets)
-    console.log('Notion token exchange config:', {
-      tokenUrl: config.tokenUrl,
-      redirectUri: config.redirectUri,
-      clientIdSet: !!config.clientId,
-      clientSecretSet: !!config.clientSecret,
-      clientIdLength: config.clientId?.length,
-      code: code as string
-    });
-
     // Exchange code for access token
     // Note: Notion requires form-encoded body, not JSON
     const tokenResponse = await fetch(config.tokenUrl, {
@@ -126,12 +114,8 @@ router.get('/callback', async (req: Request, res: Response) => {
 
     if (!tokenResponse.ok) {
       const error = await tokenResponse.text();
-      console.error('Notion token exchange failed:', {
-        status: tokenResponse.status,
-        statusText: tokenResponse.statusText,
-        error: error
-      });
-      throw new Error(`Token exchange failed: ${tokenResponse.status} - ${error}`);
+      console.error('Notion token exchange failed:', tokenResponse.status, error);
+      throw new Error(`Token exchange failed: ${tokenResponse.status}`);
     }
 
     const tokenData = await tokenResponse.json() as NotionTokenResponse;
@@ -148,7 +132,6 @@ router.get('/callback', async (req: Request, res: Response) => {
       redirectUrl.searchParams.set('state', originalState);
     }
 
-    console.log('Redirecting back to:', redirectUrl.toString());
     res.redirect(redirectUrl.toString());
   } catch (error) {
     console.error('Error exchanging code for token:', error);
@@ -197,16 +180,6 @@ router.post('/token', async (req: Request, res: Response) => {
   const config = oauthConfigs.notion;
 
   try {
-    // Debug: Log configuration (without exposing secrets)
-    console.log('Notion /token endpoint config:', {
-      tokenUrl: config.tokenUrl,
-      redirectUri: config.redirectUri,
-      clientIdSet: !!config.clientId,
-      clientSecretSet: !!config.clientSecret,
-      clientIdLength: config.clientId?.length,
-      code
-    });
-
     // Exchange code for access token
     // Note: Notion requires form-encoded body, not JSON
     const tokenResponse = await fetch(config.tokenUrl, {
@@ -224,12 +197,8 @@ router.post('/token', async (req: Request, res: Response) => {
 
     if (!tokenResponse.ok) {
       const error = await tokenResponse.text();
-      console.error('Notion /token exchange failed:', {
-        status: tokenResponse.status,
-        statusText: tokenResponse.statusText,
-        error: error
-      });
-      return res.status(tokenResponse.status).json({ error: 'Token exchange failed', details: error });
+      console.error('Notion /token exchange failed:', tokenResponse.status, error);
+      return res.status(tokenResponse.status).json({ error: 'Token exchange failed' });
     }
 
     const tokenData = await tokenResponse.json() as NotionTokenResponse;

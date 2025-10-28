@@ -46,7 +46,6 @@ router.get('/auth', (req, res) => {
         owner: 'user' // Notion-specific: 'user' for personal integrations
     });
     const authUrl = `${config.authUrl}?${params.toString()}`;
-    console.log('Redirecting to Notion OAuth:', authUrl);
     res.redirect(authUrl);
 });
 /**
@@ -77,15 +76,6 @@ router.get('/callback', async (req, res) => {
             throw (0, error_handler_1.createError)('Invalid return URL', 400);
         }
         const config = oauth_apps_1.oauthConfigs.notion;
-        // Debug: Log configuration (without exposing secrets)
-        console.log('Notion token exchange config:', {
-            tokenUrl: config.tokenUrl,
-            redirectUri: config.redirectUri,
-            clientIdSet: !!config.clientId,
-            clientSecretSet: !!config.clientSecret,
-            clientIdLength: config.clientId?.length,
-            code: code
-        });
         // Exchange code for access token
         // Note: Notion requires form-encoded body, not JSON
         const tokenResponse = await fetch(config.tokenUrl, {
@@ -102,12 +92,8 @@ router.get('/callback', async (req, res) => {
         });
         if (!tokenResponse.ok) {
             const error = await tokenResponse.text();
-            console.error('Notion token exchange failed:', {
-                status: tokenResponse.status,
-                statusText: tokenResponse.statusText,
-                error: error
-            });
-            throw new Error(`Token exchange failed: ${tokenResponse.status} - ${error}`);
+            console.error('Notion token exchange failed:', tokenResponse.status, error);
+            throw new Error(`Token exchange failed: ${tokenResponse.status}`);
         }
         const tokenData = await tokenResponse.json();
         // Redirect back to the user's instance with the access token
@@ -121,7 +107,6 @@ router.get('/callback', async (req, res) => {
         if (originalState) {
             redirectUrl.searchParams.set('state', originalState);
         }
-        console.log('Redirecting back to:', redirectUrl.toString());
         res.redirect(redirectUrl.toString());
     }
     catch (error) {
@@ -164,15 +149,6 @@ router.post('/token', async (req, res) => {
     }
     const config = oauth_apps_1.oauthConfigs.notion;
     try {
-        // Debug: Log configuration (without exposing secrets)
-        console.log('Notion /token endpoint config:', {
-            tokenUrl: config.tokenUrl,
-            redirectUri: config.redirectUri,
-            clientIdSet: !!config.clientId,
-            clientSecretSet: !!config.clientSecret,
-            clientIdLength: config.clientId?.length,
-            code
-        });
         // Exchange code for access token
         // Note: Notion requires form-encoded body, not JSON
         const tokenResponse = await fetch(config.tokenUrl, {
@@ -189,12 +165,8 @@ router.post('/token', async (req, res) => {
         });
         if (!tokenResponse.ok) {
             const error = await tokenResponse.text();
-            console.error('Notion /token exchange failed:', {
-                status: tokenResponse.status,
-                statusText: tokenResponse.statusText,
-                error: error
-            });
-            return res.status(tokenResponse.status).json({ error: 'Token exchange failed', details: error });
+            console.error('Notion /token exchange failed:', tokenResponse.status, error);
+            return res.status(tokenResponse.status).json({ error: 'Token exchange failed' });
         }
         const tokenData = await tokenResponse.json();
         res.json(tokenData);
