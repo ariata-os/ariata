@@ -23,12 +23,20 @@ struct OnboardingView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
+            VStack(alignment: .leading, spacing: 0) {
+                // Custom title
+                Text("Setup Ariata")
+                    .font(.system(size: 34, weight: .bold, design: .serif))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 60)
+                    .padding(.bottom, 20)
+
                 // Progress indicator
                 ProgressIndicator(currentStep: currentStep, totalSteps: 3)
                     .padding(.horizontal)
                     .padding(.top)
-                
+
                 // Content based on current step
                 Group {
                     switch currentStep {
@@ -64,8 +72,7 @@ struct OnboardingView: View {
                 
                 Spacer()
             }
-            .navigationTitle("Setup Ariata")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarHidden(true)
         }
     }
     
@@ -248,8 +255,7 @@ struct EndpointConfigurationStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             Text("Connect to Server")
-                .font(.title2)
-                .bold()
+                .h2Style()
                 .padding(.horizontal)
             
             VStack(alignment: .leading, spacing: 16) {
@@ -459,8 +465,7 @@ struct PermissionsStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             Text("Grant Permissions")
-                .font(.title2)
-                .bold()
+                .h2Style()
                 .padding(.horizontal)
             
             Text("Ariata needs the following permissions to track your data:")
@@ -500,7 +505,7 @@ struct PermissionsStep: View {
                 Button(action: requestAllPermissions) {
                     HStack {
                         Text("Request Permissions")
-                        Image(systemName: "shield.checkmark")
+                        Image(systemName: "checkmark.shield")
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -561,18 +566,45 @@ struct PermissionsStep: View {
     private func requestAllPermissions() {
         Task {
             // Request all permissions in sequence
-            
+
             // 1. Request HealthKit
+            print("📱 Requesting HealthKit permission...")
             _ = await healthKitManager.requestAuthorization()
-            
+
+            // Small delay to let iOS permission system update
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+            // Force re-check of HealthKit status
+            healthKitManager.checkAuthorizationStatus()
+
             // 2. Request Location (Always)
+            print("📱 Requesting Location permission...")
             _ = await locationManager.requestAuthorization()
-            
+
+            // Small delay to let iOS permission system update
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+            // Force re-check of Location status
+            locationManager.checkAuthorizationStatus()
+
             // 3. Request Microphone
+            print("📱 Requesting Microphone permission...")
             _ = await audioManager.requestAuthorization()
-            
+
+            // Small delay to let iOS permission system update
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+            // Force re-check of Audio status
+            audioManager.checkAuthorizationStatus()
+
             await MainActor.run {
                 hasRequestedPermissions = true
+
+                // Log final permission states for debugging
+                print("📱 Final permission states:")
+                print("   HealthKit: \(healthKitManager.hasAllPermissions())")
+                print("   Location: \(locationManager.hasPermission)")
+                print("   Microphone: \(audioManager.hasPermission)")
             }
         }
     }
@@ -639,8 +671,7 @@ struct InitialSyncStep: View {
     var body: some View {
         VStack(spacing: 32) {
             Text("Syncing Health Data")
-                .font(.title2)
-                .bold()
+                .h2Style()
             
             Text(isComplete ? "Sync complete! Ready to start tracking." : "Fetching the last \(syncDays) days of health data...")
                 .font(.body)

@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use super::sources::get_source;
 
 /// Information about a stream, including enablement status and configuration
-#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
 pub struct StreamInfo {
     pub stream_name: String,
     pub display_name: String,
@@ -60,11 +60,11 @@ pub struct UpdateStreamScheduleRequest {
 pub async fn list_source_streams(db: &PgPool, source_id: Uuid) -> Result<Vec<StreamInfo>> {
     // Get source to determine type
     let source = get_source(db, source_id).await?;
-    let source_type = source.source_type;
+    let provider = &source.provider;
 
     // Get source descriptor from registry
-    let descriptor = crate::registry::get_source(&source_type)
-        .ok_or_else(|| Error::Other(format!("Unknown source type: {source_type}")))?;
+    let descriptor = crate::registry::get_source(provider)
+        .ok_or_else(|| Error::Other(format!("Unknown provider: {provider}")))?;
 
     // Get enabled streams from database
     let enabled_streams: Vec<(
@@ -162,7 +162,7 @@ pub async fn enable_stream(
     let source = get_source(db, source_id).await?;
 
     // Validate stream exists in registry
-    let stream_desc = crate::registry::get_stream(&source.source_type, stream_name)
+    let stream_desc = crate::registry::get_stream(&source.provider, stream_name)
         .ok_or_else(|| Error::Other(format!("Stream not found: {stream_name}")))?;
 
     // Use provided config or empty object (stream will load defaults)
@@ -194,25 +194,33 @@ pub async fn enable_stream(
     .await
     .map_err(|e| Error::Database(format!("Failed to enable stream: {e}")))?;
 
-    // Trigger initial sync in the background
-    // This provides immediate feedback and validates the connection works
-    let db_clone = db.clone();
-    let stream_name_clone = stream_name.to_string();
-    tokio::spawn(async move {
-        match crate::api::jobs::trigger_stream_sync(&db_clone, source_id, &stream_name_clone, None).await {
-            Ok(response) => {
-                tracing::info!(
-                    "Initial sync job created for {}: job_id={}, status={}",
-                    stream_name_clone,
-                    response.job_id,
-                    response.status
-                );
+    // Only trigger initial sync for OAuth sources (they pull data from external APIs)
+    // Device sources (iOS, Mac) push data themselves via ingest endpoint
+    if source.auth_type == "oauth2" {
+        let db_clone = db.clone();
+        let stream_name_clone = stream_name.to_string();
+        tokio::spawn(async move {
+            match crate::api::jobs::trigger_stream_sync(&db_clone, source_id, &stream_name_clone, None).await {
+                Ok(response) => {
+                    tracing::info!(
+                        "Initial sync job created for {}: job_id={}, status={}",
+                        stream_name_clone,
+                        response.job_id,
+                        response.status
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Failed to create initial sync job for {}: {}", stream_name_clone, e);
+                }
             }
-            Err(e) => {
-                tracing::error!("Failed to create initial sync job for {}: {}", stream_name_clone, e);
-            }
-        }
-    });
+        });
+    } else {
+        tracing::info!(
+            "Skipping initial sync for device source (auth_type={}): stream={}",
+            source.auth_type,
+            stream_name
+        );
+    }
 
     // Return updated stream info
     get_stream_info(db, source_id, stream_name).await
@@ -318,9 +326,9 @@ pub async fn update_stream_schedule(
 }
 
 /// Enable default streams for a newly created source (internal helper)
-pub async fn enable_default_streams(db: &PgPool, source_id: Uuid, source_type: &str) -> Result<()> {
-    let descriptor = crate::registry::get_source(source_type)
-        .ok_or_else(|| Error::Other(format!("Unknown source type: {source_type}")))?;
+pub async fn enable_default_streams(db: &PgPool, source_id: Uuid, provider: &str) -> Result<()> {
+    let descriptor = crate::registry::get_source(provider)
+        .ok_or_else(|| Error::Other(format!("Unknown provider: {provider}")))?;
 
     // Insert streams table entries for all available streams (disabled by default)
     for stream in &descriptor.streams {

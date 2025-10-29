@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { Button, Page } from "$lib";
 	import TypedSelect from "$lib/components/TypedSelect.svelte";
+	import DevicePairing from "$lib/components/DevicePairing.svelte";
 	import { goto } from "$app/navigation";
 	import { onMount } from "svelte";
 	import type { PageData } from "./$types";
+	import type { DeviceInfo } from "$lib/types/device-pairing";
 	import * as api from "$lib/api/client";
 	import { toast } from "svelte-sonner";
 
@@ -40,6 +42,12 @@
 	let currentStep = $state<1 | 2 | 3>(1);
 
 	let oauthSources: CatalogSource[] = $state([]);
+	let deviceSources: CatalogSource[] = $state([]);
+	let allSources: CatalogSource[] = $state([]);
+
+	// Device pairing state
+	let devicePairingSourceId: string | null = $state(null);
+	let devicePairingInfo: DeviceInfo | null = $state(null);
 
 	// Configure mode state (when coming from OAuth callback)
 	let isConfigureMode = $state(!!data.existingSource);
@@ -48,8 +56,12 @@
 
 	$effect(() => {
 		if (data.catalog) {
+			allSources = data.catalog;
 			oauthSources = data.catalog.filter(
 				(s: CatalogSource) => s.auth_type === "oauth2",
+			);
+			deviceSources = data.catalog.filter(
+				(s: CatalogSource) => s.auth_type === "device",
 			);
 		}
 	});
@@ -113,6 +125,36 @@
 		}
 	}
 
+	// Handle device pairing success
+	async function handleDevicePairingSuccess(
+		sourceId: string,
+		deviceInfo: DeviceInfo,
+	) {
+		devicePairingSourceId = sourceId;
+		devicePairingInfo = deviceInfo;
+
+		// Fetch available streams for this device source
+		try {
+			const streams = await api.listStreams(sourceId);
+			availableStreams = streams;
+			// Select all streams by default
+			selectedStreams = new Set(streams.map((s: Stream) => s.stream_name));
+			// Move to step 3
+			currentStep = 3;
+		} catch (e) {
+			error = e instanceof Error ? e.message : "Failed to load streams";
+		}
+	}
+
+	// Handle device pairing cancel
+	function handleDevicePairingCancel() {
+		// Reset state and go back to step 1
+		selectedSource = null;
+		currentStep = 1;
+		devicePairingSourceId = null;
+		devicePairingInfo = null;
+	}
+
 	function toggleStream(streamName: string) {
 		const newSet = new Set(selectedStreams);
 		if (newSet.has(streamName)) {
@@ -150,13 +192,26 @@
 	}
 
 	async function handleEnableStreams() {
-		if (!createdSourceId || selectedStreams.size === 0) return;
+		// For device sources, use devicePairingSourceId; for OAuth, use createdSourceId
+		const sourceId = devicePairingSourceId || createdSourceId;
+		if (!sourceId || selectedStreams.size === 0) return;
 
 		isLoading = true;
 		error = null;
 
 		try {
-			await new Promise((resolve) => setTimeout(resolve, 1000));
+			// Enable each selected stream
+			for (const streamName of selectedStreams) {
+				await api.enableStream(sourceId, streamName);
+			}
+
+			// Show success toast
+			const streamCount = selectedStreams.size;
+			toast.success(
+				`${streamCount} stream${streamCount === 1 ? "" : "s"} enabled and syncing in the background`,
+			);
+
+			// Redirect to sources list
 			await goto("/data/sources");
 		} catch (e) {
 			error = e instanceof Error ? e.message : "Failed to enable streams";
@@ -209,7 +264,7 @@
 				{#if !isConfigureMode}
 					<div class="space-y-4 w-2/3">
 						<TypedSelect
-							items={oauthSources}
+							items={allSources}
 							bind:value={selectedSource}
 							onValueChange={handleSourceSelect}
 							label="Data Source"
@@ -220,8 +275,17 @@
 						>
 							{#snippet item(source)}
 								<div>
-									<div class="text-neutral-900 mb-1">
-										{source.display_name}
+									<div class="flex items-center gap-2 mb-1">
+										<span class="text-neutral-900">
+											{source.display_name}
+										</span>
+										{#if source.auth_type === "device"}
+											<span
+												class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded"
+											>
+												Device
+											</span>
+										{/if}
 									</div>
 									<div class="text-sm text-neutral-600">
 										{source.description}
@@ -247,62 +311,104 @@
 				{/if}
 			</div>
 
-			<!-- Step 2: Name & Authorize -->
+			<!-- Step 2: Authorize (OAuth) or Pair (Device) -->
 			<div>
 				<h2
 					class="text-xl font-serif font-normal text-neutral-900 mb-6"
 				>
-					{#if isConfigureMode}
+					{#if isConfigureMode || devicePairingInfo}
 						<span class="text-green-600">✓</span>
 					{/if}
-					2. Authorize
+					2. {selectedSource?.auth_type === "device"
+						? "Pair Device"
+						: "Authorize"}
 				</h2>
 
 				{#if !isConfigureMode}
 					{#if currentStep >= 2 && selectedSource}
-						<div class="space-y-6">
-							<div>
-								<label class="block text-sm text-neutral-700 mb-2">
-									Source Name
-								</label>
-								<input
-									type="text"
-									bind:value={sourceName}
-									placeholder="e.g., My {selectedSource.display_name} Account"
-									class="w-full px-4 py-2 rounded border border-neutral-300 bg-white text-neutral-900 focus:outline-none focus:border-neutral-900"
-								/>
-								<p class="text-sm text-neutral-500 mt-2">
-									A memorable name for this connection
-								</p>
-							</div>
+						{#if selectedSource.auth_type === "device"}
+							<!-- Device Pairing Flow -->
+							<div class="space-y-6">
+								<div>
+									<label class="block text-sm text-neutral-700 mb-2">
+										Device Name
+									</label>
+									<input
+										type="text"
+										bind:value={sourceName}
+										placeholder="e.g., My {selectedSource.display_name}"
+										class="w-full px-4 py-2 rounded border border-neutral-300 bg-white text-neutral-900 focus:outline-none focus:border-neutral-900"
+										disabled={!!devicePairingInfo}
+									/>
+									<p class="text-sm text-neutral-500 mt-2">
+										A memorable name for this device
+									</p>
+								</div>
 
-							{#if currentStep === 2}
-								<div class="pt-6 border-t border-neutral-200">
-									<p
-										class="text-sm text-neutral-600 mb-4 leading-relaxed"
-									>
-										You'll be redirected to {selectedSource.display_name}
-										to authorize access. We request read-only permissions.
+								{#if !devicePairingInfo && sourceName.trim()}
+									<div class="pt-6 border-t border-neutral-200">
+										<DevicePairing
+											deviceType={selectedSource.name}
+											deviceName={sourceName}
+											onSuccess={handleDevicePairingSuccess}
+											onCancel={handleDevicePairingCancel}
+										/>
+									</div>
+								{:else if devicePairingInfo}
+									<div class="pt-6 border-t border-neutral-200">
+										<p class="text-sm text-neutral-600">
+											✓ Device paired: {devicePairingInfo.device_name}
+										</p>
+									</div>
+								{/if}
+							</div>
+						{:else}
+							<!-- OAuth Flow -->
+							<div class="space-y-6">
+								<div>
+									<label class="block text-sm text-neutral-700 mb-2">
+										Source Name
+									</label>
+									<input
+										type="text"
+										bind:value={sourceName}
+										placeholder="e.g., My {selectedSource.display_name} Account"
+										class="w-full px-4 py-2 rounded border border-neutral-300 bg-white text-neutral-900 focus:outline-none focus:border-neutral-900"
+									/>
+									<p class="text-sm text-neutral-500 mt-2">
+										A memorable name for this connection
 									</p>
-									<Button
-										onclick={handleAuthorize}
-										disabled={isLoading || !sourceName.trim()}
-									>
-										{#if isLoading}
-											Authorizing...
-										{:else}
-											Authorize
-										{/if}
-									</Button>
 								</div>
-							{:else if currentStep > 2}
-								<div class="pt-6 border-t border-neutral-200">
-									<p class="text-sm text-neutral-600">
-										✓ Connected as "{sourceName}"
-									</p>
-								</div>
-							{/if}
-						</div>
+
+								{#if currentStep === 2}
+									<div class="pt-6 border-t border-neutral-200">
+										<p
+											class="text-sm text-neutral-600 mb-4 leading-relaxed"
+										>
+											You'll be redirected to {selectedSource.display_name}
+											to authorize access. We request read-only
+											permissions.
+										</p>
+										<Button
+											onclick={handleAuthorize}
+											disabled={isLoading || !sourceName.trim()}
+										>
+											{#if isLoading}
+												Authorizing...
+											{:else}
+												Authorize
+											{/if}
+										</Button>
+									</div>
+								{:else if currentStep > 2}
+									<div class="pt-6 border-t border-neutral-200">
+										<p class="text-sm text-neutral-600">
+											✓ Connected as "{sourceName}"
+										</p>
+									</div>
+								{/if}
+							</div>
+						{/if}
 					{:else}
 						<p class="text-sm text-neutral-500">
 							Complete step 1 to continue

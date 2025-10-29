@@ -24,28 +24,50 @@ class AudioManager: NSObject, ObservableObject {
     @Published var lastSaveDate: Date?
     @Published var availableAudioInputs: [AVAudioSessionPortDescription] = []
     @Published var selectedAudioInput: AVAudioSessionPortDescription?
-    
+
+    // MARK: - Dependencies
+    private let configProvider: ConfigurationProvider
+    private let storageProvider: StorageProvider
+    private let dataUploader: DataUploader
+
     private let audioSession = AVAudioSession.sharedInstance()
     private var audioRecorder: AVAudioRecorder?
-    private var recordingTimer: DispatchSourceTimer?
+    private var recordingTimer: ReliableTimer?
     private var currentChunkStartTime: Date?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private let timerQueue = DispatchQueue(label: "com.ariata.audio.timer", qos: .userInitiated)
-    private var healthCheckTimer: DispatchSourceTimer?
-    
-    override init() {
+
+    /// Initialize with dependency injection
+    init(configProvider: ConfigurationProvider,
+         storageProvider: StorageProvider,
+         dataUploader: DataUploader) {
+        self.configProvider = configProvider
+        self.storageProvider = storageProvider
+        self.dataUploader = dataUploader
+
         super.init()
+
         checkAuthorizationStatus()
         setupAudioInputMonitoring()
         updateAvailableInputs()
         loadSelectedInput()
-        startHealthCheckTimer()
+
+        // Register with centralized health check coordinator
+        HealthCheckCoordinator.shared.register(self)
+    }
+
+    /// Legacy singleton initializer - uses default dependencies
+    private override convenience init() {
+        self.init(
+            configProvider: DeviceManager.shared,
+            storageProvider: SQLiteManager.shared,
+            dataUploader: BatchUploadCoordinator.shared
+        )
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
-        healthCheckTimer?.cancel()
-        healthCheckTimer = nil
+        HealthCheckCoordinator.shared.unregister(self)
     }
     
     // MARK: - Authorization
@@ -125,32 +147,8 @@ class AudioManager: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Health Check
+    // MARK: - Audio Input Management
 
-    private func startHealthCheckTimer() {
-        // Run health check on main queue to avoid thread safety issues
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + healthCheckIntervalSeconds, repeating: healthCheckIntervalSeconds)
-        timer.setEventHandler { [weak self] in
-            self?.performHealthCheck()
-        }
-        timer.resume()
-        healthCheckTimer = timer
-    }
-
-    func performHealthCheck() {
-        let shouldBeRecording = hasPermission && DeviceManager.shared.configuration.isStreamEnabled("mic")
-        let actuallyRecording = audioRecorder?.isRecording ?? false
-
-        if shouldBeRecording && !actuallyRecording {
-            stopRecording()  // Clean up any bad state
-            startRecording() // Fresh start
-        } else if !shouldBeRecording && actuallyRecording {
-            stopRecording()
-        }
-    }
-
-    
     private func updateAvailableInputs() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -248,7 +246,7 @@ class AudioManager: NSObject, ObservableObject {
         }
 
         // Check if audio is enabled in configuration
-        let isEnabled = DeviceManager.shared.configuration.isStreamEnabled("mic")
+        let isEnabled = configProvider.isStreamEnabled("mic")
         guard isEnabled else {
             return
         }
@@ -329,14 +327,15 @@ extension AudioManager {
 
             currentChunkStartTime = Date()
 
-            // Use DispatchSourceTimer for more reliable background execution
-            let timer = DispatchSource.makeTimerSource(queue: timerQueue)
-            timer.schedule(deadline: .now() + chunkDurationSeconds)
-            timer.setEventHandler { [weak self] in
-                self?.finishCurrentChunk()
-            }
-            timer.resume()
-            recordingTimer = timer
+            // Use ReliableTimer for background execution
+            recordingTimer = ReliableTimer.builder()
+                .interval(chunkDurationSeconds)
+                .queue(timerQueue)
+                .oneTime(true)  // One-time timer for chunk duration
+                .handler { [weak self] in
+                    self?.finishCurrentChunk()
+                }
+                .build()
         } catch {
             print("❌ Failed to start recording chunk: \(error)")
         }
@@ -386,31 +385,71 @@ extension AudioManager {
         // Ensure background task ends no matter what
         defer { endBackgroundTask() }
 
-        // Create stream data with single chunk
+        let deviceId = configProvider.deviceId
+
+        // Attempt to save with retry mechanism
+        let result = saveWithRetry(chunk: chunk, deviceId: deviceId, maxAttempts: 3)
+
+        switch result {
+        case .success:
+            Task { @MainActor in
+                self.lastSaveDate = Date()
+            }
+            dataUploader.updateUploadStats()
+
+        case .failure(let error):
+            ErrorLogger.shared.log(error, deviceId: deviceId)
+        }
+    }
+
+    /// Attempts to save audio chunk with exponential backoff retry
+    private func saveWithRetry(chunk: AudioChunk, deviceId: String, maxAttempts: Int) -> Result<Void, AnyDataCollectionError> {
         let streamData = AudioStreamData(
-            deviceId: DeviceManager.shared.configuration.deviceId,
+            deviceId: deviceId,
             chunks: [chunk]
         )
 
-        // Encode and save to SQLite
-        do {
+        for attempt in 1...maxAttempts {
+            // Encode the data
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(streamData)
 
-            let success = SQLiteManager.shared.enqueue(streamName: "ios_mic", data: data)
+            let data: Data
+            do {
+                data = try encoder.encode(streamData)
+            } catch {
+                let encodingError = DataEncodingError(
+                    streamType: .audio,
+                    underlyingError: error,
+                    dataSize: chunk.audioData.count
+                )
+                return .failure(AnyDataCollectionError(encodingError))
+            }
+
+            // Attempt to save to SQLite
+            let success = storageProvider.enqueue(streamName: "ios_mic", data: data)
 
             if success {
-                Task { @MainActor in
-                    self.lastSaveDate = Date()
+                if attempt > 1 {
+                    ErrorLogger.shared.logSuccessfulRetry(streamType: .audio, attemptNumber: attempt)
                 }
-
-                // Update stats in upload coordinator
-                BatchUploadCoordinator.shared.updateUploadStats()
+                return .success
             }
-        } catch {
-            print("❌ Failed to encode audio chunk: \(error)")
+
+            // If not last attempt, wait before retrying
+            if attempt < maxAttempts {
+                let delay = Double(attempt) * 0.5  // 0.5s, 1.0s backoff
+                Thread.sleep(forTimeInterval: delay)
+            }
         }
+
+        // All attempts failed
+        let storageError = StorageError(
+            streamType: .audio,
+            reason: "Failed to enqueue to SQLite after \(maxAttempts) attempts",
+            attemptNumber: maxAttempts
+        )
+        return .failure(AnyDataCollectionError(storageError))
     }
     
     private func beginBackgroundTask() {
@@ -435,10 +474,46 @@ extension AudioManager: AVAudioRecorderDelegate {
             print("❌ Audio recording finished with error")
         }
     }
-    
+
     func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
         if let error = error {
             print("❌ Audio encoding error: \(error)")
         }
+    }
+}
+
+// MARK: - HealthCheckable
+
+extension AudioManager: HealthCheckable {
+    var healthCheckName: String {
+        "AudioManager"
+    }
+
+    func performHealthCheck() -> HealthStatus {
+        // Check if stream is enabled
+        guard configProvider.isStreamEnabled("mic") else {
+            return .disabled
+        }
+
+        // Check permission
+        guard hasPermission else {
+            return .unhealthy(reason: "Microphone permission not granted")
+        }
+
+        // Check recording state
+        let shouldBeRecording = true
+        let actuallyRecording = audioRecorder?.isRecording ?? false
+
+        if shouldBeRecording && !actuallyRecording {
+            // Attempt recovery
+            stopRecording()
+            startRecording()
+            return .unhealthy(reason: "Recording stopped unexpectedly, restarting")
+        } else if !shouldBeRecording && actuallyRecording {
+            stopRecording()
+            return .healthy
+        }
+
+        return .healthy
     }
 }

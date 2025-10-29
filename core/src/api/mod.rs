@@ -30,8 +30,8 @@ pub use types::{Source, SourceStatus};
 // Re-export all functions for convenience
 pub use device_pairing::{
     check_pairing_status, complete_device_pairing, initiate_device_pairing, list_pending_pairings,
-    update_last_seen, validate_device_token, DeviceInfo, PairingCompleted, PairingInitiated,
-    PairingStatus, PendingPairing,
+    update_last_seen, validate_device_token, verify_device, DeviceInfo, DeviceVerified,
+    PairingCompleted, PairingInitiated, PairingStatus, PendingPairing,
 };
 pub use oauth::{
     create_source, handle_oauth_callback, initiate_oauth_flow, register_device,

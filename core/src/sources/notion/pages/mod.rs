@@ -47,7 +47,7 @@ impl NotionPagesStream {
     pub async fn sync_with_mode(&self, mode: &SyncMode) -> Result<SyncResult> {
         // Notion pages only support full refresh, not incremental sync
         // If incremental mode is requested, log a warning and use full refresh instead
-        let effective_mode = match mode {
+        let _effective_mode = match mode {
             SyncMode::Incremental { .. } => {
                 tracing::warn!(
                     "Notion pages stream does not support incremental sync. Using full refresh instead."

@@ -14,8 +14,9 @@ pub async fn list_sources(db: &PgPool) -> Result<Vec<Source>> {
         r#"
         SELECT
             s.id,
-            s.type as source_type,
+            s.provider,
             s.name,
+            s.auth_type,
             s.is_active,
             s.error_message,
             s.created_at,
@@ -25,7 +26,7 @@ pub async fn list_sources(db: &PgPool) -> Result<Vec<Source>> {
             COALESCE(COUNT(DISTINCT st.stream_name), 0) as total_streams_count
         FROM sources s
         LEFT JOIN streams st ON s.id = st.source_id
-        GROUP BY s.id, s.type, s.name, s.is_active, s.error_message, s.created_at, s.updated_at
+        GROUP BY s.id, s.provider, s.name, s.auth_type, s.is_active, s.error_message, s.created_at, s.updated_at
         ORDER BY s.created_at DESC
         "#,
     )
@@ -42,8 +43,9 @@ pub async fn get_source(db: &PgPool, source_id: Uuid) -> Result<Source> {
         r#"
         SELECT
             s.id,
-            s.type as source_type,
+            s.provider,
             s.name,
+            s.auth_type,
             s.is_active,
             s.error_message,
             s.created_at,
@@ -54,7 +56,7 @@ pub async fn get_source(db: &PgPool, source_id: Uuid) -> Result<Source> {
         FROM sources s
         LEFT JOIN streams st ON s.id = st.source_id
         WHERE s.id = $1
-        GROUP BY s.id, s.type, s.name, s.is_active, s.error_message, s.created_at, s.updated_at
+        GROUP BY s.id, s.provider, s.name, s.auth_type, s.is_active, s.error_message, s.created_at, s.updated_at
         "#,
     )
     .bind(source_id)

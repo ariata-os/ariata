@@ -71,24 +71,24 @@ impl StreamFactory {
         let source = self.load_source(source_id).await?;
 
         // Create auth abstraction
-        let auth = self.create_auth(source_id, &source.type_).await?;
+        let auth = self.create_auth(source_id, &source.provider).await?;
 
         // Create the appropriate stream implementation
-        self.create_stream_impl(source_id, &source.type_, stream_name, auth)
+        self.create_stream_impl(source_id, &source.provider, stream_name, auth)
             .await
     }
 
     /// Load source information from the database
     async fn load_source(&self, source_id: Uuid) -> Result<SourceInfo> {
         let result = sqlx::query_as::<_, (String, String)>(
-            "SELECT type, name FROM sources WHERE id = $1 AND is_active = true"
+            "SELECT provider, name FROM sources WHERE id = $1 AND is_active = true"
         )
         .bind(source_id)
         .fetch_optional(&self.db)
         .await?;
 
         match result {
-            Some((type_, name)) => Ok(SourceInfo { type_, name }),
+            Some((provider, name)) => Ok(SourceInfo { provider, name }),
             None => Err(Error::Database(format!(
                 "Source not found or inactive: {}",
                 source_id
@@ -97,8 +97,8 @@ impl StreamFactory {
     }
 
     /// Create authentication for a source
-    async fn create_auth(&self, source_id: Uuid, source_type: &str) -> Result<SourceAuth> {
-        match source_type {
+    async fn create_auth(&self, source_id: Uuid, provider: &str) -> Result<SourceAuth> {
+        match provider {
             "google" | "strava" | "notion" => {
                 // Create a new TokenManager (requires encryption key)
                 let token_manager = Arc::new(TokenManager::new(self.db.clone())?);
@@ -110,23 +110,23 @@ impl StreamFactory {
                 let source = self.load_source(source_id).await?;
                 Ok(SourceAuth::device(source.name))
             }
-            _ => Err(Error::Other(format!("Unknown source type: {}", source_type))),
+            _ => Err(Error::Other(format!("Unknown provider: {}", provider))),
         }
     }
 
     /// Create the stream implementation
     ///
-    /// This is where we match on source type + stream name and instantiate
+    /// This is where we match on provider + stream name and instantiate
     /// the correct struct. As we refactor sources to use the Stream trait,
     /// they'll be added here.
     async fn create_stream_impl(
         &self,
         source_id: Uuid,
-        source_type: &str,
+        provider: &str,
         stream_name: &str,
         auth: SourceAuth,
     ) -> Result<Box<dyn Stream>> {
-        match (source_type, stream_name) {
+        match (provider, stream_name) {
             // Google streams
             ("google", "calendar") => {
                 use crate::sources::google::calendar::GoogleCalendarStream;
@@ -161,7 +161,7 @@ impl StreamFactory {
 
             _ => Err(Error::Other(format!(
                 "Unknown stream: {}/{}",
-                source_type, stream_name
+                provider, stream_name
             ))),
         }
     }
@@ -178,7 +178,7 @@ impl Clone for StreamFactory {
 
 /// Source information loaded from database
 struct SourceInfo {
-    type_: String,
+    provider: String,
     name: String,
 }
 

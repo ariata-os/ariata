@@ -62,7 +62,7 @@ export interface Activity {
 	// Context (varies by type)
 	sourceId?: string | null;
 	sourceName?: string | null;
-	sourceType?: string | null;
+	provider?: string | null;
 	streamName?: string | null;
 	streamDisplayName?: string | null;
 
@@ -372,7 +372,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 30000,
 		sourceId: "550e8400-e29b-41d4-a716-446655440001",
 		sourceName: "My Google Account",
-		sourceType: "google",
+		provider: "google",
 		streamName: "gmail",
 		streamDisplayName: "Gmail",
 		recordsFetched: 127,
@@ -390,7 +390,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 12000,
 		sourceId: "550e8400-e29b-41d4-a716-446655440001",
 		sourceName: "My Google Account",
-		sourceType: "google",
+		provider: "google",
 		streamName: "calendar",
 		streamDisplayName: "Calendar",
 		recordsFetched: 42,
@@ -408,7 +408,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 500,
 		sourceId: "550e8400-e29b-41d4-a716-446655440002",
 		sourceName: "Personal iPhone",
-		sourceType: "ios",
+		provider: "ios",
 		streamName: "microphone",
 		streamDisplayName: "Microphone",
 		errorMessage: null,
@@ -423,7 +423,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 12000,
 		sourceId: "550e8400-e29b-41d4-a716-446655440002",
 		sourceName: "Personal iPhone",
-		sourceType: "ios",
+		provider: "ios",
 		streamName: "healthkit",
 		streamDisplayName: "HealthKit",
 		recordsFetched: 354,
@@ -453,7 +453,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 300,
 		sourceId: "550e8400-e29b-41d4-a716-446655440001",
 		sourceName: "My Google Account",
-		sourceType: "google",
+		provider: "google",
 		streamName: "calendar",
 		streamDisplayName: "Calendar",
 		description: "Changed sync schedule to every 6 hours",
@@ -469,7 +469,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 5000,
 		sourceId: "550e8400-e29b-41d4-a716-446655440003",
 		sourceName: "Work Notion",
-		sourceType: "notion",
+		provider: "notion",
 		errorMessage: null,
 	},
 	// Sync - Notion Pages
@@ -482,7 +482,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 45000,
 		sourceId: "550e8400-e29b-41d4-a716-446655440003",
 		sourceName: "Work Notion",
-		sourceType: "notion",
+		provider: "notion",
 		streamName: "pages",
 		streamDisplayName: "Pages",
 		recordsFetched: 89,
@@ -500,7 +500,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 400,
 		sourceId: "550e8400-e29b-41d4-a716-446655440002",
 		sourceName: "Personal iPhone",
-		sourceType: "ios",
+		provider: "ios",
 		streamName: "location",
 		streamDisplayName: "Location",
 		errorMessage: null,
@@ -515,7 +515,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 35000,
 		sourceId: "550e8400-e29b-41d4-a716-446655440001",
 		sourceName: "My Google Account",
-		sourceType: "google",
+		provider: "google",
 		streamName: "gmail",
 		streamDisplayName: "Gmail",
 		recordsFetched: 200,
@@ -546,7 +546,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 5000,
 		sourceId: "550e8400-e29b-41d4-a716-446655440002",
 		sourceName: "Personal iPhone",
-		sourceType: "ios",
+		provider: "ios",
 		streamName: "healthkit",
 		streamDisplayName: "HealthKit",
 		recordsFetched: 0,
@@ -575,7 +575,7 @@ export const mockActivities: Activity[] = [
 		completedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 15 + 3500).toISOString(),
 		durationMs: 3500,
 		sourceName: "Old iPhone",
-		sourceType: "ios",
+		provider: "ios",
 		errorMessage: null,
 	},
 	// Source added - initial
@@ -588,7 +588,7 @@ export const mockActivities: Activity[] = [
 		durationMs: 6000,
 		sourceId: "550e8400-e29b-41d4-a716-446655440001",
 		sourceName: "My Google Account",
-		sourceType: "google",
+		provider: "google",
 		errorMessage: null,
 	},
 ];

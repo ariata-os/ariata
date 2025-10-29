@@ -252,7 +252,7 @@ pub async fn create_source(db: &PgPool, request: CreateSourceRequest) -> Result<
 
     sqlx::query(
         r#"
-        INSERT INTO sources (id, type, name, is_active, created_at, updated_at)
+        INSERT INTO sources (id, provider, name, is_active, created_at, updated_at)
         VALUES ($1, $2, $3, true, NOW(), NOW())
         "#,
     )
@@ -284,7 +284,7 @@ pub async fn register_device(db: &PgPool, request: RegisterDeviceRequest) -> Res
 
     sqlx::query(
         r#"
-        INSERT INTO sources (id, type, name, is_active, created_at, updated_at)
+        INSERT INTO sources (id, provider, name, is_active, created_at, updated_at)
         VALUES ($1, $2, $3, true, NOW(), NOW())
         "#,
     )

@@ -36,12 +36,14 @@ help:
 	@echo ""
 	@echo "🚀 Ariata - Personal Data ELT Platform"
 	@echo ""
-	@echo "Development Commands:"
-	@echo "  make dev          Start all services (background)"
-	@echo "  make dev-watch    Start all services and follow logs"
-	@echo "  make stop         Stop all services"
-	@echo "  make restart      Restart all services"
-	@echo "  make logs         View logs from all services"
+	@echo "Development Commands (Native):"
+	@echo "  make dev          Start infrastructure (Postgres + MinIO)"
+	@echo "                    Then run services natively:"
+	@echo "                      Terminal 1: cd core && cargo run -- serve"
+	@echo "                      Terminal 2: cd apps/web && npm run dev"
+	@echo "  make dev-servers  Auto-run both servers in background"
+	@echo "  make stop         Stop all development services"
+	@echo "  make logs         View infrastructure logs"
 	@echo "  make ps           Show running services"
 	@echo ""
 	@echo "Database Commands:"
@@ -49,9 +51,10 @@ help:
 	@echo "  make db-reset     Reset all schemas (WARNING: deletes data)"
 	@echo "  make db-status    Check database schemas status"
 	@echo ""
-	@echo "Production Commands:"
+	@echo "Production Commands (Full Docker):"
 	@echo "  make prod         Start production environment"
 	@echo "  make prod-build   Build production images"
+	@echo "  make prod-stop    Stop production services"
 	@echo ""
 	@echo "Testing Commands:"
 	@echo "  make test         Run all tests"
@@ -62,10 +65,10 @@ help:
 	@echo "  make clean        Remove all containers and volumes"
 	@echo "  make rebuild      Rebuild all containers"
 	@echo ""
-	@echo "Services:"
-	@echo "  - Web (dev):      http://localhost:$(WEB_DEV_PORT)"
-	@echo "  - Rust API:       http://localhost:$(API_PORT)"
-	@echo "  - MinIO Console:  http://localhost:$(MINIO_CONSOLE_PORT)"
+	@echo "Development URLs:"
+	@echo "  Web:      http://localhost:$(WEB_DEV_PORT)"
+	@echo "  API:      http://localhost:$(API_PORT)"
+	@echo "  MinIO:    http://localhost:$(MINIO_CONSOLE_PORT) (minioadmin/minioadmin)"
 	@echo ""
 
 # === DEVELOPMENT COMMANDS ===
@@ -79,77 +82,93 @@ env-check:
 		echo "⚠️  Please update .env with your actual credentials"; \
 	fi
 
-# Start development environment
+# Start development environment (infrastructure only)
 dev: env-check
 	@echo "🚀 Starting development environment..."
-	@docker-compose up --build -d
-	@echo "⏳ Waiting for services to be ready..."
-	@sleep 10
+	@echo ""
+	@echo "📦 Starting infrastructure (Postgres + MinIO)..."
+	@docker-compose -f docker-compose.dev.yml up -d
+	@echo "⏳ Waiting for services..."
+	@sleep 8
 	@$(MAKE) minio-setup
-	@$(MAKE) migrate
 	@echo ""
-	@echo "✅ Development environment ready!"
+	@echo "✅ Infrastructure ready!"
 	@echo ""
-	@echo "  Web (dev):    http://localhost:$(WEB_DEV_PORT)"
-	@echo "  Rust API:     http://localhost:$(API_PORT)"
-	@echo "  MinIO:        http://localhost:$(MINIO_CONSOLE_PORT) (minioadmin/minioadmin)"
+	@echo "📋 Next steps - Open 2 terminals:"
 	@echo ""
-	@echo "  Run 'make logs' to view logs"
-	@echo "  Run 'make stop' to shut down"
+	@echo "  Terminal 1 (Rust API):"
+	@echo "    cd core && cargo run -- serve"
+	@echo ""
+	@echo "  Terminal 2 (Web app):"
+	@echo "    cd apps/web && npm run dev"
+	@echo ""
+	@echo "Or run both in background:"
+	@echo "    make dev-servers"
+	@echo ""
+	@echo "Services will be available at:"
+	@echo "  Web:      http://localhost:$(WEB_DEV_PORT)"
+	@echo "  API:      http://localhost:$(API_PORT)"
+	@echo "  MinIO:    http://localhost:$(MINIO_CONSOLE_PORT) (minioadmin/minioadmin)"
 	@echo ""
 
-# Start development environment and follow logs
-dev-watch: dev
-	@echo "📺 Following logs (Ctrl+C to exit, services keep running)..."
-	@echo ""
-	@docker-compose logs -f
+# Run both dev servers in background (parallel make)
+dev-servers:
+	@echo "🚀 Starting development servers in background..."
+	@$(MAKE) -j 2 dev-core dev-web
 
-# Stop all services
+# Stop development infrastructure and servers
 stop:
-	@echo "🛑 Stopping all services..."
-	@docker-compose down
-	@echo "✅ All services stopped"
+	@echo "🛑 Stopping development environment..."
+	@docker-compose -f docker-compose.dev.yml down
+	@pkill -f "cargo run" 2>/dev/null || true
+	@pkill -f "vite dev" 2>/dev/null || true
+	@echo "✅ Development stopped"
 
-# Restart all services
+# Restart development
 restart: stop dev
 
-# View logs from all services
+# View infrastructure logs
 logs:
-	@docker-compose logs -f
+	@docker-compose -f docker-compose.dev.yml logs -f
 
 # View logs from specific service
-logs-core:
-	@docker-compose logs -f core
-
-logs-web:
-	@docker-compose logs -f web
-
 logs-postgres:
-	@docker-compose logs -f postgres
+	@docker-compose -f docker-compose.dev.yml logs -f postgres
 
 logs-minio:
-	@docker-compose logs -f minio
+	@docker-compose -f docker-compose.dev.yml logs -f minio
+
+# === HELPER TARGETS (Internal) ===
+
+# Run Rust API natively (blocking)
+dev-core:
+	@echo "🦀 Starting Rust API server on localhost:8000..."
+	@cd core && cargo run -- serve
+
+# Run web app natively (blocking)
+dev-web:
+	@echo "⚡ Starting SvelteKit dev server on localhost:5173..."
+	@cd apps/web && npm run dev
 
 # === MIGRATION COMMANDS ===
 
 # Run all migrations (Rust + Drizzle)
 migrate: migrate-rust migrate-drizzle
 
-# Run Rust migrations (ELT database)
+# Run Rust migrations (ELT database) - works with native dev
 migrate-rust:
 	@echo "🗄️  Running Rust migrations for ariata_elt..."
-	@docker-compose exec core ariata migrate || \
-		(echo "⚠️  Core service not running. Starting it first..." && \
-		 docker-compose up -d core && sleep 5 && \
-		 docker-compose exec core ariata migrate)
+	@if docker ps | grep -q ariata-core; then \
+		docker-compose exec core ariata migrate; \
+	else \
+		cd core && cargo run -- migrate; \
+	fi
 	@echo "✅ Rust migrations complete"
 
-# Run Drizzle migrations (App schema)
+# Run Drizzle migrations (App schema) - native dev
 migrate-drizzle:
 	@echo "🗄️  Running Drizzle migrations for 'app' schema..."
-	@cd apps/web && DATABASE_URL="$(DB_URL)" npx drizzle-kit migrate || \
-		(echo "⚠️  Running migrations in Docker..." && \
-		 docker-compose exec -e DATABASE_URL="$(DB_URL_DOCKER)" web npx drizzle-kit migrate)
+	@cd apps/web && DATABASE_URL="$(DB_URL)" npx drizzle-kit migrate
 	@echo "✅ Drizzle migrations complete"
 
 # Generate new Drizzle migration
@@ -171,10 +190,12 @@ db-status:
 	@echo "📊 Database Status (ariata):"
 	@echo ""
 	@echo "ELT Schema (elt):"
-	@docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt elt.*" 2>/dev/null || echo "  ❌ Not accessible"
+	@docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt elt.*" 2>/dev/null || \
+		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt elt.*" 2>/dev/null || echo "  ❌ Not accessible"
 	@echo ""
 	@echo "App Schema (app):"
-	@docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt app.*" 2>/dev/null || echo "  ❌ Not accessible"
+	@docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt app.*" 2>/dev/null || \
+		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt app.*" 2>/dev/null || echo "  ❌ Not accessible"
 
 # Reset database (WARNING: destructive)
 db-reset:
@@ -184,13 +205,19 @@ db-reset:
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		echo "🗑️  Dropping schemas..."; \
-		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS elt CASCADE;" 2>/dev/null || true; \
-		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS app CASCADE;" 2>/dev/null || true; \
+		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS elt CASCADE;" 2>/dev/null || \
+			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS elt CASCADE;" 2>/dev/null || true; \
+		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS app CASCADE;" 2>/dev/null || \
+			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS app CASCADE;" 2>/dev/null || true; \
 		echo "🆕 Recreating schemas..."; \
-		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE SCHEMA elt;" || exit 1; \
-		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE SCHEMA app;" || exit 1; \
-		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "GRANT ALL ON SCHEMA elt TO $(DB_USER);" || exit 1; \
-		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "GRANT ALL ON SCHEMA app TO $(DB_USER);" || exit 1; \
+		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE SCHEMA elt;" || \
+			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE SCHEMA elt;" || exit 1; \
+		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE SCHEMA app;" || \
+			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE SCHEMA app;" || exit 1; \
+		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "GRANT ALL ON SCHEMA elt TO $(DB_USER);" || \
+			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "GRANT ALL ON SCHEMA elt TO $(DB_USER);" || exit 1; \
+		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "GRANT ALL ON SCHEMA app TO $(DB_USER);" || \
+			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "GRANT ALL ON SCHEMA app TO $(DB_USER);" || exit 1; \
 		echo "✅ Schemas recreated"; \
 		echo "📝 Running migrations..."; \
 		$(MAKE) migrate; \
@@ -201,11 +228,13 @@ db-reset:
 
 # === MINIO COMMANDS ===
 
-# Setup MinIO bucket
+# Setup MinIO bucket (works with dev or prod)
 minio-setup:
 	@echo "🪣 Setting up MinIO..."
-	@docker-compose exec minio mc alias set local http://localhost:9000 minioadmin minioadmin 2>/dev/null || true
-	@docker-compose exec minio mc mb local/ariata-data --ignore-existing 2>/dev/null || true
+	@docker-compose -f docker-compose.dev.yml exec minio mc alias set local http://localhost:9000 minioadmin minioadmin 2>/dev/null || \
+		docker-compose exec minio mc alias set local http://localhost:9000 minioadmin minioadmin 2>/dev/null || true
+	@docker-compose -f docker-compose.dev.yml exec minio mc mb local/ariata-data --ignore-existing 2>/dev/null || \
+		docker-compose exec minio mc mb local/ariata-data --ignore-existing 2>/dev/null || true
 	@echo "✅ MinIO bucket ready"
 
 # === PRODUCTION COMMANDS ===
@@ -264,14 +293,22 @@ test-web:
 
 # Show service status
 ps:
-	@docker-compose ps
+	@echo "Development Infrastructure:"
+	@docker-compose -f docker-compose.dev.yml ps 2>/dev/null || echo "  Not running"
+	@echo ""
+	@echo "Production Services:"
+	@docker-compose -f docker-compose.yml -f docker-compose.prod.yml ps 2>/dev/null || echo "  Not running"
+	@echo ""
+	@echo "Native Processes:"
+	@pgrep -fl "cargo run" || echo "  No Rust API running"
+	@pgrep -fl "vite dev" || echo "  No web dev server running"
 
-# Rebuild all containers (no cache)
+# Rebuild production containers (no cache)
 rebuild:
-	@echo "🔨 Rebuilding all containers..."
-	@docker-compose down
-	@docker-compose build --no-cache
-	@echo "✅ Rebuild complete. Run 'make dev' to start"
+	@echo "🔨 Rebuilding production containers..."
+	@docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+	@docker-compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache
+	@echo "✅ Rebuild complete. Run 'make prod' to start"
 
 # Clean everything (containers, volumes, images)
 clean:
@@ -282,7 +319,10 @@ clean:
 	@read -p "Continue? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker-compose down -v --rmi all; \
+		docker-compose -f docker-compose.dev.yml down -v 2>/dev/null || true; \
+		docker-compose -f docker-compose.yml -f docker-compose.prod.yml down -v --rmi all 2>/dev/null || true; \
+		pkill -f "cargo run" 2>/dev/null || true; \
+		pkill -f "vite dev" 2>/dev/null || true; \
 		echo "✅ Cleaned. Run 'make dev' to start fresh."; \
 	else \
 		echo "❌ Cancelled"; \
@@ -341,28 +381,18 @@ studio:
 
 # === UTILITY COMMANDS ===
 
-# Shell into Rust container
-shell-core:
-	@docker-compose exec core /bin/sh
-
-# Shell into web container
-shell-web:
-	@docker-compose exec web /bin/sh
-
-# Shell into postgres (elt schema)
+# Shell into postgres (works with dev or prod)
 shell-postgres:
-	@docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME)
-
-# View Rust logs
-api-logs:
-	@docker-compose logs -f core
+	@docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) 2>/dev/null || \
+		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME)
 
 # Health check all services
 health:
 	@echo "🏥 Checking service health..."
 	@echo ""
 	@echo "PostgreSQL:"
-	@docker-compose exec postgres pg_isready -U $(DB_USER) && echo "  ✅ Healthy" || echo "  ❌ Unhealthy"
+	@docker-compose -f docker-compose.dev.yml exec postgres pg_isready -U $(DB_USER) 2>/dev/null && echo "  ✅ Healthy" || \
+		docker-compose exec postgres pg_isready -U $(DB_USER) 2>/dev/null && echo "  ✅ Healthy" || echo "  ❌ Unhealthy"
 	@echo ""
 	@echo "MinIO:"
 	@curl -sf http://localhost:$(MINIO_PORT)/minio/health/live > /dev/null && echo "  ✅ Healthy" || echo "  ❌ Unhealthy"

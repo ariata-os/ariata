@@ -468,3 +468,251 @@ pub async fn cancel_job_handler(
             .into_response(),
     }
 }
+
+// ============================================================================
+// Device Pairing Endpoints
+// ============================================================================
+
+/// Request to initiate device pairing
+#[derive(Debug, Deserialize)]
+pub struct InitiatePairingRequest {
+    pub device_type: String,
+    pub name: String,
+}
+
+/// Response when pairing is initiated
+#[derive(Debug, Serialize)]
+pub struct InitiatePairingResponse {
+    pub source_id: Uuid,
+    pub code: String,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Initiate device pairing by generating a pairing code
+pub async fn initiate_device_pairing_handler(
+    State(state): State<AppState>,
+    Json(request): Json<InitiatePairingRequest>,
+) -> Response {
+    match crate::api::initiate_device_pairing(
+        state.db.pool(),
+        &request.device_type,
+        &request.name,
+    )
+    .await
+    {
+        Ok(pairing) => (
+            StatusCode::OK,
+            Json(InitiatePairingResponse {
+                source_id: pairing.source_id,
+                code: pairing.code,
+                expires_at: pairing.expires_at,
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Request to complete device pairing
+#[derive(Debug, Deserialize)]
+pub struct CompletePairingRequest {
+    pub code: String,
+    pub device_info: crate::DeviceInfo,
+}
+
+/// Response when pairing is completed
+#[derive(Debug, Serialize)]
+pub struct CompletePairingResponse {
+    pub source_id: Uuid,
+    pub device_token: String,
+    pub available_streams: Vec<crate::registry::StreamDescriptor>,
+}
+
+/// Complete device pairing with a valid pairing code
+pub async fn complete_device_pairing_handler(
+    State(state): State<AppState>,
+    Json(request): Json<CompletePairingRequest>,
+) -> Response {
+    match crate::api::complete_device_pairing(
+        state.db.pool(),
+        &request.code,
+        request.device_info,
+    )
+    .await
+    {
+        Ok(completed) => (
+            StatusCode::OK,
+            Json(CompletePairingResponse {
+                source_id: completed.source_id,
+                device_token: completed.device_token,
+                available_streams: completed.available_streams,
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Response for pairing status
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum PairingStatusResponse {
+    Pending,
+    Active { device_info: crate::DeviceInfo },
+    Revoked,
+}
+
+/// Check the status of a device pairing
+pub async fn check_pairing_status_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<Uuid>,
+) -> Response {
+    match crate::api::check_pairing_status(state.db.pool(), source_id).await {
+        Ok(status) => {
+            let response = match status {
+                crate::PairingStatus::Pending => PairingStatusResponse::Pending,
+                crate::PairingStatus::Active(info) => PairingStatusResponse::Active {
+                    device_info: info,
+                },
+                crate::PairingStatus::Revoked => PairingStatusResponse::Revoked,
+            };
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Response for pending pairings
+#[derive(Debug, Serialize)]
+pub struct PendingPairingsResponse {
+    pub pairings: Vec<PendingPairingItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PendingPairingItem {
+    pub source_id: Uuid,
+    pub name: String,
+    pub device_type: String,
+    pub code: String,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// List all pending device pairings
+pub async fn list_pending_pairings_handler(State(state): State<AppState>) -> Response {
+    match crate::api::list_pending_pairings(state.db.pool()).await {
+        Ok(pairings) => {
+            let items = pairings
+                .into_iter()
+                .map(|p| PendingPairingItem {
+                    source_id: p.source_id,
+                    name: p.name,
+                    device_type: p.device_type,
+                    code: p.code,
+                    expires_at: p.expires_at,
+                    created_at: p.created_at,
+                })
+                .collect();
+            (
+                StatusCode::OK,
+                Json(PendingPairingsResponse { pairings: items }),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Verify a device token and return configuration status
+///
+/// This is called by devices that already have a device_token
+/// to check if streams have been configured
+pub async fn verify_device_handler(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    // Extract Bearer token from Authorization header
+    let token = match headers.get(axum::http::header::AUTHORIZATION) {
+        Some(value) => {
+            let auth_str = value.to_str().unwrap_or("");
+            if let Some(token) = auth_str.strip_prefix("Bearer ") {
+                token
+            } else {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({
+                        "error": "Missing or invalid Authorization header. Expected: Bearer <token>"
+                    })),
+                )
+                    .into_response();
+            }
+        }
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "Missing Authorization header"
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    match crate::api::device_pairing::verify_device(state.db.pool(), token).await {
+        Ok(verified) => {
+            let response = serde_json::json!({
+                "source_id": verified.source_id,
+                "configuration_complete": verified.configuration_complete,
+                "enabled_streams": verified.enabled_streams.iter().map(|s| {
+                    serde_json::json!({
+                        "stream_name": s.stream_name,
+                        "display_name": s.display_name,
+                        "description": s.description,
+                        "is_enabled": s.is_enabled,
+                        "config": s.config,
+                        "supports_incremental": s.supports_incremental,
+                        "default_cron_schedule": s.default_cron_schedule,
+                    })
+                }).collect::<Vec<_>>(),
+            });
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => {
+            let status = match e {
+                crate::Error::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            (
+                status,
+                Json(serde_json::json!({
+                    "error": e.to_string()
+                })),
+            )
+                .into_response()
+        }
+    }
+}

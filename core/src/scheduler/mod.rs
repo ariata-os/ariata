@@ -44,7 +44,7 @@ impl Scheduler {
             SELECT
                 s.id as source_id,
                 s.name as source_name,
-                s.type as source_type,
+                s.provider,
                 st.stream_name,
                 st.cron_schedule
             FROM streams st
@@ -60,14 +60,14 @@ impl Scheduler {
         tracing::info!("Loading {} scheduled streams", streams.len());
 
         // Schedule each stream
-        for (source_id, source_name, source_type, stream_name, cron_schedule) in streams {
+        for (source_id, source_name, provider, stream_name, cron_schedule) in streams {
             let cron = cron_schedule.expect("cron_schedule is NOT NULL per WHERE clause");
 
             let db = self.db.clone();
 
             tracing::info!(
                 "Scheduling {}/{} ({}) with cron: {}",
-                source_type,
+                provider,
                 stream_name,
                 source_name,
                 cron

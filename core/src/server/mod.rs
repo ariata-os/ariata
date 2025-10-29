@@ -56,6 +56,27 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
             "/api/sources/register-device",
             post(api::register_device_handler),
         )
+        // Device pairing endpoints
+        .route(
+            "/api/devices/pairing/initiate",
+            post(api::initiate_device_pairing_handler),
+        )
+        .route(
+            "/api/devices/pairing/complete",
+            post(api::complete_device_pairing_handler),
+        )
+        .route(
+            "/api/devices/pairing/:source_id",
+            get(api::check_pairing_status_handler),
+        )
+        .route(
+            "/api/devices/pending-pairings",
+            get(api::list_pending_pairings_handler),
+        )
+        .route(
+            "/api/devices/verify",
+            post(api::verify_device_handler),
+        )
         .route("/api/sources/:id", get(api::get_source_handler))
         .route("/api/sources/:id", delete(api::delete_source_handler))
         .route("/api/sources/:id/pause", post(api::pause_source_handler))

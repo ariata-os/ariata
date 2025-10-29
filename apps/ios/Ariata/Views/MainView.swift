@@ -289,7 +289,7 @@ struct DataCollectionStatus: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Data Collection")
-                .font(.headline)
+                .h2Style()
             
             VStack(spacing: 8) {
                 DataStreamRow(
@@ -349,7 +349,7 @@ struct DebugInfoSection: View {
             Button(action: { isExpanded.toggle() }) {
                 HStack {
                     Label("Debug Info", systemImage: "hammer")
-                        .font(.headline)
+                        .h2Style()
                     
                     Spacer()
                     

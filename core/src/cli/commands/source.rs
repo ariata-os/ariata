@@ -37,7 +37,7 @@ pub async fn handle_source_command(
                     };
                     println!(
                         "{} {:<20} {:<15} {}",
-                        source.id, source.name, source.source_type, status
+                        source.id, source.name, source.provider, status
                     );
                 }
             }
@@ -87,7 +87,7 @@ pub async fn handle_source_command(
                     println!("Source Details:");
                     println!("  ID: {}", source.id);
                     println!("  Name: {}", source.name);
-                    println!("  Type: {}", source.source_type);
+                    println!("  Provider: {}", source.provider);
                     println!(
                         "  Status: {}",
                         if source.is_active {
@@ -111,7 +111,7 @@ pub async fn handle_source_command(
             let source_id = id.parse()?;
             let status = crate::get_source_status(ariata.database.pool(), source_id).await?;
 
-            println!("Source: {} ({})", status.name, status.source_type);
+            println!("Source: {} ({})", status.name, status.provider);
             println!();
             println!("Sync Statistics:");
             println!("  Total Syncs: {}", status.total_syncs);
@@ -142,7 +142,7 @@ pub async fn handle_source_command(
             if !yes {
                 println!("Are you sure you want to delete source:");
                 println!("  Name: {}", source.name);
-                println!("  Type: {}", source.source_type);
+                println!("  Provider: {}", source.provider);
                 println!("  ID: {}", source.id);
                 println!();
                 println!("This will delete ALL data associated with this source!");

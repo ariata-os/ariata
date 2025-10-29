@@ -18,56 +18,82 @@ class BatchUploadCoordinator: ObservableObject {
     @Published var lastSuccessfulSyncDate: Date?
     @Published var uploadStats: (pending: Int, failed: Int, total: Int) = (0, 0, 0)
     @Published var streamCounts: (healthkit: Int, location: Int, audio: Int) = (0, 0, 0)
-    
-    private var uploadTimer: Timer?
+
+    // MARK: - Dependencies
+    private let configProvider: ConfigurationProvider
+    private let storageProvider: StorageProvider
+    private let networkManager: NetworkManager
+
+    private var uploadTimer: ReliableTimer?
     private let uploadInterval: TimeInterval = 300 // 5 minutes
     private let backgroundTaskIdentifier = "com.ariata.ios.sync"
-    
-    private var statsUpdateTimer: Timer?
-    
+
+    private var statsUpdateTimer: ReliableTimer?
+
     private let lastUploadKey = "com.ariata.lastUploadDate"
     private let lastSuccessfulSyncKey = "com.ariata.lastSuccessfulSyncDate"
-    private let networkManager = NetworkManager.shared
-    private let deviceManager = DeviceManager.shared
-    private let sqliteManager = SQLiteManager.shared
-    
-    private init() {
+
+    /// Initialize with dependency injection
+    init(configProvider: ConfigurationProvider,
+         storageProvider: StorageProvider,
+         networkManager: NetworkManager) {
+        self.configProvider = configProvider
+        self.storageProvider = storageProvider
+        self.networkManager = networkManager
+
         loadLastUploadDate()
         loadLastSuccessfulSyncDate()
         registerBackgroundTasks()
         updateUploadStats()
+    }
+
+    /// Legacy singleton initializer - uses default dependencies
+    private convenience init() {
+        self.init(
+            configProvider: DeviceManager.shared,
+            storageProvider: SQLiteManager.shared,
+            networkManager: NetworkManager.shared
+        )
     }
     
     // MARK: - Timer Management
     
     func startPeriodicUploads() {
         stopPeriodicUploads()
-        
+
         // Schedule timer for 5-minute intervals
-        uploadTimer = Timer.scheduledTimer(withTimeInterval: uploadInterval, repeats: true) { [weak self] _ in
-            Task {
-                await self?.performUpload()
+        uploadTimer = ReliableTimer.builder()
+            .interval(uploadInterval)
+            .qos(.userInitiated)
+            .handler { [weak self] in
+                Task {
+                    await self?.performUpload()
+                }
             }
-        }
-        
+            .build()
+
         // Schedule stats update timer for every 2 seconds
-        statsUpdateTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.updateUploadStats()
-        }
-        
+        statsUpdateTimer = ReliableTimer.builder()
+            .interval(2.0)
+            .qos(.utility)
+            .handler { [weak self] in
+                self?.updateUploadStats()
+            }
+            .build()
+
         // Perform initial upload
         Task {
             await performUpload()
         }
-        
+
         // Schedule background task
         scheduleBackgroundUpload()
     }
-    
+
     func stopPeriodicUploads() {
-        uploadTimer?.invalidate()
+        uploadTimer?.cancel()
         uploadTimer = nil
-        statsUpdateTimer?.invalidate()
+        statsUpdateTimer?.cancel()
         statsUpdateTimer = nil
     }
     
@@ -80,16 +106,16 @@ class BatchUploadCoordinator: ObservableObject {
         
         // Small delay to ensure any pending saves complete
         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        
+
+
         // Clean up any bad events first
-        _ = sqliteManager.cleanupBadEvents()
-        
-        guard deviceManager.isConfigured else {
+        _ = storageProvider.cleanupBadEvents()
+
+        guard configProvider.isConfigured else {
             return
         }
-        
-        guard let ingestURL = deviceManager.configuration.ingestURL else {
+
+        guard let ingestURL = configProvider.ingestURL else {
             return
         }
         
@@ -105,7 +131,7 @@ class BatchUploadCoordinator: ObservableObject {
         }
         
         // Get ALL pending uploads from SQLite queue
-        let pendingEvents = sqliteManager.dequeueNext(limit: 1000) // Get more events for batching
+        let pendingEvents = storageProvider.dequeueNext(limit: 1000) // Get more events for batching
         
         if pendingEvents.isEmpty {
             return
@@ -134,134 +160,78 @@ class BatchUploadCoordinator: ObservableObject {
         }
         
         // Cleanup old events
-        _ = sqliteManager.cleanupOldEvents()
+        _ = storageProvider.cleanupOldEvents()
     }
     
     private func uploadBatchedEvents(streamName: String, events: [UploadEvent], to url: URL) async -> Bool {
-        
+        // Get the appropriate processor for this stream type
+        guard let processor = StreamProcessorFactory.processor(for: streamName) else {
+            print("⚠️ No processor found for stream: \(streamName)")
+            for event in events {
+                storageProvider.incrementRetry(id: event.id)
+            }
+            return false
+        }
+
+        // Use type-erased processing based on stream type
+        switch streamName {
+        case "ios_healthkit":
+            let healthKitProcessor = processor as! HealthKitStreamProcessor
+            return await uploadWithProcessor(processor: healthKitProcessor, events: events, to: url)
+
+        case "ios_location":
+            let locationProcessor = processor as! LocationStreamProcessor
+            return await uploadWithProcessor(processor: locationProcessor, events: events, to: url)
+
+        case "ios_mic":
+            let audioProcessor = processor as! AudioStreamProcessor
+            return await uploadWithProcessor(processor: audioProcessor, events: events, to: url)
+
+        default:
+            for event in events {
+                storageProvider.incrementRetry(id: event.id)
+            }
+            return false
+        }
+    }
+
+    /// Generic upload method that works with any stream processor
+    private func uploadWithProcessor<P: StreamDataProcessor>(processor: P, events: [UploadEvent], to url: URL) async -> Bool {
         do {
-            let decoder = JSONDecoder()
-            
-            // Decode and combine data based on stream type
-            switch streamName {
-            case "ios_healthkit":
-                var allMetrics: [HealthKitMetric] = []
-                
-                // Decode each event and collect all metrics
-                for event in events {
-                    do {
-                        let streamData = try decoder.decode(HealthKitStreamData.self, from: event.dataBlob)
-                        allMetrics.append(contentsOf: streamData.data)
-                    } catch {
-                        sqliteManager.incrementRetry(id: event.id)
-                    }
+            var allItems: [P.DataType] = []
+
+            // Decode each event and collect all items
+            for event in events {
+                do {
+                    let items = try processor.decode(event.dataBlob)
+                    allItems.append(contentsOf: items)
+                } catch {
+                    print("⚠️ Failed to decode event \(event.id): \(error)")
+                    storageProvider.incrementRetry(id: event.id)
                 }
-                
-                // Create combined stream data
-                if !allMetrics.isEmpty {
-                    let combinedData = HealthKitStreamData(
-                        deviceId: DeviceManager.shared.configuration.deviceId,
-                        metrics: allMetrics
-                    )
-                    
-                    // Upload combined data
-                    let response = try await networkManager.uploadData(
-                        combinedData,
-                        deviceToken: deviceManager.configuration.deviceToken,
-                        endpoint: url
-                    )
-                    
-                    // Mark all events as complete
-                    for event in events {
-                        handleSuccessfulUpload(event: event, response: response)
-                    }
-                    
-                    return true
-                } else {
-                    return false
-                }
-                
-            case "ios_location":
-                var allLocations: [LocationData] = []
-                
-                // Decode each event and collect all locations
-                for event in events {
-                    do {
-                        let streamData = try decoder.decode(CoreLocationStreamData.self, from: event.dataBlob)
-                        allLocations.append(contentsOf: streamData.data)
-                    } catch {
-                        sqliteManager.incrementRetry(id: event.id)
-                    }
-                }
-                
-                // Create combined stream data
-                if !allLocations.isEmpty {
-                    let combinedData = CoreLocationStreamData(
-                        deviceId: DeviceManager.shared.configuration.deviceId,
-                        locations: allLocations
-                    )
-                    
-                    // Upload combined data
-                    let response = try await networkManager.uploadData(
-                        combinedData,
-                        deviceToken: deviceManager.configuration.deviceToken,
-                        endpoint: url
-                    )
-                    
-                    // Mark all events as complete
-                    for event in events {
-                        handleSuccessfulUpload(event: event, response: response)
-                    }
-                    
-                    return true
-                } else {
-                    return false
-                }
-                
-            case "ios_mic":
-                var allChunks: [AudioChunk] = []
-                
-                // Decode each event and collect all chunks
-                for event in events {
-                    do {
-                        let streamData = try decoder.decode(AudioStreamData.self, from: event.dataBlob)
-                        allChunks.append(contentsOf: streamData.data)
-                    } catch {
-                        sqliteManager.incrementRetry(id: event.id)
-                    }
-                }
-                
-                // Create combined stream data
-                if !allChunks.isEmpty {
-                    let combinedData = AudioStreamData(
-                        deviceId: DeviceManager.shared.configuration.deviceId,
-                        chunks: allChunks
-                    )
-                    
-                    // Upload combined data
-                    let response = try await networkManager.uploadData(
-                        combinedData,
-                        deviceToken: deviceManager.configuration.deviceToken,
-                        endpoint: url
-                    )
-                    
-                    // Mark all events as complete
-                    for event in events {
-                        handleSuccessfulUpload(event: event, response: response)
-                    }
-                    
-                    return true
-                } else {
-                    return false
-                }
-                
-            default:
-                for event in events {
-                    sqliteManager.incrementRetry(id: event.id)
-                }
+            }
+
+            // If we have items, combine and upload
+            guard !allItems.isEmpty else {
                 return false
             }
-            
+
+            let combinedData = processor.combine(allItems, deviceId: configProvider.deviceId)
+
+            // Upload combined data
+            let response = try await networkManager.uploadData(
+                combinedData,
+                deviceToken: configProvider.deviceToken,
+                endpoint: url
+            )
+
+            // Mark all events as complete
+            for event in events {
+                handleSuccessfulUpload(event: event, response: response)
+            }
+
+            return true
+
         } catch {
             for event in events {
                 handleFailedUpload(event: event, error: error)
@@ -269,16 +239,15 @@ class BatchUploadCoordinator: ObservableObject {
             return false
         }
     }
-    
-    
+
     private func handleSuccessfulUpload(event: UploadEvent, response: UploadResponse) {
         // Mark as complete in SQLite
-        sqliteManager.markAsComplete(id: event.id)
+        storageProvider.markAsComplete(id: event.id)
     }
-    
+
     private func handleFailedUpload(event: UploadEvent, error: Error) {
         // Increment retry count
-        sqliteManager.incrementRetry(id: event.id)
+        storageProvider.incrementRetry(id: event.id)
         
         // Log specific error types
         if let networkError = error as? NetworkError {
@@ -347,17 +316,17 @@ class BatchUploadCoordinator: ObservableObject {
     // MARK: - Statistics
     
     func updateUploadStats() {
-        let stats = sqliteManager.getQueueStats()
-        let counts = sqliteManager.getStreamCounts()
-        
+        let stats = storageProvider.getQueueStats()
+        let counts = storageProvider.getStreamCounts()
+
         Task { @MainActor in
             self.uploadStats = (stats.pending, stats.failed, stats.total)
             self.streamCounts = counts
         }
     }
-    
+
     func getQueueSizeString() -> String {
-        let stats = sqliteManager.getQueueStats()
+        let stats = storageProvider.getQueueStats()
         let bytes = stats.totalSize
         
         if bytes < 1024 {
@@ -406,7 +375,7 @@ class BatchUploadCoordinator: ObservableObject {
     // MARK: - Network Monitoring
     
     func handleNetworkChange(isConnected: Bool) {
-        if isConnected && deviceManager.isConfigured {
+        if isConnected && configProvider.isConfigured {
             // Network restored, trigger upload
             Task {
                 await performUpload()

@@ -52,6 +52,6 @@ export const recentlyViewed = appSchema.table('recently_viewed', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	sourceId: text('source_id').notNull(), // References sources.id from elt schema
 	sourceName: text('source_name').notNull(),
-	sourceType: text('source_type').notNull(),
+	provider: text('provider').notNull(),
 	viewedAt: timestamp('viewed_at').notNull().defaultNow()
 });

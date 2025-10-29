@@ -11,21 +11,31 @@ import Combine
 
 class HealthKitManager: ObservableObject {
     static let shared = HealthKitManager()
-    
+
     private let healthStore = HKHealthStore()
-    
+
     @Published var isAuthorized = false
     @Published var authorizationStatus: [String: Bool] = [:]
     @Published var lastSyncDate: Date?
     @Published var isSyncing = false
-    
+
+    // MARK: - Dependencies
+    private let configProvider: ConfigurationProvider
+    private let storageProvider: StorageProvider
+    private let dataUploader: DataUploader
+
     private let lastSyncKey = "com.ariata.healthkit.lastSync"
-    private var healthTimer: Timer?
-    
+    private let hasRequestedAuthKey = "com.ariata.healthkit.hasRequestedAuth"
+    private var healthTimer: ReliableTimer?
+    private var hasRequestedAuthorization: Bool {
+        get { UserDefaults.standard.bool(forKey: hasRequestedAuthKey) }
+        set { UserDefaults.standard.set(newValue, forKey: hasRequestedAuthKey) }
+    }
+
     // Anchors for incremental sync
     var anchors: [String: HKQueryAnchor] = [:]
     private let anchorKeyPrefix = "com.ariata.healthkit.anchor."
-    
+
     // Define all HealthKit types we need
     private let healthKitTypes: Set<HKSampleType> = [
         HKQuantityType.quantityType(forIdentifier: .heartRate)!,
@@ -36,11 +46,30 @@ class HealthKitManager: ObservableObject {
         HKQuantityType.quantityType(forIdentifier: .restingHeartRate)!,
         HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)!
     ]
-    
-    private init() {
+
+    /// Initialize with dependency injection
+    init(configProvider: ConfigurationProvider,
+         storageProvider: StorageProvider,
+         dataUploader: DataUploader) {
+        self.configProvider = configProvider
+        self.storageProvider = storageProvider
+        self.dataUploader = dataUploader
+
         loadLastSyncDate()
         loadAnchors()
         checkAuthorizationStatus()
+
+        // Register with centralized health check coordinator
+        HealthCheckCoordinator.shared.register(self)
+    }
+
+    /// Legacy singleton initializer - uses default dependencies
+    private convenience init() {
+        self.init(
+            configProvider: DeviceManager.shared,
+            storageProvider: SQLiteManager.shared,
+            dataUploader: BatchUploadCoordinator.shared
+        )
     }
     
     // MARK: - Monitoring Control
@@ -54,7 +83,7 @@ class HealthKitManager: ObservableObject {
         }
         
         // Check if HealthKit is enabled in configuration
-        let isEnabled = DeviceManager.shared.configuration.isStreamEnabled("healthkit")
+        let isEnabled = configProvider.isStreamEnabled("healthkit")
         guard isEnabled else {
             print("⏸️ HealthKit stream disabled in web app configuration")
             return
@@ -62,21 +91,19 @@ class HealthKitManager: ObservableObject {
         
         // Stop any existing timer
         stopMonitoring()
-        
+
         // Start the 5-minute timer (aligned with sync interval)
         print("⏱️ Creating HealthKit timer with 5-minute interval")
-        healthTimer = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: true) { [weak self] _ in
-            print("⏰ HealthKit timer fired - collecting data...")
-            Task {
-                await self?.collectNewData()
+        healthTimer = ReliableTimer.builder()
+            .interval(300.0)  // 5 minutes
+            .qos(.userInitiated)
+            .handler { [weak self] in
+                print("⏰ HealthKit timer fired - collecting data...")
+                Task {
+                    await self?.collectNewData()
+                }
             }
-        }
-        
-        // Ensure timer runs in common modes (including background)
-        if let timer = healthTimer {
-            RunLoop.current.add(timer, forMode: .common)
-            print("✅ HealthKit timer added to RunLoop.common")
-        }
+            .build()
         
         // Fire immediately to start collecting
         print("🚀 Triggering immediate HealthKit data collection")
@@ -88,12 +115,12 @@ class HealthKitManager: ObservableObject {
     }
     
     func stopMonitoring() {
-        if healthTimer != nil {
-            print("🛑 Invalidating HealthKit timer")
-            healthTimer?.invalidate()
+        if let timer = healthTimer {
+            print("🛑 Cancelling HealthKit timer")
+            timer.cancel()
             healthTimer = nil
         }
-        
+
         print("🛑 Stopped HealthKit monitoring")
     }
     
@@ -104,17 +131,20 @@ class HealthKitManager: ObservableObject {
             print("HealthKit is not available on this device")
             return false
         }
-        
+
         do {
             try await healthStore.requestAuthorization(toShare: [], read: healthKitTypes)
-            
+
+            // Mark that we've requested authorization
+            hasRequestedAuthorization = true
+
             // After requesting, test if we actually have access
-            let hasAccess = await testHealthKitAccess()
-            
+            let hasAccess = testHealthKitAccess()
+
             await MainActor.run {
                 self.isAuthorized = hasAccess
             }
-            
+
             return hasAccess
         } catch {
             print("HealthKit authorization request failed: \(error)")
@@ -123,45 +153,79 @@ class HealthKitManager: ObservableObject {
     }
     
     func checkAuthorizationStatus() {
-        // Instead of relying on authorization status (which is intentionally vague),
-        // we'll try to query recent data to see if we actually have access
-        Task {
-            print("🏥 Checking HealthKit authorization status...")
-            let hasAccess = await testHealthKitAccess()
-            print("🏥 HealthKit access test result: \(hasAccess)")
-            await MainActor.run {
-                self.isAuthorized = hasAccess
-            }
+        // Check authorization status for all HealthKit types we need
+        print("🏥 Checking HealthKit authorization status...")
+        let hasAccess = testHealthKitAccess()
+        print("🏥 HealthKit access test result: \(hasAccess)")
+        Task { @MainActor in
+            self.isAuthorized = hasAccess
         }
     }
-    
+
     func hasAllPermissions() -> Bool {
         return isAuthorized
     }
-    
+
     // Test if we can actually read HealthKit data
-    private func testHealthKitAccess() async -> Bool {
-        // Try to query a small amount of recent data from each type
-        let endDate = Date()
-        let startDate = Calendar.current.date(byAdding: .hour, value: -1, to: endDate)!
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
-        
-        // We'll test with step count as it's commonly available
-        guard let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return false }
-        
-        return await withCheckedContinuation { continuation in
-            let query = HKSampleQuery(sampleType: stepType, predicate: predicate, limit: 1, sortDescriptors: nil) { _, samples, error in
-                if error != nil {
-                    // Error might mean no permission
-                    continuation.resume(returning: false)
-                } else {
-                    // No error means we have permission (even if no samples returned)
-                    continuation.resume(returning: true)
-                }
-            }
-            
-            healthStore.execute(query)
+    // NOTE: Due to provisioning profile issues, authorizationStatus() may lie and return .sharingDenied
+    // even when the user has granted permission (visible in Settings). This method tests ACTUAL access
+    // by attempting to query data, which is more reliable than trusting the status API.
+    private func testHealthKitAccess() -> Bool {
+        // First, check if we've even requested authorization
+        if !hasRequestedAuthorization {
+            print("🏥 Result: NOT GRANTED (never requested)")
+            return false
         }
+
+        print("🏥 Testing HealthKit access by attempting actual data query...")
+
+        // Try to query a small amount of step count data
+        // This tests actual permission, not what the API claims
+        guard let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) else {
+            print("🏥 Result: ERROR (couldn't create step count type)")
+            return false
+        }
+
+        let endDate = Date()
+        let startDate = Calendar.current.date(byAdding: .day, value: -1, to: endDate)!
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+
+        // Use a semaphore to make this synchronous (we're calling from sync context)
+        var result = false
+        let semaphore = DispatchSemaphore(value: 0)
+
+        let query = HKSampleQuery(sampleType: stepType, predicate: predicate, limit: 1, sortDescriptors: nil) { _, samples, error in
+            if let error = error as NSError? {
+                // Check if error is permission-related
+                if error.domain == "com.apple.healthkit" && error.code == 5 { // HKError.errorAuthorizationDenied
+                    print("🏥 Actual query test: DENIED (permission error: \(error.localizedDescription))")
+                    result = false
+                } else {
+                    // Other errors mean we have permission but something else failed
+                    print("🏥 Actual query test: GRANTED (non-permission error: \(error.localizedDescription))")
+                    result = true
+                }
+            } else {
+                // No error = we have permission (even if samples is empty/nil)
+                let sampleCount = samples?.count ?? 0
+                print("🏥 Actual query test: GRANTED (query succeeded, returned \(sampleCount) samples)")
+                result = true
+            }
+            semaphore.signal()
+        }
+
+        healthStore.execute(query)
+
+        // Wait for query to complete (with timeout)
+        _ = semaphore.wait(timeout: .now() + 5.0)
+
+        if result {
+            print("🏥 Result: GRANTED (actual data access confirmed)")
+        } else {
+            print("🏥 Result: DENIED (actual data access blocked)")
+        }
+
+        return result
     }
     
     // MARK: - Initial Sync
@@ -183,7 +247,7 @@ class HealthKitManager: ObservableObject {
         }
         
         // Get initial sync days from configuration (default to 90 if not configured)
-        let initialSyncDays = DeviceManager.shared.configuration.getInitialSyncDays(for: "healthkit")
+        let initialSyncDays = configProvider.getInitialSyncDays(for: "healthkit")
         
         let endDate = Date()
         let startDate = Calendar.current.date(byAdding: .day, value: -initialSyncDays, to: endDate)!
@@ -611,32 +675,71 @@ class HealthKitManager: ObservableObject {
     // MARK: - Data Persistence
     
     private func saveMetricsToQueue(_ metrics: [HealthKitMetric]) async -> Bool {
-        let streamData = HealthKitStreamData(
-            deviceId: DeviceManager.shared.configuration.deviceId,
-            metrics: metrics
-        )
-        
-        do {
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(streamData)
-            
-            print("💾 Attempting to save HealthKit data (\(data.count) bytes) to SQLite...")
-            let success = SQLiteManager.shared.enqueue(streamName: "ios_healthkit", data: data)
-            
-            if success {
-                // Verify it was saved
-                SQLiteManager.shared.debugPrintAllEvents()
-                
-                // Update stats in upload coordinator
-                BatchUploadCoordinator.shared.updateUploadStats()
-            }
-            
-            return success
-        } catch {
-            print("Failed to encode HealthKit data: \(error)")
+        let deviceId = configProvider.deviceId
+
+        // Attempt to save with retry mechanism
+        let result = await saveWithRetry(metrics: metrics, deviceId: deviceId, maxAttempts: 3)
+
+        switch result {
+        case .success:
+            print("✅ Saved \(metrics.count) HealthKit metrics to SQLite queue")
+            dataUploader.updateUploadStats()
+            return true
+
+        case .failure(let error):
+            ErrorLogger.shared.log(error, deviceId: deviceId)
             return false
         }
+    }
+
+    /// Attempts to save HealthKit metrics with exponential backoff retry
+    private func saveWithRetry(metrics: [HealthKitMetric], deviceId: String, maxAttempts: Int) async -> Result<Void, AnyDataCollectionError> {
+        let streamData = HealthKitStreamData(
+            deviceId: deviceId,
+            metrics: metrics
+        )
+
+        for attempt in 1...maxAttempts {
+            // Encode the data
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+
+            let data: Data
+            do {
+                data = try encoder.encode(streamData)
+            } catch {
+                let encodingError = DataEncodingError(
+                    streamType: .healthKit,
+                    underlyingError: error,
+                    dataSize: metrics.count
+                )
+                return .failure(AnyDataCollectionError(encodingError))
+            }
+
+            // Attempt to save to SQLite
+            let success = storageProvider.enqueue(streamName: "ios_healthkit", data: data)
+
+            if success {
+                if attempt > 1 {
+                    ErrorLogger.shared.logSuccessfulRetry(streamType: .healthKit, attemptNumber: attempt)
+                }
+                return .success
+            }
+
+            // If not last attempt, wait before retrying
+            if attempt < maxAttempts {
+                let delay = Double(attempt) * 0.5  // 0.5s, 1.0s backoff
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+        }
+
+        // All attempts failed
+        let storageError = StorageError(
+            streamType: .healthKit,
+            reason: "Failed to enqueue to SQLite after \(maxAttempts) attempts",
+            attemptNumber: maxAttempts
+        )
+        return .failure(AnyDataCollectionError(storageError))
     }
     
     private func loadLastSyncDate() {
@@ -672,5 +775,37 @@ class HealthKitManager: ObservableObject {
         if let anchorData = try? NSKeyedArchiver.archivedData(withRootObject: anchor, requiringSecureCoding: true) {
             UserDefaults.standard.set(anchorData, forKey: key)
         }
+    }
+}
+
+// MARK: - HealthCheckable
+
+extension HealthKitManager: HealthCheckable {
+    var healthCheckName: String {
+        "HealthKitManager"
+    }
+
+    func performHealthCheck() -> HealthStatus {
+        // Check if stream is enabled
+        guard configProvider.isStreamEnabled("healthkit") else {
+            return .disabled
+        }
+
+        // Check authorization
+        guard isAuthorized else {
+            return .unhealthy(reason: "HealthKit not authorized")
+        }
+
+        // Check if monitoring should be running
+        let shouldBeMonitoring = true
+        let actuallyMonitoring = healthTimer != nil
+
+        if shouldBeMonitoring && !actuallyMonitoring {
+            // Attempt recovery
+            startMonitoring()
+            return .unhealthy(reason: "Monitoring stopped unexpectedly, restarting")
+        }
+
+        return .healthy
     }
 }

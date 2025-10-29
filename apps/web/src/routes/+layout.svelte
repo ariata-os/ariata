@@ -79,22 +79,10 @@
 			title: "Settings",
 			items: [
 				{
-					href: "/settings/database",
-					icon: "ri:database-line",
-					text: "Database Access",
-					pagespace: "database",
-				},
-				{
-					href: "/settings/api-keys",
-					icon: "ri:key-line",
-					text: "API Keys",
-					pagespace: "api-keys",
-				},
-				{
-					href: "/settings/general",
-					icon: "ri:settings-line",
-					text: "General",
-					pagespace: "general",
+					href: "/settings/account",
+					icon: "ri:user-line",
+					text: "Account",
+					pagespace: "account",
 				},
 			],
 		},

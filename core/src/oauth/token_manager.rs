@@ -3,7 +3,6 @@
 //! This module provides a unified interface for managing OAuth tokens across all sources.
 //! It integrates with the auth.ariata.com OAuth proxy for token refresh operations.
 
-use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use reqwest::Client;
 use serde::Deserialize;

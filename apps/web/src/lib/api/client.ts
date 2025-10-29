@@ -180,3 +180,100 @@ export async function handleOAuthCallback(params: {
 	if (!res.ok) throw new Error(`Failed to complete OAuth: ${res.statusText}`);
 	return res.json();
 }
+
+// Device Pairing
+import type {
+	InitiatePairingRequest,
+	PairingInitResponse,
+	CompletePairingRequest,
+	PairingCompleteResponse,
+	PairingStatus,
+	PendingPairing
+} from '$lib/types/device-pairing';
+
+/**
+ * Initiate device pairing - generates a 6-character pairing code
+ * @param deviceType - Type of device (e.g., "ios", "mac")
+ * @param name - Display name for the device
+ * @returns Pairing code, source ID, and expiration time
+ */
+export async function initiatePairing(
+	deviceType: string,
+	name: string
+): Promise<PairingInitResponse> {
+	const request: InitiatePairingRequest = {
+		device_type: deviceType,
+		name
+	};
+
+	const res = await fetch(`${API_BASE}/devices/pairing/initiate`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(request)
+	});
+
+	if (!res.ok) {
+		const error = await res.json().catch(() => ({ error: res.statusText }));
+		throw new Error(error.error || `Failed to initiate pairing: ${res.statusText}`);
+	}
+
+	return res.json();
+}
+
+/**
+ * Complete device pairing (typically called by device, not web UI)
+ * @param code - 6-character pairing code
+ * @param deviceInfo - Device information (ID, name, model, OS version)
+ * @returns Device token and available streams
+ */
+export async function completePairing(
+	code: string,
+	deviceInfo: CompletePairingRequest['device_info']
+): Promise<PairingCompleteResponse> {
+	const request: CompletePairingRequest = {
+		code,
+		device_info: deviceInfo
+	};
+
+	const res = await fetch(`${API_BASE}/devices/pairing/complete`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(request)
+	});
+
+	if (!res.ok) {
+		const error = await res.json().catch(() => ({ error: res.statusText }));
+		throw new Error(error.error || `Failed to complete pairing: ${res.statusText}`);
+	}
+
+	return res.json();
+}
+
+/**
+ * Check the status of a device pairing
+ * @param sourceId - Source ID from initiatePairing
+ * @returns Current pairing status (pending, active, or revoked)
+ */
+export async function getPairingStatus(sourceId: string): Promise<PairingStatus> {
+	const res = await fetch(`${API_BASE}/devices/pairing/${sourceId}`);
+
+	if (!res.ok) {
+		throw new Error(`Failed to get pairing status: ${res.statusText}`);
+	}
+
+	return res.json();
+}
+
+/**
+ * List all pending device pairings (not yet completed)
+ * @returns Array of pending pairings with codes and expiration times
+ */
+export async function listPendingPairings(): Promise<{ pairings: PendingPairing[] }> {
+	const res = await fetch(`${API_BASE}/devices/pending-pairings`);
+
+	if (!res.ok) {
+		throw new Error(`Failed to list pending pairings: ${res.statusText}`);
+	}
+
+	return res.json();
+}

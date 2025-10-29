@@ -7,9 +7,9 @@ use uuid::Uuid;
 #[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
 pub struct Source {
     pub id: Uuid,
-    #[serde(rename = "type")]
-    pub source_type: String,
+    pub provider: String,
     pub name: String,
+    pub auth_type: String,
     pub is_active: bool,
     pub error_message: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -24,7 +24,7 @@ pub struct Source {
 pub struct SourceStatus {
     pub id: Uuid,
     pub name: String,
-    pub source_type: String,
+    pub provider: String,
     pub is_active: bool,
     pub last_sync_at: Option<DateTime<Utc>>,
     pub error_message: Option<String>,

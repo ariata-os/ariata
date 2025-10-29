@@ -172,11 +172,18 @@ pub async fn query_jobs(
         query.push_str(&format!(" AND source_id = ${}", bind_count));
     }
 
-    if let Some(ref statuses) = statuses {
-        if !statuses.is_empty() {
-            bind_count += 1;
-            query.push_str(&format!(" AND status = ANY(${})", bind_count));
+    // Convert statuses to strings outside the binding scope
+    let status_strings: Option<Vec<String>> = statuses.as_ref().and_then(|s| {
+        if s.is_empty() {
+            None
+        } else {
+            Some(s.iter().map(|status| status.to_string()).collect())
         }
+    });
+
+    if status_strings.is_some() {
+        bind_count += 1;
+        query.push_str(&format!(" AND status = ANY(${})", bind_count));
     }
 
     query.push_str(" ORDER BY created_at DESC");
@@ -192,11 +199,8 @@ pub async fn query_jobs(
         q = q.bind(sid);
     }
 
-    if let Some(statuses) = statuses {
-        if !statuses.is_empty() {
-            let status_strings: Vec<String> = statuses.iter().map(|s| s.to_string()).collect();
-            q = q.bind(status_strings);
-        }
+    if let Some(ref status_strs) = status_strings {
+        q = q.bind(status_strs.as_slice());
     }
 
     if let Some(lim) = limit {

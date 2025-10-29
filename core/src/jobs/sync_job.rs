@@ -3,7 +3,6 @@
 use crate::error::Result;
 use crate::jobs::models::Job;
 use crate::sources::{base::SyncMode, StreamFactory};
-use chrono::Utc;
 use serde_json::json;
 use sqlx::PgPool;
 

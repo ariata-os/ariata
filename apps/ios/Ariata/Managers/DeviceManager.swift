@@ -36,17 +36,9 @@ class DeviceManager: ObservableObject {
            let savedConfig = try? JSONDecoder().decode(DeviceConfiguration.self, from: savedData) {
             self.configuration = savedConfig
             self.isConfigured = savedConfig.isConfigured
-            print("📱 Loaded saved configuration:")
-            print("   Device ID: \(savedConfig.deviceId)")
-            print("   Is configured: \(savedConfig.isConfigured)")
-            print("   Stream configurations: \(savedConfig.streamConfigurations.count) streams")
-            for (key, config) in savedConfig.streamConfigurations {
-                print("     - \(key): enabled=\(config.enabled), initialSyncDays=\(config.initialSyncDays)")
-            }
         } else {
             self.configuration = DeviceConfiguration()
             self.isConfigured = false
-            print("📱 No saved configuration found, created new one")
         }
         
         // Observe configuration changes to save automatically
@@ -65,13 +57,9 @@ class DeviceManager: ObservableObject {
         configuration.apiEndpoint = apiEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         configuration.deviceToken = deviceToken.trimmingCharacters(in: .whitespacesAndNewlines)
         configuration.configuredDate = Date()
-        
+
         // Save configuration to UserDefaults
         saveConfiguration(configuration)
-        
-        print("📝 Updated configuration:")
-        print("   Endpoint: \(configuration.apiEndpoint)")
-        print("   Token: \(configuration.deviceToken.prefix(15))...")
     }
     
     func updateEndpoint(_ newEndpoint: String) async -> Bool {
@@ -102,18 +90,13 @@ class DeviceManager: ObservableObject {
             // Force save the configuration
             self.saveConfiguration(self.configuration)
         }
-        
-        print("✅ Endpoint updated successfully to: \(trimmedEndpoint)")
+
         return true
     }
-    
+
     private func saveConfiguration(_ config: DeviceConfiguration) {
         if let encoded = try? JSONEncoder().encode(config) {
             userDefaults.set(encoded, forKey: configKey)
-            print("💾 Saved configuration with \(config.streamConfigurations.count) stream configs")
-            for (key, streamConfig) in config.streamConfigurations {
-                print("     - \(key): enabled=\(streamConfig.enabled)")
-            }
         } else {
             print("❌ Failed to encode configuration for saving")
         }
@@ -170,39 +153,64 @@ class DeviceManager: ObservableObject {
             return false
         }
         
-        // Verify token with server
-        let verifyURL = baseURL.appendingPathComponent("/api/device/verify")
-        
-        print("🔍 Attempting verification:")
-        print("   Base URL: \(baseURL)")
-        print("   Verify URL: \(verifyURL)")
-        print("   Token (full): \(configuration.deviceToken)")
-        print("   Token (preview): \(configuration.deviceToken.prefix(4))...")
-        print("   Token length: \(configuration.deviceToken.count) characters")
-        
-        let verificationResponse = await NetworkManager.shared.verifyDeviceToken(
-            endpoint: verifyURL,
-            deviceToken: configuration.deviceToken,
-            deviceInfo: [
-                "deviceName": configuration.deviceName,
-                "deviceId": configuration.deviceId,
-                "platform": "iOS",
-                "osVersion": UIDevice.current.systemVersion,
-                "model": UIDevice.current.model
-            ]
-        )
-        
-        if !verificationResponse.success {
-            let errorMsg = NetworkManager.shared.lastError?.errorDescription ?? "Failed to verify device token. Please check the token and try again."
-            print("❌ Verification failed: \(errorMsg)")
-            
-            await MainActor.run {
-                self.lastError = errorMsg
-                self.configurationState = .notConfigured
+        // Check if this looks like a pairing code (6 uppercase letters) or device token (longer, base64-like)
+        let isPairingCode = configuration.deviceToken.count == 6 && configuration.deviceToken.allSatisfy { $0.isUppercase || $0.isNumber }
+
+        let verificationResponse: NetworkManager.VerificationResponse
+
+        if isPairingCode {
+            // First-time pairing - complete pairing with code
+            let pairingURL = baseURL.appendingPathComponent("/api/devices/pairing/complete")
+
+            verificationResponse = await NetworkManager.shared.completePairing(
+                endpoint: pairingURL,
+                pairingCode: configuration.deviceToken,
+                deviceInfo: [
+                    "device_id": configuration.deviceId,
+                    "device_name": configuration.deviceName,
+                    "device_model": UIDevice.current.model,
+                    "os_version": UIDevice.current.systemVersion,
+                    "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+                ]
+            )
+
+            if !verificationResponse.success {
+                let errorMsg = NetworkManager.shared.lastError?.errorDescription ?? "Failed to complete pairing. Please check the code and try again."
+                print("❌ Pairing failed: \(errorMsg)")
+
+                await MainActor.run {
+                    self.lastError = errorMsg
+                    self.configurationState = .notConfigured
+                }
+                return false
             }
-            return false
+
+            // Pairing succeeded! Store the device token from the response
+            if let deviceToken = verificationResponse.deviceToken {
+                await MainActor.run {
+                    self.configuration.deviceToken = deviceToken
+                }
+                saveConfiguration(configuration)
+            }
+        } else {
+            // Already paired - verify the token and get stream configuration status
+            let verifyURL = baseURL.appendingPathComponent("/api/devices/verify")
+
+            verificationResponse = await NetworkManager.shared.verifyDeviceToken(
+                endpoint: verifyURL,
+                deviceToken: configuration.deviceToken
+            )
+
+            if !verificationResponse.success {
+                let errorMsg = NetworkManager.shared.lastError?.errorDescription ?? "Failed to verify device. Please check your connection."
+                await MainActor.run {
+                    self.lastError = errorMsg
+                    self.configurationState = .notConfigured
+                }
+                return false
+            }
         }
-        
+
         // Update configuration state based on whether streams are configured
         await MainActor.run {
             self.configuration.configuredDate = Date()
@@ -222,33 +230,21 @@ class DeviceManager: ObservableObject {
                 self.isConfigured = true
                 self.configurationState = .fullyConfigured
                 self.lastError = nil
-                print("✅ Device fully configured with \(verificationResponse.configuredStreamCount) streams")
-                print("   Stream configurations:")
-                for (key, config) in self.configuration.streamConfigurations {
-                    print("     - \(key): enabled=\(config.enabled), initialSyncDays=\(config.initialSyncDays)")
-                }
             } else {
                 // Token valid but waiting for stream configuration
                 self.isConfigured = false  // Don't mark as fully configured yet
                 self.configurationState = .tokenValid
                 self.lastError = nil  // Clear any errors since token is valid
-                print("⏳ Token valid, waiting for stream configuration on web app")
             }
             
             // Always save the configuration immediately (even if not fully configured)
             // Force save without debounce to ensure stream configurations are persisted
             self.saveConfiguration(self.configuration)
-            
+
             // Also trigger UserDefaults synchronization to ensure it's written to disk
             UserDefaults.standard.synchronize()
         }
-        
-        print("✅ Device verification completed")
-        print("   Endpoint: \(configuration.apiEndpoint)")
-        print("   Token: \(configuration.deviceToken.prefix(15))...")
-        print("   Configuration state: \(self.configurationState)")
-        print("   Configured streams: \(self.configuredStreamCount)")
-        
+
         return verificationResponse.success  // Return true if token is valid (regardless of stream config)
     }
     

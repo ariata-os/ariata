@@ -13,7 +13,7 @@ use crate::{database::Database, error::{Error, Result}};
 ///
 /// # Arguments
 /// * `db` - Database connection
-/// * `source_type` - Source type ("ios" or "mac")
+/// * `provider` - Provider name ("ios" or "mac")
 /// * `device_id` - Unique device identifier sent by the device
 ///
 /// # Returns
@@ -25,16 +25,16 @@ use crate::{database::Database, error::{Error, Result}};
 /// ```
 pub async fn get_or_create_device_source(
     db: &Database,
-    source_type: &str,
+    provider: &str,
     device_id: &str,
 ) -> Result<Uuid> {
     use sqlx;
 
     // Try to get existing source
     let existing: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM sources WHERE type = $1 AND name = $2"
+        "SELECT id FROM sources WHERE provider = $1 AND name = $2"
     )
-    .bind(source_type)
+    .bind(provider)
     .bind(device_id)
     .fetch_optional(db.pool())
     .await
@@ -47,12 +47,12 @@ pub async fn get_or_create_device_source(
     // Create new device source
     let new_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO sources (id, type, name, is_active)
+        "INSERT INTO sources (id, provider, name, is_active)
          VALUES ($1, $2, $3, true)
          ON CONFLICT (name) DO NOTHING"
     )
     .bind(new_id)
-    .bind(source_type)
+    .bind(provider)
     .bind(device_id)
     .execute(db.pool())
     .await

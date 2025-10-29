@@ -13,11 +13,12 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- ============================================================================
 -- SOURCES: Authentication boundary for all data sources
 -- Supports both OAuth (Google, Notion) and Device (iOS, Mac) authentication
+-- Provider field identifies the platform (ios, google, notion, mac)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS sources (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type TEXT NOT NULL,
+    provider TEXT NOT NULL,
     name TEXT NOT NULL UNIQUE,
 
     -- OAuth credentials (null for device sources)
@@ -52,7 +53,7 @@ CREATE TABLE IF NOT EXISTS sources (
 );
 
 -- Indexes for common queries
-CREATE INDEX idx_sources_type ON sources(type);
+CREATE INDEX idx_sources_provider ON sources(provider);
 CREATE INDEX idx_sources_active ON sources(is_active);
 CREATE INDEX idx_sources_auth_type ON sources(auth_type);
 CREATE INDEX idx_sources_token_expires ON sources(token_expires_at) WHERE token_expires_at IS NOT NULL;

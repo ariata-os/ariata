@@ -20,7 +20,7 @@ CREATE TABLE "app"."recently_viewed" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"source_id" text NOT NULL,
 	"source_name" text NOT NULL,
-	"source_type" text NOT NULL,
+	"provider" text NOT NULL,
 	"viewed_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

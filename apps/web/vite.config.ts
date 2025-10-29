@@ -11,8 +11,7 @@ export default defineConfig({
 				changeOrigin: true,
 				bypass: (req) => {
 					// Keep app-specific endpoints in SvelteKit (use app database)
-					if (req.url?.startsWith('/api/preferences')) return req.url;
-					if (req.url?.startsWith('/api/dashboards')) return req.url;
+					if (req.url?.startsWith('/api/app')) return req.url;
 					// Everything else goes to Rust backend (ELT database)
 					return null;
 				}
