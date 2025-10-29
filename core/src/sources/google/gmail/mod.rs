@@ -18,7 +18,7 @@ use crate::{
     error::Result,
     sources::{
         auth::SourceAuth,
-        base::{SyncLogger, SyncMode, SyncResult},
+        base::{SyncMode, SyncResult},
         stream::Stream,
     },
 };
@@ -74,36 +74,10 @@ impl GoogleGmailStream {
     /// Sync Gmail messages with explicit sync mode
     #[tracing::instrument(skip(self), fields(source_id = %self.source_id, mode = ?sync_mode))]
     pub async fn sync_with_mode(&self, sync_mode: &SyncMode) -> Result<SyncResult> {
-        let started_at = Utc::now();
-        let logger = SyncLogger::new(self.db.clone());
-
         tracing::info!("Starting Gmail sync");
 
-        // Execute the sync
-        match self.sync_internal(&sync_mode).await {
-            Ok(result) => {
-                // Log success to database
-                if let Err(e) = logger
-                    .log_success(self.source_id, "gmail", &sync_mode, &result)
-                    .await
-                {
-                    tracing::warn!(error = %e, "Failed to log sync success");
-                }
-
-                Ok(result)
-            }
-            Err(e) => {
-                // Log failure to database
-                if let Err(log_err) = logger
-                    .log_failure(self.source_id, "gmail", &sync_mode, started_at, &e)
-                    .await
-                {
-                    tracing::warn!(error = %log_err, "Failed to log sync failure");
-                }
-
-                Err(e)
-            }
-        }
+        // Execute the sync (logging is handled by job executor)
+        self.sync_internal(&sync_mode).await
     }
 
     /// Internal sync implementation
@@ -212,54 +186,81 @@ impl GoogleGmailStream {
         ))
     }
 
-    /// Full sync of messages
+    /// Full sync of messages with pagination
     async fn sync_messages_full(&self) -> Result<(usize, usize, usize, Option<String>)> {
         let mut records_fetched = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
         let mut latest_history_id = None;
+        let mut page_token: Option<String> = None;
 
-        // Build query parameters
-        let mut params = vec![("maxResults", self.config.max_messages_per_sync.to_string())];
+        loop {
+            // Build query parameters
+            let mut params = vec![("maxResults", self.config.max_messages_per_sync.to_string())];
 
-        // Add label filters
-        for label in &self.config.label_ids {
-            params.push(("labelIds", label.clone()));
-        }
+            // Add label filters
+            for label in &self.config.label_ids {
+                params.push(("labelIds", label.clone()));
+            }
 
-        // Add query
-        let query = self.config.build_query();
-        if !query.is_empty() {
-            params.push(("q", query));
-        }
+            // Add query
+            let query = self.config.build_query();
+            if !query.is_empty() {
+                params.push(("q", query));
+            }
 
-        if self.config.include_spam_trash {
-            params.push(("includeSpamTrash", "true".to_string()));
-        }
+            if self.config.include_spam_trash {
+                params.push(("includeSpamTrash", "true".to_string()));
+            }
 
-        let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            // Add page token if we have one
+            if let Some(ref token) = page_token {
+                params.push(("pageToken", token.clone()));
+            }
 
-        // List messages
-        let response: MessagesListResponse = self
-            .client
-            .get_with_params("users/me/messages", &param_refs)
-            .await?;
+            let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
-        if let Some(messages) = response.messages {
-            for msg_ref in messages {
-                records_fetched += 1;
+            // List messages
+            let response: MessagesListResponse = self
+                .client
+                .get_with_params("users/me/messages", &param_refs)
+                .await?;
 
-                // Fetch full message
-                match self.fetch_and_store_message(&msg_ref.id).await {
-                    Ok(true) => records_written += 1,
-                    Ok(false) => records_failed += 1,
-                    Err(e) => {
-                        tracing::warn!(error = %e, "Failed to fetch message {}", msg_ref.id);
-                        records_failed += 1;
+            if let Some(messages) = response.messages {
+                for msg_ref in messages {
+                    records_fetched += 1;
+
+                    // Fetch full message
+                    match self.fetch_and_store_message(&msg_ref.id).await {
+                        Ok(true) => records_written += 1,
+                        Ok(false) => records_failed += 1,
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Failed to fetch message {}", msg_ref.id);
+                            records_failed += 1;
+                        }
                     }
                 }
             }
+
+            // Check if there are more pages
+            page_token = response.next_page_token;
+            if page_token.is_none() {
+                break;
+            }
+
+            tracing::debug!(
+                messages_fetched = records_fetched,
+                has_more = page_token.is_some(),
+                "Fetched messages page"
+            );
         }
+
+        tracing::info!(
+            total_messages = records_fetched,
+            written = records_written,
+            failed = records_failed,
+            "Completed paginated messages sync"
+        );
 
         // Get profile to fetch latest history ID for future incremental syncs
         if let Ok(profile) = self.get_profile().await {
@@ -277,78 +278,105 @@ impl GoogleGmailStream {
         ))
     }
 
-    /// Full sync of threads
+    /// Full sync of threads with pagination
     async fn sync_threads_full(&self) -> Result<(usize, usize, usize, Option<String>)> {
         let mut records_fetched = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
         let mut latest_history_id = None;
+        let mut page_token: Option<String> = None;
 
-        // Build query parameters
-        let mut params = vec![("maxResults", self.config.max_messages_per_sync.to_string())];
+        loop {
+            // Build query parameters
+            let mut params = vec![("maxResults", self.config.max_messages_per_sync.to_string())];
 
-        // Add label filters
-        for label in &self.config.label_ids {
-            params.push(("labelIds", label.clone()));
-        }
+            // Add label filters
+            for label in &self.config.label_ids {
+                params.push(("labelIds", label.clone()));
+            }
 
-        // Add query
-        let query = self.config.build_query();
-        if !query.is_empty() {
-            params.push(("q", query));
-        }
+            // Add query
+            let query = self.config.build_query();
+            if !query.is_empty() {
+                params.push(("q", query));
+            }
 
-        if self.config.include_spam_trash {
-            params.push(("includeSpamTrash", "true".to_string()));
-        }
+            if self.config.include_spam_trash {
+                params.push(("includeSpamTrash", "true".to_string()));
+            }
 
-        let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            // Add page token if we have one
+            if let Some(ref token) = page_token {
+                params.push(("pageToken", token.clone()));
+            }
 
-        // List threads
-        let response: ThreadsListResponse = self
-            .client
-            .get_with_params("users/me/threads", &param_refs)
-            .await?;
+            let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
-        if let Some(threads) = response.threads {
-            for thread_ref in threads {
-                // Fetch full thread with messages
-                let thread: Thread = self
-                    .client
-                    .get(&format!("users/me/threads/{}", thread_ref.id))
-                    .await?;
+            // List threads
+            let response: ThreadsListResponse = self
+                .client
+                .get_with_params("users/me/threads", &param_refs)
+                .await?;
 
-                if let Some(messages) = thread.messages {
-                    let thread_message_count = messages.len();
+            if let Some(threads) = response.threads {
+                for thread_ref in threads {
+                    // Fetch full thread with messages
+                    let thread: Thread = self
+                        .client
+                        .get(&format!("users/me/threads/{}", thread_ref.id))
+                        .await?;
 
-                    for (position, message) in messages.into_iter().enumerate() {
-                        records_fetched += 1;
+                    if let Some(messages) = thread.messages {
+                        let thread_message_count = messages.len();
 
-                        // Store message with thread context
-                        match self
-                            .store_message(
-                                message,
-                                Some(position as i32 + 1),
-                                Some(thread_message_count as i32),
-                            )
-                            .await
-                        {
-                            Ok(true) => records_written += 1,
-                            Ok(false) => records_failed += 1,
-                            Err(e) => {
-                                tracing::warn!(error = %e, "Failed to store message from thread {}", thread_ref.id);
-                                records_failed += 1;
+                        for (position, message) in messages.into_iter().enumerate() {
+                            records_fetched += 1;
+
+                            // Store message with thread context
+                            match self
+                                .store_message(
+                                    message,
+                                    Some(position as i32 + 1),
+                                    Some(thread_message_count as i32),
+                                )
+                                .await
+                            {
+                                Ok(true) => records_written += 1,
+                                Ok(false) => records_failed += 1,
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "Failed to store message from thread {}", thread_ref.id);
+                                    records_failed += 1;
+                                }
                             }
                         }
                     }
-                }
 
-                // Update history ID from thread
-                if let Some(history_id) = thread.history_id {
-                    latest_history_id = Some(history_id.clone());
+                    // Update history ID from thread
+                    if let Some(history_id) = thread.history_id {
+                        latest_history_id = Some(history_id.clone());
+                    }
                 }
             }
+
+            // Check if there are more pages
+            page_token = response.next_page_token;
+            if page_token.is_none() {
+                break;
+            }
+
+            tracing::debug!(
+                messages_fetched = records_fetched,
+                has_more = page_token.is_some(),
+                "Fetched threads page"
+            );
         }
+
+        tracing::info!(
+            total_messages = records_fetched,
+            written = records_written,
+            failed = records_failed,
+            "Completed paginated threads sync"
+        );
 
         // Save latest history ID for incremental sync
         if let Some(ref history_id) = latest_history_id {

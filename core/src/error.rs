@@ -29,6 +29,14 @@ pub enum Error {
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 
+    /// Not found errors
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    /// Invalid input errors
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
     /// HTTP errors
     #[error("HTTP error: {0}")]
     Http(String),
@@ -60,6 +68,35 @@ pub enum Error {
     /// Generic errors
     #[error("{0}")]
     Other(String),
+}
+
+impl Error {
+    /// Get HTTP status code for this error
+    pub fn http_status(&self) -> u16 {
+        match self {
+            Error::Authentication(_) | Error::Unauthorized(_) => 401,
+            Error::NotFound(_) => 404,
+            Error::InvalidInput(_) => 400,
+            Error::Configuration(_) => 503,
+            _ => 500,
+        }
+    }
+
+    /// Check if error should be logged at ERROR level (server errors)
+    /// vs WARN level (client errors)
+    pub fn is_server_error(&self) -> bool {
+        matches!(
+            self,
+            Error::Database(_)
+                | Error::Storage(_)
+                | Error::Configuration(_)
+                | Error::Network(_)
+                | Error::S3(_)
+                | Error::Sql(_)
+                | Error::Io(_)
+                | Error::Other(_)
+        )
+    }
 }
 
 /// Result type alias for Ariata operations

@@ -14,6 +14,7 @@ impl SourceRegistry for MacSource {
             description: "Personal data from macOS devices (App usage, Browser history, iMessage)",
             auth_type: AuthType::Device,
             oauth_config: None,
+            icon: Some("ri:macbook-line"),
             streams: vec![
                 // Apps stream
                 StreamDescriptor::new("apps")

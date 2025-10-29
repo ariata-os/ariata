@@ -2,20 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Sync direction for calendar events
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SyncDirection {
-    Past,
-    Future,
-    Both,
-}
-
-impl Default for SyncDirection {
-    fn default() -> Self {
-        Self::Past
-    }
-}
+use crate::sources::base::SyncStrategy;
 
 /// Configuration for Google Calendar sync
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,18 +11,9 @@ pub struct GoogleCalendarConfig {
     #[serde(default = "default_calendar_ids")]
     pub calendar_ids: Vec<String>,
 
-    /// Number of days to sync (default: 90)
-    #[serde(default = "default_sync_window_days")]
-    pub sync_window_days: u32,
-
-    /// Number of days for initial sync lookback (default: 365)
-    /// Used only on the first sync when no sync token exists
-    #[serde(default = "default_initial_sync_window_days")]
-    pub initial_sync_window_days: u32,
-
-    /// Direction to sync events (past, future, or both)
+    /// Strategy for full sync operations (default: 365 days lookback)
     #[serde(default)]
-    pub sync_direction: SyncDirection,
+    pub sync_strategy: SyncStrategy,
 
     /// Include events where the user declined (default: false)
     #[serde(default)]
@@ -54,9 +32,7 @@ impl Default for GoogleCalendarConfig {
     fn default() -> Self {
         Self {
             calendar_ids: default_calendar_ids(),
-            sync_window_days: default_sync_window_days(),
-            initial_sync_window_days: default_initial_sync_window_days(),
-            sync_direction: SyncDirection::default(),
+            sync_strategy: SyncStrategy::default(),
             include_declined: false,
             include_cancelled: false,
             max_events_per_sync: default_max_events(),
@@ -75,36 +51,14 @@ impl GoogleCalendarConfig {
         serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}))
     }
 
-    /// Calculate time bounds based on configuration
+    /// Calculate time bounds based on sync strategy
     pub fn calculate_time_bounds(&self) -> (Option<chrono::DateTime<chrono::Utc>>, Option<chrono::DateTime<chrono::Utc>>) {
-        use chrono::{Duration, Utc};
-        let now = Utc::now();
-        let window = Duration::days(self.sync_window_days as i64);
-
-        match self.sync_direction {
-            SyncDirection::Past => {
-                (Some(now - window), Some(now))
-            },
-            SyncDirection::Future => {
-                (Some(now), Some(now + window))
-            },
-            SyncDirection::Both => {
-                (Some(now - window), Some(now + window))
-            }
-        }
+        self.sync_strategy.calculate_time_bounds()
     }
 }
 
 fn default_calendar_ids() -> Vec<String> {
     vec!["primary".to_string()]
-}
-
-fn default_sync_window_days() -> u32 {
-    90
-}
-
-fn default_initial_sync_window_days() -> u32 {
-    365
 }
 
 fn default_max_events() -> u32 {
@@ -128,7 +82,8 @@ impl Default for GmailSyncMode {
 /// Configuration for Google Gmail sync
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoogleGmailConfig {
-    /// Label IDs to sync (default: ["INBOX", "SENT"])
+    /// Label IDs to sync (default: [] which syncs all mail)
+    /// Leave empty to sync all mail, or specify labels like ["INBOX", "SENT"] to filter
     #[serde(default = "default_label_ids")]
     pub label_ids: Vec<String>,
 
@@ -144,14 +99,9 @@ pub struct GoogleGmailConfig {
     #[serde(default = "default_fetch_body")]
     pub fetch_body: bool,
 
-    /// Number of days to sync (default: 90)
-    #[serde(default = "default_sync_window_days")]
-    pub sync_window_days: u32,
-
-    /// Number of days for initial sync lookback (default: 365)
-    /// Used only on the first sync when no history ID exists
-    #[serde(default = "default_initial_sync_window_days")]
-    pub initial_sync_window_days: u32,
+    /// Strategy for full sync operations (default: 365 days lookback)
+    #[serde(default)]
+    pub sync_strategy: SyncStrategy,
 
     /// Maximum number of messages per sync batch (default: 500)
     #[serde(default = "default_max_messages")]
@@ -168,8 +118,7 @@ impl Default for GoogleGmailConfig {
             include_spam_trash: false,
             sync_mode: GmailSyncMode::default(),
             fetch_body: default_fetch_body(),
-            sync_window_days: default_sync_window_days(),
-            initial_sync_window_days: default_initial_sync_window_days(),
+            sync_strategy: SyncStrategy::default(),
             max_messages_per_sync: default_max_messages(),
             query: None,
         }
@@ -187,16 +136,22 @@ impl GoogleGmailConfig {
         serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}))
     }
 
-    /// Build the query string for Gmail API
+    /// Build the query string for Gmail API based on sync strategy
     pub fn build_query(&self) -> String {
         let mut parts = Vec::new();
 
-        // Add time bounds
-        use chrono::{Duration, Utc};
-        let now = Utc::now();
-        let window = Duration::days(self.sync_window_days as i64);
-        let after = (now - window).format("%Y/%m/%d").to_string();
-        parts.push(format!("after:{after}"));
+        // Add time bounds from strategy
+        let (min_time, max_time) = self.sync_strategy.calculate_time_bounds();
+
+        if let Some(min) = min_time {
+            let after = min.format("%Y/%m/%d").to_string();
+            parts.push(format!("after:{after}"));
+        }
+
+        if let Some(max) = max_time {
+            let before = max.format("%Y/%m/%d").to_string();
+            parts.push(format!("before:{before}"));
+        }
 
         // Add custom query if provided
         if let Some(ref q) = self.query {
@@ -208,7 +163,8 @@ impl GoogleGmailConfig {
 }
 
 fn default_label_ids() -> Vec<String> {
-    vec!["INBOX".to_string(), "SENT".to_string()]
+    // Empty vec means no label filter - sync all mail within time window
+    vec![]
 }
 
 fn default_fetch_body() -> bool {
@@ -228,7 +184,6 @@ mod tests {
     fn test_default_config() {
         let config = GoogleCalendarConfig::default();
         assert_eq!(config.calendar_ids, vec!["primary"]);
-        assert_eq!(config.sync_window_days, 90);
         assert!(!config.include_declined);
         assert_eq!(config.max_events_per_sync, 500);
     }
@@ -236,8 +191,7 @@ mod tests {
     #[test]
     fn test_time_bounds_calculation() {
         let config = GoogleCalendarConfig {
-            sync_window_days: 30,
-            sync_direction: SyncDirection::Past,
+            sync_strategy: SyncStrategy::TimeWindow { days_back: 30 },
             ..Default::default()
         };
 
@@ -265,14 +219,12 @@ mod tests {
         let deserialized = GoogleCalendarConfig::from_json(&json).unwrap();
 
         assert_eq!(config.calendar_ids, deserialized.calendar_ids);
-        assert_eq!(config.sync_window_days, deserialized.sync_window_days);
     }
 
     #[test]
     fn test_gmail_default_config() {
         let config = GoogleGmailConfig::default();
-        assert_eq!(config.label_ids, vec!["INBOX", "SENT"]);
-        assert_eq!(config.sync_window_days, 90);
+        assert_eq!(config.label_ids, Vec::<String>::new()); // Empty = sync all mail
         assert!(!config.include_spam_trash);
         assert!(config.fetch_body);
         assert_eq!(config.max_messages_per_sync, 500);
@@ -281,7 +233,7 @@ mod tests {
     #[test]
     fn test_gmail_query_builder() {
         let config = GoogleGmailConfig {
-            sync_window_days: 7,
+            sync_strategy: SyncStrategy::TimeWindow { days_back: 7 },
             query: Some("has:attachment".to_string()),
             ..Default::default()
         };
@@ -298,7 +250,6 @@ mod tests {
         let deserialized = GoogleGmailConfig::from_json(&json).unwrap();
 
         assert_eq!(config.label_ids, deserialized.label_ids);
-        assert_eq!(config.sync_window_days, deserialized.sync_window_days);
         assert_eq!(config.fetch_body, deserialized.fetch_body);
     }
 }

@@ -8,14 +8,25 @@ use super::types::{Source, SourceStatus};
 
 /// List all configured sources
 ///
-/// Returns all sources in the database, regardless of type (OAuth, device, etc.)
+/// Returns all sources in the database with stream counts and last sync time.
 pub async fn list_sources(db: &PgPool) -> Result<Vec<Source>> {
     let sources = sqlx::query_as::<_, Source>(
         r#"
-        SELECT id, type as source_type, name, is_active,
-               error_message, created_at, updated_at
-        FROM sources
-        ORDER BY created_at DESC
+        SELECT
+            s.id,
+            s.type as source_type,
+            s.name,
+            s.is_active,
+            s.error_message,
+            s.created_at,
+            s.updated_at,
+            MAX(st.last_sync_at) as last_sync_at,
+            COALESCE(COUNT(DISTINCT CASE WHEN st.is_enabled THEN st.stream_name END), 0) as enabled_streams_count,
+            COALESCE(COUNT(DISTINCT st.stream_name), 0) as total_streams_count
+        FROM sources s
+        LEFT JOIN streams st ON s.id = st.source_id
+        GROUP BY s.id, s.type, s.name, s.is_active, s.error_message, s.created_at, s.updated_at
+        ORDER BY s.created_at DESC
         "#,
     )
     .fetch_all(db)
@@ -29,10 +40,21 @@ pub async fn list_sources(db: &PgPool) -> Result<Vec<Source>> {
 pub async fn get_source(db: &PgPool, source_id: Uuid) -> Result<Source> {
     let source = sqlx::query_as::<_, Source>(
         r#"
-        SELECT id, type as source_type, name, is_active,
-               error_message, created_at, updated_at
-        FROM sources
-        WHERE id = $1
+        SELECT
+            s.id,
+            s.type as source_type,
+            s.name,
+            s.is_active,
+            s.error_message,
+            s.created_at,
+            s.updated_at,
+            MAX(st.last_sync_at) as last_sync_at,
+            COALESCE(COUNT(DISTINCT CASE WHEN st.is_enabled THEN st.stream_name END), 0) as enabled_streams_count,
+            COALESCE(COUNT(DISTINCT st.stream_name), 0) as total_streams_count
+        FROM sources s
+        LEFT JOIN streams st ON s.id = st.source_id
+        WHERE s.id = $1
+        GROUP BY s.id, s.type, s.name, s.is_active, s.error_message, s.created_at, s.updated_at
         "#,
     )
     .bind(source_id)
@@ -41,6 +63,32 @@ pub async fn get_source(db: &PgPool, source_id: Uuid) -> Result<Source> {
     .map_err(|e| Error::Database(format!("Failed to get source: {e}")))?;
 
     Ok(source)
+}
+
+/// Pause a source by setting is_active to false
+///
+/// This prevents scheduled syncs from running but keeps the source configured.
+pub async fn pause_source(db: &PgPool, source_id: Uuid) -> Result<Source> {
+    sqlx::query("UPDATE sources SET is_active = false, updated_at = NOW() WHERE id = $1")
+        .bind(source_id)
+        .execute(db)
+        .await
+        .map_err(|e| Error::Database(format!("Failed to pause source: {e}")))?;
+
+    get_source(db, source_id).await
+}
+
+/// Resume a source by setting is_active to true
+///
+/// This re-enables scheduled syncs for the source.
+pub async fn resume_source(db: &PgPool, source_id: Uuid) -> Result<Source> {
+    sqlx::query("UPDATE sources SET is_active = true, updated_at = NOW() WHERE id = $1")
+        .bind(source_id)
+        .execute(db)
+        .await
+        .map_err(|e| Error::Database(format!("Failed to resume source: {e}")))?;
+
+    get_source(db, source_id).await
 }
 
 /// Delete a source by ID

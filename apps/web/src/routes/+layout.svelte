@@ -8,10 +8,6 @@
 
 	let { children, data } = $props();
 
-	// Set user context for all child components
-	if (data.user) {
-		setUserContext(data.user);
-	}
 	let activeModule = $state("home");
 	let isSideNavOpen = $state(true);
 
@@ -68,10 +64,10 @@
 					pagespace: "data/ontologies",
 				},
 				{
-					href: "/data/logs",
+					href: "/data/jobs",
 					icon: "ri:history-line",
 					text: "Activity",
-					pagespace: "data/logs",
+					pagespace: "data/jobs",
 				},
 			],
 		},

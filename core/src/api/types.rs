@@ -14,6 +14,9 @@ pub struct Source {
     pub error_message: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub last_sync_at: Option<DateTime<Utc>>,
+    pub enabled_streams_count: i64,
+    pub total_streams_count: i64,
 }
 
 /// Source status with sync statistics
@@ -30,20 +33,4 @@ pub struct SourceStatus {
     pub failed_syncs: i64,
     pub last_sync_status: Option<String>,
     pub last_sync_duration_ms: Option<i32>,
-}
-
-/// Sync log entry
-#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
-pub struct SyncLog {
-    pub id: Uuid,
-    pub source_id: Uuid,
-    pub sync_mode: String,
-    pub started_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
-    pub duration_ms: Option<i32>,
-    pub status: String,
-    pub records_fetched: Option<i32>,
-    pub records_written: Option<i32>,
-    pub records_failed: Option<i32>,
-    pub error_message: Option<String>,
 }

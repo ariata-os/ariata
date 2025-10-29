@@ -3,9 +3,11 @@
 //! High-performance data pipeline for personal data collection, storage, and analysis.
 
 pub mod api;
+pub mod cli;
 pub mod client;
 pub mod database;
 pub mod error;
+pub mod jobs;
 pub mod oauth;
 pub mod registry;
 pub mod scheduler;
@@ -24,8 +26,14 @@ pub use oauth::TokenManager;
 // Re-export Scheduler
 pub use scheduler::Scheduler;
 
+// Re-export sync types
+pub use sources::base::SyncMode;
+
 // Re-export library API functions
 pub use api::{
+    // Device pairing
+    check_pairing_status,
+    complete_device_pairing,
     create_source,
     delete_source,
     disable_stream,
@@ -35,37 +43,40 @@ pub use api::{
     get_source_status,
     get_stream_descriptor,
     get_stream_info,
-    get_stream_sync_history,
-
-    get_sync_history,
     handle_oauth_callback,
+    initiate_device_pairing,
     // OAuth & source registration
     initiate_oauth_flow,
     list_all_streams,
 
     // Registry/catalog
     list_available_sources,
+    list_pending_pairings,
     // Stream management
     list_source_streams,
     // Generic source management
     list_sources,
     register_device,
-    // Stream sync (new pattern - use this!)
-    sync_stream,
 
+    update_last_seen,
     update_stream_config,
     update_stream_schedule,
+    validate_device_token,
     CreateSourceRequest,
+    DeviceInfo,
     EnableStreamRequest,
     OAuthAuthorizeResponse,
     OAuthCallbackParams,
+    PairingCompleted,
+    PairingInitiated,
+    PairingStatus,
+    PendingPairing,
     RegisterDeviceRequest,
 
     // Types
     Source,
     SourceStatus,
     StreamInfo,
-    SyncLog,
     UpdateStreamConfigRequest,
     UpdateStreamScheduleRequest,
 };

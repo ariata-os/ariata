@@ -19,6 +19,7 @@ pub enum StorageType {
 #[derive(Debug, Clone)]
 pub struct SetupConfig {
     pub database_url: String,
+    pub server_url: String,
     pub storage: StorageType,
     pub encryption_key: Option<String>,
     pub run_migrations: bool,
@@ -33,21 +34,25 @@ pub async fn run_init() -> Result<SetupConfig> {
     // Step 1: Database configuration
     let database_url = setup_database().await?;
 
-    // Step 2: Run migrations?
+    // Step 2: Server URL for device pairing
+    let server_url = setup_server_url()?;
+
+    // Step 3: Run migrations?
     let run_migrations = Confirm::with_theme(&ColorfulTheme::default())
         .with_prompt("Run migrations now?")
         .default(true)
         .interact()
         .unwrap_or(true);
 
-    // Step 3: Encryption key
+    // Step 4: Encryption key
     let encryption_key = setup_encryption_key()?;
 
-    // Step 4: Storage configuration
+    // Step 5: Storage configuration
     let storage = setup_storage().await?;
 
     Ok(SetupConfig {
         database_url,
+        server_url,
         storage,
         encryption_key,
         run_migrations,
@@ -78,6 +83,22 @@ async fn setup_database() -> Result<String> {
 
     println!();
     Ok(database_url)
+}
+
+/// Server URL setup step for device pairing
+fn setup_server_url() -> Result<String> {
+    println!("{}", style("🌐 Server Configuration").bold());
+
+    let server_url: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Server URL (for device pairing)")
+        .default("localhost:8000".to_string())
+        .interact_text()
+        .map_err(|e| crate::error::Error::Other(format!("Input error: {}", e)))?;
+
+    display_info("This URL will be shown to users when pairing devices.");
+
+    println!();
+    Ok(server_url)
 }
 
 /// Encryption key setup step
@@ -241,6 +262,10 @@ pub fn save_config(config: &SetupConfig) -> Result<()> {
     // Database
     content.push_str("# Database (required)\n");
     content.push_str(&format!("DATABASE_URL={}\n\n", config.database_url));
+
+    // Server URL
+    content.push_str("# Server URL for device pairing (required for device sources)\n");
+    content.push_str(&format!("ARIATA_SERVER_URL={}\n\n", config.server_url));
 
     // Storage
     match &config.storage {

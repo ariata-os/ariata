@@ -58,6 +58,11 @@ CREATE INDEX idx_ios_healthkit_steps ON stream_ios_healthkit(timestamp) WHERE st
 CREATE INDEX idx_ios_healthkit_sleep ON stream_ios_healthkit(timestamp) WHERE sleep_stage IS NOT NULL;
 CREATE INDEX idx_ios_healthkit_workout ON stream_ios_healthkit(timestamp) WHERE workout_type IS NOT NULL;
 
+-- Idempotency constraint: one sample per device per timestamp
+ALTER TABLE stream_ios_healthkit
+    ADD CONSTRAINT unique_ios_healthkit_sample
+    UNIQUE (source_id, timestamp);
+
 -- Comments
 COMMENT ON TABLE stream_ios_healthkit IS 'iOS HealthKit data including heart rate, HRV, steps, sleep, and workouts';
 COMMENT ON COLUMN stream_ios_healthkit.heart_rate IS 'Heart rate in beats per minute';
@@ -66,6 +71,8 @@ COMMENT ON COLUMN stream_ios_healthkit.steps IS 'Step count for the time period'
 COMMENT ON COLUMN stream_ios_healthkit.sleep_stage IS 'Sleep stage: awake, light, deep, rem, asleep';
 COMMENT ON COLUMN stream_ios_healthkit.workout_type IS 'Workout activity type from HealthKit';
 COMMENT ON COLUMN stream_ios_healthkit.raw_data IS 'Complete HealthKit sample data for fields not mapped to columns';
+COMMENT ON CONSTRAINT unique_ios_healthkit_sample ON stream_ios_healthkit
+    IS 'Ensures idempotent inserts: one health sample per device per timestamp';
 
 -----------------------------------------------------------
 
@@ -114,6 +121,11 @@ CREATE INDEX idx_ios_location_source_time ON stream_ios_location(source_id, time
 --     ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
 -- );
 
+-- Idempotency constraint: one location point per device per timestamp
+ALTER TABLE stream_ios_location
+    ADD CONSTRAINT unique_ios_location_point
+    UNIQUE (source_id, timestamp);
+
 -- Comments
 COMMENT ON TABLE stream_ios_location IS 'iOS location data including GPS coordinates, speed, and activity type';
 COMMENT ON COLUMN stream_ios_location.latitude IS 'Latitude in decimal degrees';
@@ -122,6 +134,8 @@ COMMENT ON COLUMN stream_ios_location.altitude IS 'Altitude in meters above sea 
 COMMENT ON COLUMN stream_ios_location.speed IS 'Speed in meters per second';
 COMMENT ON COLUMN stream_ios_location.horizontal_accuracy IS 'Location accuracy radius in meters';
 COMMENT ON COLUMN stream_ios_location.activity_type IS 'Inferred activity: stationary, walking, running, automotive, cycling';
+COMMENT ON CONSTRAINT unique_ios_location_point ON stream_ios_location
+    IS 'Ensures idempotent inserts: one location point per device per timestamp';
 
 -----------------------------------------------------------
 
@@ -165,8 +179,15 @@ CREATE INDEX idx_ios_microphone_source_time ON stream_ios_microphone(source_id, 
 CREATE INDEX idx_ios_microphone_transcription ON stream_ios_microphone USING GIN (to_tsvector('english', transcription))
     WHERE transcription IS NOT NULL;
 
+-- Idempotency constraint: one audio sample per device per timestamp
+ALTER TABLE stream_ios_microphone
+    ADD CONSTRAINT unique_ios_microphone_sample
+    UNIQUE (source_id, timestamp);
+
 -- Comments
 COMMENT ON TABLE stream_ios_microphone IS 'iOS microphone data including audio levels and transcriptions';
 COMMENT ON COLUMN stream_ios_microphone.decibels IS 'Sound level in decibels';
 COMMENT ON COLUMN stream_ios_microphone.transcription IS 'Transcribed text from audio recording';
 COMMENT ON COLUMN stream_ios_microphone.audio_file_key IS 'MinIO/S3 object key for the full audio file';
+COMMENT ON CONSTRAINT unique_ios_microphone_sample ON stream_ios_microphone
+    IS 'Ensures idempotent inserts: one audio sample per device per timestamp';

@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::ingest::AppState;
@@ -53,6 +53,40 @@ pub async fn get_source_handler(
     }
 }
 
+/// Pause a source
+pub async fn pause_source_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<Uuid>,
+) -> Response {
+    match crate::api::pause_source(state.db.pool(), source_id).await {
+        Ok(source) => (StatusCode::OK, Json(source)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Resume a source
+pub async fn resume_source_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<Uuid>,
+) -> Response {
+    match crate::api::resume_source(state.db.pool(), source_id).await {
+        Ok(source) => (StatusCode::OK, Json(source)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
 /// Delete a source by ID
 pub async fn delete_source_handler(
     State(state): State<AppState>,
@@ -85,24 +119,6 @@ pub async fn get_source_status_handler(
         Ok(status) => (StatusCode::OK, Json(status)).into_response(),
         Err(e) => (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({
-                "error": e.to_string()
-            })),
-        )
-            .into_response(),
-    }
-}
-
-/// Get sync history for a source
-pub async fn get_sync_history_handler(
-    State(state): State<AppState>,
-    Path(source_id): Path<Uuid>,
-    Query(pagination): Query<PaginationQuery>,
-) -> Response {
-    match crate::api::get_sync_history(state.db.pool(), source_id, pagination.limit).await {
-        Ok(logs) => (StatusCode::OK, Json(logs)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({
                 "error": e.to_string()
             })),
@@ -300,23 +316,151 @@ pub async fn update_stream_schedule_handler(
     }
 }
 
-/// Get stream-specific sync history
-pub async fn get_stream_sync_history_handler(
+/// Trigger a manual sync for a stream (async job-based)
+pub async fn sync_stream_handler(
     State(state): State<AppState>,
     Path((source_id, stream_name)): Path<(Uuid, String)>,
-    Query(pagination): Query<PaginationQuery>,
+    Json(request): Json<Option<SyncStreamRequest>>,
 ) -> Response {
-    match crate::api::get_stream_sync_history(
-        state.db.pool(),
-        source_id,
-        &stream_name,
-        pagination.limit,
-    )
-    .await
-    {
-        Ok(logs) => (StatusCode::OK, Json(logs)).into_response(),
+    // Parse sync mode from request (default to incremental)
+    let sync_mode = request.and_then(|r| r.sync_mode.map(|m| match m.as_str() {
+        "full_refresh" => crate::sources::base::SyncMode::FullRefresh,
+        _ => crate::sources::base::SyncMode::incremental(None),
+    }));
+
+    // Use the new async job-based sync
+    match crate::api::trigger_stream_sync(state.db.pool(), source_id, &stream_name, sync_mode).await {
+        Ok(response) => (StatusCode::CREATED, Json(response)).into_response(),
+        Err(e) => {
+            let status = if e.to_string().contains("already has an active sync") {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            (
+                status,
+                Json(serde_json::json!({
+                    "error": e.to_string()
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Request for syncing a stream
+#[derive(Debug, Deserialize)]
+pub struct SyncStreamRequest {
+    pub sync_mode: Option<String>,
+}
+
+// ============================================================================
+// Catalog/Registry API
+// ============================================================================
+
+/// Simplified catalog source for frontend display
+#[derive(Debug, Serialize)]
+pub struct CatalogSource {
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub auth_type: String,
+    pub stream_count: usize,
+    pub icon: Option<String>,
+}
+
+/// List all available source types from the registry
+pub async fn list_catalog_sources_handler() -> Response {
+    let sources = crate::registry::list_sources();
+
+    let catalog: Vec<CatalogSource> = sources
+        .iter()
+        .map(|s| CatalogSource {
+            name: s.name.to_string(),
+            display_name: s.display_name.to_string(),
+            description: s.description.to_string(),
+            auth_type: format!("{:?}", s.auth_type).to_lowercase(),
+            stream_count: s.streams.len(),
+            icon: s.icon.map(|i| i.to_string()),
+        })
+        .collect();
+
+    (StatusCode::OK, Json(catalog)).into_response()
+}
+
+// ============================================================================
+// Jobs API
+// ============================================================================
+
+/// Get job status by ID
+pub async fn get_job_handler(
+    State(state): State<AppState>,
+    Path(job_id): Path<Uuid>,
+) -> Response {
+    match crate::api::get_job_status(state.db.pool(), job_id).await {
+        Ok(job) => (StatusCode::OK, Json(job)).into_response(),
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Query jobs with filters
+#[derive(Debug, Deserialize)]
+pub struct QueryJobsParams {
+    pub source_id: Option<Uuid>,
+    pub status: Option<String>,  // Comma-separated list
+    pub limit: Option<i64>,
+}
+
+pub async fn query_jobs_handler(
+    State(state): State<AppState>,
+    Query(params): Query<QueryJobsParams>,
+) -> Response {
+    // Parse comma-separated status list
+    let statuses = params.status.map(|s| {
+        s.split(',')
+            .map(|s| s.trim().to_string())
+            .collect::<Vec<String>>()
+    });
+
+    let request = crate::api::QueryJobsRequest {
+        source_id: params.source_id,
+        status: statuses,
+        limit: params.limit,
+    };
+
+    match crate::api::query_jobs(state.db.pool(), request).await {
+        Ok(jobs) => (StatusCode::OK, Json(jobs)).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Cancel a running job
+pub async fn cancel_job_handler(
+    State(state): State<AppState>,
+    Path(job_id): Path<Uuid>,
+) -> Response {
+    match crate::api::cancel_job(state.db.pool(), job_id).await {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "message": "Job cancelled successfully"
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
                 "error": e.to_string()
             })),

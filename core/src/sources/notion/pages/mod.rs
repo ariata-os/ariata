@@ -10,12 +10,12 @@ use crate::{
     error::Result,
     sources::{
         auth::SourceAuth,
-        base::{SyncLogger, SyncMode, SyncResult},
+        base::{SyncMode, SyncResult},
         stream::Stream,
     },
 };
 
-use super::{client::NotionApiClient, types::SearchResponse};
+use super::{client::NotionApiClient, types::{SearchResponse, Page, Parent}};
 
 /// Notion pages stream
 pub struct NotionPagesStream {
@@ -45,8 +45,19 @@ impl NotionPagesStream {
     /// Sync with explicit mode
     #[tracing::instrument(skip(self), fields(source_id = %self.source_id))]
     pub async fn sync_with_mode(&self, mode: &SyncMode) -> Result<SyncResult> {
+        // Notion pages only support full refresh, not incremental sync
+        // If incremental mode is requested, log a warning and use full refresh instead
+        let effective_mode = match mode {
+            SyncMode::Incremental { .. } => {
+                tracing::warn!(
+                    "Notion pages stream does not support incremental sync. Using full refresh instead."
+                );
+                SyncMode::FullRefresh
+            }
+            SyncMode::FullRefresh => SyncMode::FullRefresh,
+        };
+
         let started_at = Utc::now();
-        let logger = SyncLogger::new(self.db.clone());
 
         tracing::info!("Starting Notion pages sync");
 
@@ -59,9 +70,22 @@ impl NotionPagesStream {
             let response = self.search_pages(cursor).await?;
             records_fetched += response.results.len();
 
-            // TODO: Write pages to stream_notion_pages table
-            // For now, just count them
-            all_pages.extend(response.results);
+            // Write pages to stream_notion_pages table
+            for page in &response.results {
+                match self.upsert_page(page).await {
+                    Ok(_) => {
+                        all_pages.push(page.clone());
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            page_id = %page.id,
+                            error = %e,
+                            "Failed to write page to database"
+                        );
+                        // Continue with other pages even if one fails
+                    }
+                }
+            }
 
             if !response.has_more {
                 break;
@@ -81,14 +105,7 @@ impl NotionPagesStream {
             completed_at,
         };
 
-        // Log success
-        if let Err(e) = logger
-            .log_success(self.source_id, "pages", mode, &result)
-            .await
-        {
-            tracing::warn!(error = %e, "Failed to log sync success");
-        }
-
+        // Logging is handled by job executor
         Ok(result)
     }
 
@@ -107,6 +124,75 @@ impl NotionPagesStream {
         }
 
         self.client.post_json("search", &body).await
+    }
+
+    /// Upsert a page into the database
+    async fn upsert_page(&self, page: &Page) -> Result<()> {
+        // Extract parent information
+        let (parent_type, parent_id) = match &page.parent {
+            Parent::Database { database_id } => ("database", Some(database_id.clone())),
+            Parent::Page { page_id } => ("page", Some(page_id.clone())),
+            Parent::Workspace { .. } => ("workspace", None),
+        };
+
+        // Serialize properties and full page as JSONB
+        let properties_json = serde_json::to_value(&page.properties)?;
+        let raw_json = serde_json::to_value(&page)?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO stream_notion_pages (
+                source_id,
+                page_id,
+                url,
+                created_time,
+                last_edited_time,
+                created_by_id,
+                created_by_name,
+                last_edited_by_id,
+                last_edited_by_name,
+                parent_type,
+                parent_id,
+                archived,
+                properties,
+                raw_json,
+                synced_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW()
+            )
+            ON CONFLICT (source_id, page_id)
+            DO UPDATE SET
+                url = EXCLUDED.url,
+                last_edited_time = EXCLUDED.last_edited_time,
+                last_edited_by_id = EXCLUDED.last_edited_by_id,
+                last_edited_by_name = EXCLUDED.last_edited_by_name,
+                parent_type = EXCLUDED.parent_type,
+                parent_id = EXCLUDED.parent_id,
+                archived = EXCLUDED.archived,
+                properties = EXCLUDED.properties,
+                raw_json = EXCLUDED.raw_json,
+                synced_at = NOW(),
+                updated_at = NOW()
+            "#,
+            self.source_id,
+            page.id,
+            page.url,
+            page.created_time,
+            page.last_edited_time,
+            page.created_by.id,
+            page.created_by.name,
+            page.last_edited_by.id,
+            page.last_edited_by.name,
+            parent_type,
+            parent_id,
+            page.archived,
+            properties_json,
+            raw_json,
+        )
+        .execute(&self.db)
+        .await?;
+
+        Ok(())
     }
 }
 

@@ -21,6 +21,7 @@ impl SourceRegistry for GoogleSource {
                 auth_url: "https://accounts.google.com/o/oauth2/v2/auth",
                 token_url: "https://oauth2.googleapis.com/token",
             }),
+            icon: Some("ri:google-fill"),
             streams: vec![
                 // Calendar stream
                 StreamDescriptor::new("calendar")
@@ -61,18 +62,54 @@ fn calendar_config_schema() -> serde_json::Value {
                 "default": ["primary"],
                 "description": "List of calendar IDs to sync (use 'primary' for main calendar)"
             },
-            "sync_window_days": {
-                "type": "integer",
-                "default": 90,
-                "minimum": 1,
-                "maximum": 365,
-                "description": "Number of days to sync in the specified direction"
-            },
-            "sync_direction": {
-                "type": "string",
-                "enum": ["past", "future", "both"],
-                "default": "past",
-                "description": "Direction to sync events: past, future, or both"
+            "sync_strategy": {
+                "type": "object",
+                "description": "Strategy for determining what data to sync during full refresh operations",
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "required": ["type", "days_back"],
+                        "properties": {
+                            "type": { "const": "time_window" },
+                            "days_back": {
+                                "type": "integer",
+                                "default": 365,
+                                "minimum": 1,
+                                "maximum": 3650,
+                                "description": "Number of days to look back from now"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": ["type"],
+                        "properties": {
+                            "type": { "const": "full_history" },
+                            "max_records": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Optional limit on number of records to prevent runaway syncs"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": ["type", "start_date", "end_date"],
+                        "properties": {
+                            "type": { "const": "date_range" },
+                            "start_date": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Start of date range (ISO 8601)"
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "End of date range (ISO 8601)"
+                            }
+                        }
+                    }
+                ]
             },
             "include_declined": {
                 "type": "boolean",
@@ -99,8 +136,10 @@ fn calendar_config_schema() -> serde_json::Value {
 fn calendar_config_example() -> serde_json::Value {
     json!({
         "calendar_ids": ["primary", "work@company.com"],
-        "sync_window_days": 90,
-        "sync_direction": "past",
+        "sync_strategy": {
+            "type": "time_window",
+            "days_back": 365
+        },
         "include_declined": false,
         "include_cancelled": false,
         "max_events_per_sync": 500
@@ -134,12 +173,54 @@ fn gmail_config_schema() -> serde_json::Value {
                 "default": true,
                 "description": "Fetch full message body content"
             },
-            "sync_window_days": {
-                "type": "integer",
-                "default": 90,
-                "minimum": 1,
-                "maximum": 365,
-                "description": "Number of days of email history to sync"
+            "sync_strategy": {
+                "type": "object",
+                "description": "Strategy for determining what data to sync during full refresh operations",
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "required": ["type", "days_back"],
+                        "properties": {
+                            "type": { "const": "time_window" },
+                            "days_back": {
+                                "type": "integer",
+                                "default": 365,
+                                "minimum": 1,
+                                "maximum": 3650,
+                                "description": "Number of days to look back from now"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": ["type"],
+                        "properties": {
+                            "type": { "const": "full_history" },
+                            "max_records": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Optional limit on number of records"
+                            }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "required": ["type", "start_date", "end_date"],
+                        "properties": {
+                            "type": { "const": "date_range" },
+                            "start_date": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Start of date range (ISO 8601)"
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "End of date range (ISO 8601)"
+                            }
+                        }
+                    }
+                ]
             },
             "max_messages_per_sync": {
                 "type": "integer",
@@ -163,7 +244,10 @@ fn gmail_config_example() -> serde_json::Value {
         "include_spam_trash": false,
         "sync_mode": "messages",
         "fetch_body": true,
-        "sync_window_days": 90,
+        "sync_strategy": {
+            "type": "time_window",
+            "days_back": 365
+        },
         "max_messages_per_sync": 500,
         "query": null
     })

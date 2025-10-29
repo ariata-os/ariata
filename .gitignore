@@ -101,9 +101,8 @@ wheels/
 
 # Other
 /apps/oauth-proxy/.pnpm-store
-/target
-/target/rust-analyzer
-data/
+/target/
+data/*
 
 # Exception: Allow oauth-proxy dist/ for Vercel deployment
 !/apps/oauth-proxy/dist/

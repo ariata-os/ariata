@@ -337,7 +337,7 @@ export function getSourceTypeIcon(type: string): string {
 
 export function getSourceTypeColor(type: string): string {
 	const colors: Record<string, string> = {
-		google: "text-blue-600",
+		google: "text-neutral-900",
 		ios: "text-neutral-900",
 		notion: "text-neutral-900",
 		mac: "text-neutral-700",

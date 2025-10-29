@@ -14,6 +14,7 @@ impl SourceRegistry for IosSource {
             description: "Personal data from iOS devices (HealthKit, Location, Microphone)",
             auth_type: AuthType::Device,
             oauth_config: None,
+            icon: Some("ri:apple-fill"),
             streams: vec![
                 // HealthKit stream
                 StreamDescriptor::new("healthkit")

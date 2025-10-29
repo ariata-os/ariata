@@ -3,6 +3,7 @@
 //! This module provides a unified interface for managing OAuth tokens across all sources.
 //! It integrates with the auth.ariata.com OAuth proxy for token refresh operations.
 
+use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use reqwest::Client;
 use serde::Deserialize;
@@ -51,8 +52,7 @@ pub struct TokenManager {
     db: PgPool,
     client: Client,
     proxy_config: OAuthProxyConfig,
-    encryptor: Option<TokenEncryptor>,
-    allow_insecure: bool,
+    encryptor: TokenEncryptor,
 }
 
 impl TokenManager {
@@ -61,62 +61,56 @@ impl TokenManager {
     /// Requires ARIATA_ENCRYPTION_KEY environment variable to be set.
     /// For development/testing, use `new_insecure()` instead.
     ///
-    /// # Panics
-    /// Panics if encryption key is not set and ARIATA_ALLOW_INSECURE is not "true"
-    pub fn new(db: PgPool) -> Self {
+    /// # Errors
+    /// Returns error if encryption key is not set or invalid
+    pub fn new(db: PgPool) -> Result<Self> {
         Self::with_config(db, OAuthProxyConfig::default())
     }
 
     /// Create a new token manager with custom configuration
     ///
     /// # Security
-    /// Requires ARIATA_ENCRYPTION_KEY to be set unless ARIATA_ALLOW_INSECURE=true
-    pub fn with_config(db: PgPool, proxy_config: OAuthProxyConfig) -> Self {
-        // Try to load encryption key from environment
-        let encryptor = TokenEncryptor::from_env().ok();
-        let allow_insecure = std::env::var("ARIATA_ALLOW_INSECURE")
-            .unwrap_or_default()
-            .to_lowercase() == "true";
+    /// Always requires ARIATA_ENCRYPTION_KEY to be set. Tokens are always encrypted.
+    ///
+    /// # Errors
+    /// Returns error if encryption key is not set or invalid
+    pub fn with_config(db: PgPool, proxy_config: OAuthProxyConfig) -> Result<Self> {
+        // Always require encryption - no insecure mode
+        let encryptor = TokenEncryptor::from_env()
+            .map_err(|_| Error::Configuration(
+                "ARIATA_ENCRYPTION_KEY environment variable is required. \
+                 Generate one with: openssl rand -base64 32".to_string()
+            ))?;
 
-        if encryptor.is_none() {
-            if allow_insecure {
-                tracing::warn!(
-                    "⚠️  INSECURE MODE: Token encryption disabled via ARIATA_ALLOW_INSECURE=true. \
-                     Tokens will be stored in plaintext. DO NOT USE IN PRODUCTION!"
-                );
-            } else {
-                panic!(
-                    "SECURITY ERROR: ARIATA_ENCRYPTION_KEY environment variable is required. \
-                     \nGenerate one with: openssl rand -base64 32 \
-                     \nFor development only, you can bypass this with ARIATA_ALLOW_INSECURE=true"
-                );
-            }
-        } else {
-            tracing::info!("✅ Token encryption enabled");
-        }
+        tracing::info!("✅ Token encryption enabled");
 
-        Self {
+        Ok(Self {
             db,
             client: Client::new(),
             proxy_config,
             encryptor,
-            allow_insecure,
-        }
+        })
     }
 
     /// Create a token manager in insecure mode (for testing only)
     ///
     /// # Warning
     /// This stores tokens in plaintext. NEVER use in production!
-    #[cfg(any(test, debug_assertions))]
+    #[cfg(test)]
     pub fn new_insecure(db: PgPool) -> Self {
-        tracing::warn!("Creating TokenManager in INSECURE mode - tokens will be stored in plaintext");
+        tracing::warn!("Creating TokenManager in INSECURE mode for tests - tokens in plaintext");
+
+        // Create a test encryption key
+        let test_key = base64::engine::general_purpose::STANDARD
+            .encode(b"test-key-for-unit-tests-only!");
+        let encryptor = TokenEncryptor::from_base64_key(&test_key)
+            .expect("test encryption key should be valid");
+
         Self {
-            db: db.clone(),
+            db,
             client: Client::new(),
             proxy_config: OAuthProxyConfig::default(),
-            encryptor: None,
-            allow_insecure: true,
+            encryptor,
         }
     }
 
@@ -157,21 +151,13 @@ impl TokenManager {
         let access_token_encrypted = access_token_encrypted
             .ok_or_else(|| Error::Authentication("No access token found".to_string()))?;
 
-        // Decrypt tokens if encryptor is available
-        let access_token = if let Some(ref encryptor) = self.encryptor {
-            encryptor.decrypt(&access_token_encrypted)?
-        } else {
-            access_token_encrypted
-        };
+        // Decrypt tokens
+        let access_token = self.encryptor.decrypt(&access_token_encrypted)?;
 
-        let refresh_token = if let Some(ref encryptor) = self.encryptor {
-            if let Some(ref rt) = refresh_token_encrypted {
-                Some(encryptor.decrypt(rt)?)
-            } else {
-                None
-            }
+        let refresh_token = if let Some(ref rt) = refresh_token_encrypted {
+            Some(self.encryptor.decrypt(rt)?)
         } else {
-            refresh_token_encrypted
+            None
         };
 
         Ok(OAuthToken {
@@ -232,23 +218,15 @@ impl TokenManager {
             .map(|seconds| Utc::now() + Duration::seconds(seconds));
 
         // Encrypt tokens before storing
-        let access_token_to_store = if let Some(ref encryptor) = self.encryptor {
-            encryptor.encrypt(&refresh_response.access_token)?
-        } else {
-            refresh_response.access_token.clone()
-        };
+        let access_token_to_store = self.encryptor.encrypt(&refresh_response.access_token)?;
 
         // Determine the refresh token to keep (new one if provided, otherwise keep old one)
         let new_refresh_token = refresh_response.refresh_token.clone().or_else(|| token.refresh_token.clone());
 
-        let refresh_token_to_store = if let Some(ref encryptor) = self.encryptor {
-            if let Some(ref rt) = &new_refresh_token {
-                Some(encryptor.encrypt(rt)?)
-            } else {
-                None
-            }
+        let refresh_token_to_store = if let Some(ref rt) = &new_refresh_token {
+            Some(self.encryptor.encrypt(rt)?)
         } else {
-            new_refresh_token.clone()
+            None
         };
 
         // Update tokens in database
@@ -290,20 +268,12 @@ impl TokenManager {
         let expires_at = expires_in.map(|seconds| Utc::now() + Duration::seconds(seconds));
 
         // Encrypt tokens before storing
-        let access_token_to_store = if let Some(ref encryptor) = self.encryptor {
-            encryptor.encrypt(&access_token)?
-        } else {
-            access_token
-        };
+        let access_token_to_store = self.encryptor.encrypt(&access_token)?;
 
-        let refresh_token_to_store = if let Some(ref encryptor) = self.encryptor {
-            if let Some(ref rt) = refresh_token {
-                Some(encryptor.encrypt(rt)?)
-            } else {
-                None
-            }
+        let refresh_token_to_store = if let Some(ref rt) = refresh_token {
+            Some(self.encryptor.encrypt(rt)?)
         } else {
-            refresh_token
+            None
         };
 
         let source_id: Uuid = sqlx::query_scalar(

@@ -17,6 +17,7 @@ COPY build.rs ./
 # Copy source code
 COPY src ./src
 COPY migrations ./migrations
+COPY .sqlx ./.sqlx
 
 # Build for release
 RUN cargo build --release

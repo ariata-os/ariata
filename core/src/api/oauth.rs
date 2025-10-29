@@ -64,11 +64,14 @@ pub async fn initiate_oauth_flow(
     redirect_uri: Option<String>,
     state: Option<String>,
 ) -> Result<OAuthAuthorizeResponse> {
+    // Validate provider exists in registry
+    super::validation::validate_provider_name(provider)?;
+
     let descriptor = crate::registry::get_source(provider)
-        .ok_or_else(|| Error::Other(format!("Unknown provider: {provider}")))?;
+        .ok_or_else(|| Error::InvalidInput(format!("Unknown provider: {provider}")))?;
 
     if descriptor.auth_type != crate::registry::AuthType::OAuth2 {
-        return Err(Error::Other(format!(
+        return Err(Error::InvalidInput(format!(
             "Provider {provider} does not use OAuth2 authentication"
         )));
     }
@@ -76,30 +79,33 @@ pub async fn initiate_oauth_flow(
     let oauth_config = descriptor
         .oauth_config
         .as_ref()
-        .ok_or_else(|| Error::Other(format!("No OAuth config for provider: {provider}")))?;
+        .ok_or_else(|| Error::Configuration(format!("No OAuth config for provider: {provider}")))?;
 
-    let state = state.unwrap_or_else(|| {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        format!("{:x}", rng.gen::<u128>())
-    });
+    // Generate signed state token (use provided state as session data)
+    let state_token = crate::oauth::state::generate_state(state.as_deref())?;
 
     let proxy_url =
         std::env::var("OAUTH_PROXY_URL").unwrap_or_else(|_| "https://auth.ariata.com".to_string());
 
     let redirect_uri = redirect_uri.unwrap_or_else(|| format!("{proxy_url}/callback"));
+
+    // Validate redirect URI if provided by user
+    if redirect_uri != format!("{proxy_url}/callback") {
+        super::validation::validate_redirect_uri(&redirect_uri, &["auth.ariata.com", "localhost"])?;
+    }
+
     let scopes = oauth_config.scopes.join(" ");
 
     let authorization_url = format!(
         "{proxy_url}/{provider}/auth?return_url={}&state={}&scope={}",
         urlencoding::encode(&redirect_uri),
-        urlencoding::encode(&state),
+        urlencoding::encode(&state_token),
         urlencoding::encode(&scopes)
     );
 
     Ok(OAuthAuthorizeResponse {
         authorization_url,
-        state,
+        state: state_token,
     })
 }
 
@@ -109,8 +115,20 @@ pub async fn handle_oauth_callback(
     db: &PgPool,
     params: &OAuthCallbackParams,
 ) -> Result<Source> {
+    // SECURITY: Validate state parameter to prevent CSRF attacks
+    if let Some(ref state) = params.state {
+        crate::oauth::state::validate_state(state)?;
+    } else {
+        return Err(Error::InvalidInput(
+            "Missing state parameter - possible CSRF attempt".to_string()
+        ));
+    }
+
+    // Validate provider exists
+    super::validation::validate_provider_name(&params.provider)?;
+
     let descriptor = crate::registry::get_source(&params.provider)
-        .ok_or_else(|| Error::Other(format!("Unknown provider: {}", params.provider)))?;
+        .ok_or_else(|| Error::InvalidInput(format!("Unknown provider: {}", params.provider)))?;
 
     // Get tokens either directly from callback or by exchanging code
     let (access_token, refresh_token, expires_in) = if let Some(token) = &params.access_token {
@@ -174,7 +192,7 @@ pub async fn handle_oauth_callback(
     };
 
     let source_name = format!("{} Account", descriptor.display_name);
-    let token_manager = std::sync::Arc::new(TokenManager::new(db.clone()));
+    let token_manager = std::sync::Arc::new(TokenManager::new(db.clone())?);
 
     let source_id = token_manager
         .store_initial_tokens(
@@ -212,7 +230,7 @@ pub async fn create_source(db: &PgPool, request: CreateSourceRequest) -> Result<
                 .token_expires_at
                 .map(|expires_at| (expires_at - Utc::now()).num_seconds());
 
-            let token_manager = std::sync::Arc::new(TokenManager::new(db.clone()));
+            let token_manager = std::sync::Arc::new(TokenManager::new(db.clone())?);
             token_manager
                 .store_initial_tokens(
                     &request.source_type,

@@ -14,7 +14,7 @@ use crate::{
     error::Result,
     sources::{
         auth::SourceAuth,
-        base::{SyncLogger, SyncMode, SyncResult},
+        base::{SyncMode, SyncResult},
         stream::Stream,
     },
 };
@@ -70,36 +70,10 @@ impl GoogleCalendarStream {
     /// Sync calendar events with explicit sync mode
     #[tracing::instrument(skip(self), fields(source_id = %self.source_id, mode = ?sync_mode))]
     pub async fn sync_with_mode(&self, sync_mode: &SyncMode) -> Result<SyncResult> {
-        let started_at = Utc::now();
-        let logger = SyncLogger::new(self.db.clone());
-
         tracing::info!("Starting calendar sync");
 
-        // Execute the sync
-        match self.sync_internal(sync_mode).await {
-            Ok(result) => {
-                // Log success to database
-                if let Err(e) = logger
-                    .log_success(self.source_id, "calendar", sync_mode, &result)
-                    .await
-                {
-                    tracing::warn!(error = %e, "Failed to log sync success");
-                }
-
-                Ok(result)
-            }
-            Err(e) => {
-                // Log failure to database
-                if let Err(log_err) = logger
-                    .log_failure(self.source_id, "calendar", sync_mode, started_at, &e)
-                    .await
-                {
-                    tracing::warn!(error = %log_err, "Failed to log sync failure");
-                }
-
-                Err(e)
-            }
-        }
+        // Execute the sync (logging is handled by job executor)
+        self.sync_internal(sync_mode).await
     }
 
     /// Internal sync implementation
@@ -210,31 +184,74 @@ impl GoogleCalendarStream {
         }
     }
 
-    /// Get all events (full sync)
+    /// Get all events (full sync) with pagination
     async fn sync_full(&self, calendar_id: &str) -> Result<EventsResponse> {
         // Calculate time bounds based on configuration
         let (min_time_dt, max_time_dt) = self.config.calculate_time_bounds();
 
-        let mut params = vec![
-            ("maxResults", self.config.max_events_per_sync.to_string()),
-            ("singleEvents", "true".to_string()),
-            ("orderBy", "updated".to_string()),
-            ("showDeleted", "false".to_string()),
-            ("showHiddenInvitations", "false".to_string()),
-        ];
+        let mut all_events = Vec::new();
+        let mut page_token: Option<String> = None;
+        let mut final_sync_token: Option<String> = None;
 
-        if let Some(min) = min_time_dt {
-            params.push(("timeMin", min.to_rfc3339()));
+        loop {
+            let mut params = vec![
+                ("maxResults", self.config.max_events_per_sync.to_string()),
+                ("singleEvents", "true".to_string()),
+                ("orderBy", "updated".to_string()),
+                ("showDeleted", "false".to_string()),
+                ("showHiddenInvitations", "false".to_string()),
+            ];
+
+            if let Some(min) = min_time_dt {
+                params.push(("timeMin", min.to_rfc3339()));
+            }
+            if let Some(max) = max_time_dt {
+                params.push(("timeMax", max.to_rfc3339()));
+            }
+
+            // Add page token if we have one
+            if let Some(ref token) = page_token {
+                params.push(("pageToken", token.clone()));
+            }
+
+            let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+
+            let response: EventsResponse = self.client
+                .get_with_params(&format!("calendars/{calendar_id}/events"), &param_refs)
+                .await?;
+
+            // Accumulate events from this page
+            all_events.extend(response.items);
+
+            // Save the sync token from the last page
+            if response.next_sync_token.is_some() {
+                final_sync_token = response.next_sync_token;
+            }
+
+            // Check if there are more pages
+            page_token = response.next_page_token;
+            if page_token.is_none() {
+                break;
+            }
+
+            tracing::debug!(
+                events_so_far = all_events.len(),
+                has_more = page_token.is_some(),
+                "Fetched calendar events page"
+            );
         }
-        if let Some(max) = max_time_dt {
-            params.push(("timeMax", max.to_rfc3339()));
-        }
 
-        let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        tracing::info!(
+            total_events = all_events.len(),
+            calendar_id = %calendar_id,
+            "Completed paginated calendar sync"
+        );
 
-        self.client
-            .get_with_params(&format!("calendars/{calendar_id}/events"), &param_refs)
-            .await
+        Ok(EventsResponse {
+            items: all_events,
+            next_sync_token: final_sync_token,
+            next_page_token: None, // All pages consumed
+        })
     }
 
     /// Insert or update an event
@@ -658,15 +675,15 @@ impl Stream for GoogleCalendarStream {
 #[cfg(test)]
 mod tests {
 
-    use crate::sources::google::config::{GoogleCalendarConfig, SyncDirection};
+    use crate::sources::base::SyncStrategy;
+    use crate::sources::google::config::GoogleCalendarConfig;
     use chrono::{Duration, Utc};
 
     #[test]
-    fn test_config_time_bounds_past() {
-        // Test past sync
+    fn test_config_time_bounds_lookback() {
+        // Test lookback sync with TimeWindow strategy
         let config = GoogleCalendarConfig {
-            sync_window_days: 30,
-            sync_direction: SyncDirection::Past,
+            sync_strategy: SyncStrategy::TimeWindow { days_back: 30 },
             ..Default::default()
         };
 
@@ -689,28 +706,16 @@ mod tests {
     }
 
     #[test]
-    fn test_config_time_bounds_future() {
-        // Test future sync
+    fn test_config_time_bounds_full_history() {
+        // Test full history strategy
         let config = GoogleCalendarConfig {
-            sync_window_days: 7,
-            sync_direction: SyncDirection::Future,
+            sync_strategy: SyncStrategy::FullHistory { max_records: None },
             ..Default::default()
         };
 
         let (min, max) = config.calculate_time_bounds();
-        let now = Utc::now();
 
-        assert!(min.is_some());
-        assert!(max.is_some());
-
-        let min_time = min.unwrap();
-        let max_time = max.unwrap();
-
-        let diff = (min_time - now).num_seconds().abs();
-        assert!(diff < 60, "Min time should be ~now for future sync");
-
-        let expected_max = now + Duration::days(7);
-        let diff = (max_time - expected_max).num_seconds().abs();
-        assert!(diff < 60, "Max time should be ~7 days from now");
+        assert!(min.is_none(), "Full history should have no min bound");
+        assert!(max.is_none(), "Full history should have no max bound");
     }
 }

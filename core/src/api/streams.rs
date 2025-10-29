@@ -194,6 +194,26 @@ pub async fn enable_stream(
     .await
     .map_err(|e| Error::Database(format!("Failed to enable stream: {e}")))?;
 
+    // Trigger initial sync in the background
+    // This provides immediate feedback and validates the connection works
+    let db_clone = db.clone();
+    let stream_name_clone = stream_name.to_string();
+    tokio::spawn(async move {
+        match crate::api::jobs::trigger_stream_sync(&db_clone, source_id, &stream_name_clone, None).await {
+            Ok(response) => {
+                tracing::info!(
+                    "Initial sync job created for {}: job_id={}, status={}",
+                    stream_name_clone,
+                    response.job_id,
+                    response.status
+                );
+            }
+            Err(e) => {
+                tracing::error!("Failed to create initial sync job for {}: {}", stream_name_clone, e);
+            }
+        }
+    });
+
     // Return updated stream info
     get_stream_info(db, source_id, stream_name).await
 }

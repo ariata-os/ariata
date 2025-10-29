@@ -44,6 +44,9 @@ pub struct SourceDescriptor {
 
     /// OAuth-specific configuration (if applicable)
     pub oauth_config: Option<OAuthConfig>,
+
+    /// Iconify icon name for UI display (e.g., "ri:google-fill")
+    pub icon: Option<&'static str>,
 }
 
 /// OAuth configuration details for a source

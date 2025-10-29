@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::sources::base::SyncStrategy;
+
 /// Configuration for Notion Pages sync
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotionPagesConfig {
@@ -17,9 +19,10 @@ pub struct NotionPagesConfig {
     #[serde(default)]
     pub database_ids: Vec<String>,
 
-    /// Number of days for initial sync lookback (default: 365)
-    #[serde(default = "default_initial_sync_window_days")]
-    pub initial_sync_window_days: u32,
+    /// Strategy for sync operations (default: FullHistory)
+    /// Note: Notion API does not support time-based filtering, so only FullHistory is effective
+    #[serde(default = "default_sync_strategy")]
+    pub sync_strategy: SyncStrategy,
 }
 
 impl Default for NotionPagesConfig {
@@ -28,7 +31,7 @@ impl Default for NotionPagesConfig {
             page_size: default_page_size(),
             include_archived: false,
             database_ids: vec![],
-            initial_sync_window_days: default_initial_sync_window_days(),
+            sync_strategy: default_sync_strategy(),
         }
     }
 }
@@ -49,8 +52,9 @@ fn default_page_size() -> u32 {
     100
 }
 
-fn default_initial_sync_window_days() -> u32 {
-    365
+fn default_sync_strategy() -> SyncStrategy {
+    // Notion doesn't support time-based filtering, so always use FullHistory
+    SyncStrategy::FullHistory { max_records: None }
 }
 
 #[cfg(test)]
@@ -63,7 +67,10 @@ mod tests {
         assert_eq!(config.page_size, 100);
         assert!(!config.include_archived);
         assert_eq!(config.database_ids.len(), 0);
-        assert_eq!(config.initial_sync_window_days, 365);
+        assert!(matches!(
+            config.sync_strategy,
+            SyncStrategy::FullHistory { max_records: None }
+        ));
     }
 
     #[test]
@@ -74,6 +81,5 @@ mod tests {
 
         assert_eq!(config.page_size, deserialized.page_size);
         assert_eq!(config.include_archived, deserialized.include_archived);
-        assert_eq!(config.initial_sync_window_days, deserialized.initial_sync_window_days);
     }
 }

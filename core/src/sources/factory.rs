@@ -100,8 +100,8 @@ impl StreamFactory {
     async fn create_auth(&self, source_id: Uuid, source_type: &str) -> Result<SourceAuth> {
         match source_type {
             "google" | "strava" | "notion" => {
-                // Create a new TokenManager (cheap operation - just wraps the db pool)
-                let token_manager = Arc::new(TokenManager::new(self.db.clone()));
+                // Create a new TokenManager (requires encryption key)
+                let token_manager = Arc::new(TokenManager::new(self.db.clone())?);
                 Ok(SourceAuth::oauth2(source_id, token_manager))
             }
             "ios" | "mac" => {

@@ -1,6 +1,5 @@
 //! Ariata client - Main interface for the Ariata data pipeline
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -40,11 +39,6 @@ impl Ariata {
             storage_status: format!("{storage_status:?}"),
             active_sources: 0, // TODO: Implement
         })
-    }
-
-    /// Execute a SQL query
-    pub async fn query(&self, sql: &str) -> Result<Vec<HashMap<String, Value>>> {
-        self.database.query(sql).await
     }
 
     /// Ingest data from a source

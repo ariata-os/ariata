@@ -1,12 +1,12 @@
 {
-  "id": "3ba9929e-82a4-4937-a5b1-6cdde4fc0333",
+  "id": "23bb6a17-e981-46cb-af92-60d511fa25da",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.dashboards": {
+    "app.dashboards": {
       "name": "dashboards",
-      "schema": "",
+      "schema": "app",
       "columns": {
         "id": {
           "name": "id",
@@ -63,9 +63,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.preferences": {
+    "app.preferences": {
       "name": "preferences",
-      "schema": "",
+      "schema": "app",
       "columns": {
         "key": {
           "name": "key",
@@ -95,9 +95,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.recently_viewed": {
+    "app.recently_viewed": {
       "name": "recently_viewed",
-      "schema": "",
+      "schema": "app",
       "columns": {
         "id": {
           "name": "id",
@@ -140,9 +140,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.saved_queries": {
+    "app.saved_queries": {
       "name": "saved_queries",
-      "schema": "",
+      "schema": "app",
       "columns": {
         "id": {
           "name": "id",
@@ -200,7 +200,9 @@
     }
   },
   "enums": {},
-  "schemas": {},
+  "schemas": {
+    "app": "app"
+  },
   "sequences": {},
   "roles": {},
   "policies": {},

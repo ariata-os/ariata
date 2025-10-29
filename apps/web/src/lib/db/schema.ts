@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uuid } from 'drizzle-orm/pg-core';
+import { pgSchema, text, timestamp, boolean, uuid } from 'drizzle-orm/pg-core';
 
 /**
  * Application Database Schema
@@ -15,60 +15,43 @@ import { pgTable, text, timestamp, boolean, uuid } from 'drizzle-orm/pg-core';
  * Future: 'transform' schema for Python transformation layer
  */
 
+// Define the 'app' schema
+export const appSchema = pgSchema('app');
+
 // User preferences (theme, settings, etc.)
-export const preferences = pgTable(
-	'preferences',
-	{
-		key: text('key').primaryKey(),
-		value: text('value').notNull(),
-		updatedAt: timestamp('updated_at').notNull().defaultNow()
-	},
-	() => [],
-	{ schema: 'app' }
-);
+export const preferences = appSchema.table('preferences', {
+	key: text('key').primaryKey(),
+	value: text('value').notNull(),
+	updatedAt: timestamp('updated_at').notNull().defaultNow()
+});
 
 // Saved dashboards and visualizations
-export const dashboards = pgTable(
-	'dashboards',
-	{
-		id: uuid('id').primaryKey().defaultRandom(),
-		name: text('name').notNull(),
-		description: text('description'),
-		layout: text('layout').notNull(), // JSON string with widget positions
-		isDefault: boolean('is_default').notNull().default(false),
-		createdAt: timestamp('created_at').notNull().defaultNow(),
-		updatedAt: timestamp('updated_at').notNull().defaultNow()
-	},
-	() => [],
-	{ schema: 'app' }
-);
+export const dashboards = appSchema.table('dashboards', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	description: text('description'),
+	layout: text('layout').notNull(), // JSON string with widget positions
+	isDefault: boolean('is_default').notNull().default(false),
+	createdAt: timestamp('created_at').notNull().defaultNow(),
+	updatedAt: timestamp('updated_at').notNull().defaultNow()
+});
 
 // Saved queries for exploring data
-export const savedQueries = pgTable(
-	'saved_queries',
-	{
-		id: uuid('id').primaryKey().defaultRandom(),
-		name: text('name').notNull(),
-		description: text('description'),
-		query: text('query').notNull(), // SQL query string
-		sourceId: text('source_id'), // Optional: associated source from ELT schema
-		createdAt: timestamp('created_at').notNull().defaultNow(),
-		updatedAt: timestamp('updated_at').notNull().defaultNow()
-	},
-	() => [],
-	{ schema: 'app' }
-);
+export const savedQueries = appSchema.table('saved_queries', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	description: text('description'),
+	query: text('query').notNull(), // SQL query string
+	sourceId: text('source_id'), // Optional: associated source from ELT schema
+	createdAt: timestamp('created_at').notNull().defaultNow(),
+	updatedAt: timestamp('updated_at').notNull().defaultNow()
+});
 
 // Recently viewed sources (for quick access)
-export const recentlyViewed = pgTable(
-	'recently_viewed',
-	{
-		id: uuid('id').primaryKey().defaultRandom(),
-		sourceId: text('source_id').notNull(), // References sources.id from elt schema
-		sourceName: text('source_name').notNull(),
-		sourceType: text('source_type').notNull(),
-		viewedAt: timestamp('viewed_at').notNull().defaultNow()
-	},
-	() => [],
-	{ schema: 'app' }
-);
+export const recentlyViewed = appSchema.table('recently_viewed', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	sourceId: text('source_id').notNull(), // References sources.id from elt schema
+	sourceName: text('source_name').notNull(),
+	sourceType: text('source_type').notNull(),
+	viewedAt: timestamp('viewed_at').notNull().defaultNow()
+});

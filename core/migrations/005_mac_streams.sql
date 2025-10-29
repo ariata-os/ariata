@@ -41,6 +41,10 @@ CREATE INDEX idx_mac_apps_source_time ON stream_mac_apps(source_id, timestamp DE
 CREATE INDEX idx_mac_apps_bundle ON stream_mac_apps(bundle_id, timestamp DESC);
 CREATE INDEX idx_mac_apps_name ON stream_mac_apps(app_name);
 
+-- Idempotency constraint: one app usage record per device per timestamp per app
+CREATE UNIQUE INDEX unique_mac_apps_usage
+    ON stream_mac_apps(source_id, timestamp, app_name);
+
 -- Comments
 COMMENT ON TABLE stream_mac_apps IS 'macOS application usage tracking including active apps and window titles';
 COMMENT ON COLUMN stream_mac_apps.app_name IS 'User-facing application name';
@@ -48,6 +52,8 @@ COMMENT ON COLUMN stream_mac_apps.bundle_id IS 'macOS bundle identifier for the 
 COMMENT ON COLUMN stream_mac_apps.window_title IS 'Title of the active window (may contain sensitive info)';
 COMMENT ON COLUMN stream_mac_apps.duration_seconds IS 'Duration the app was active in seconds';
 COMMENT ON COLUMN stream_mac_apps.is_frontmost IS 'Whether the app was in the foreground';
+COMMENT ON INDEX unique_mac_apps_usage
+    IS 'Ensures idempotent inserts: one app usage record per device per timestamp per app';
 
 -----------------------------------------------------------
 
@@ -84,11 +90,17 @@ CREATE INDEX idx_mac_browser_source_time ON stream_mac_browser(source_id, timest
 CREATE INDEX idx_mac_browser_domain ON stream_mac_browser(domain, timestamp DESC);
 CREATE INDEX idx_mac_browser_url ON stream_mac_browser USING hash(url);
 
+-- Idempotency constraint: one URL visit per device per timestamp per URL
+CREATE UNIQUE INDEX unique_mac_browser_visit
+    ON stream_mac_browser(source_id, url, timestamp);
+
 -- Comments
 COMMENT ON TABLE stream_mac_browser IS 'macOS browser history from Safari, Chrome, Firefox, etc.';
 COMMENT ON COLUMN stream_mac_browser.url IS 'Full URL visited';
 COMMENT ON COLUMN stream_mac_browser.domain IS 'Extracted domain name for easier filtering';
 COMMENT ON COLUMN stream_mac_browser.visit_duration IS 'Time spent on the page in seconds';
+COMMENT ON INDEX unique_mac_browser_visit
+    IS 'Ensures idempotent inserts: one browser visit per device per URL per timestamp';
 
 -----------------------------------------------------------
 
@@ -133,8 +145,15 @@ CREATE INDEX idx_mac_imessage_contact ON stream_mac_imessage(contact_id, timesta
 CREATE INDEX idx_mac_imessage_search ON stream_mac_imessage USING GIN (to_tsvector('english', message_text))
     WHERE message_text IS NOT NULL;
 
+-- Idempotency constraint: one message per device per timestamp per contact per direction
+ALTER TABLE stream_mac_imessage
+    ADD CONSTRAINT unique_mac_imessage_message
+    UNIQUE (source_id, timestamp, contact_id, is_from_me);
+
 -- Comments
 COMMENT ON TABLE stream_mac_imessage IS 'macOS iMessage and SMS history';
+COMMENT ON CONSTRAINT unique_mac_imessage_message ON stream_mac_imessage
+    IS 'Ensures idempotent inserts: one message per device per timestamp per contact per direction';
 COMMENT ON COLUMN stream_mac_imessage.message_text IS 'Message body text (may be null for attachment-only messages)';
 COMMENT ON COLUMN stream_mac_imessage.is_from_me IS 'True if message was sent by user, false if received';
 COMMENT ON COLUMN stream_mac_imessage.contact_name IS 'Display name of contact';

@@ -15,9 +15,17 @@ pub struct Database {
 impl Database {
     /// Create a new database connection
     pub fn new(postgres_url: &str) -> Result<Self> {
+        // Get max connections from environment (default: 10)
+        let max_connections = std::env::var("DATABASE_MAX_CONNECTIONS")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(10);
+
+        tracing::info!("Database pool max connections: {}", max_connections);
+
         // Pool will be created on first use
         let pool = PgPoolOptions::new()
-            .max_connections(10)
+            .max_connections(max_connections)
             .connect_lazy(postgres_url)?;
 
         Ok(Self { pool })
@@ -61,8 +69,8 @@ impl Database {
     /// Execute a query and return results
     ///
     /// # Warning
-    /// This method is deprecated and should only be used for testing or debugging.
-    /// For production code, use sqlx::query_as!() macros for type-safe queries.
+    /// This method is deprecated and removed from public API.
+    /// Use sqlx::query_as!() macros for type-safe queries instead.
     ///
     /// # Security
     /// This method does not provide SQL injection protection. Only use with trusted input.
@@ -70,7 +78,8 @@ impl Database {
         since = "0.1.0",
         note = "Use sqlx::query_as!() macros for type-safe queries instead"
     )]
-    pub async fn query(&self, sql: &str) -> Result<Vec<HashMap<String, Value>>> {
+    #[allow(dead_code)]
+    async fn query(&self, sql: &str) -> Result<Vec<HashMap<String, Value>>> {
         let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
 
         let mut results = Vec::new();

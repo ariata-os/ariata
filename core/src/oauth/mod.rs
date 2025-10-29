@@ -4,6 +4,7 @@
 //! For new code, use TokenManager directly with the StreamFactory pattern.
 
 pub mod encryption;
+pub mod state;
 pub mod token_manager;
 
 // Re-export the main types

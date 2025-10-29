@@ -20,6 +20,7 @@ impl SourceRegistry for NotionSource {
                 auth_url: "https://api.notion.com/v1/oauth/authorize",
                 token_url: "https://api.notion.com/v1/oauth/token",
             }),
+            icon: Some("simple-icons:notion"),
             streams: vec![
                 // Pages stream
                 StreamDescriptor::new("pages")
@@ -52,22 +53,34 @@ fn pages_config_schema() -> serde_json::Value {
                 "default": false,
                 "description": "Include archived pages"
             },
-            "sync_page_content": {
-                "type": "boolean",
-                "default": true,
-                "description": "Sync full page content (blocks and text)"
+            "sync_strategy": {
+                "type": "object",
+                "description": "Strategy for sync operations (Note: Notion API doesn't support time-based filtering, so only full_history is effective)",
+                "default": {
+                    "type": "full_history",
+                    "max_records": null
+                },
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "required": ["type"],
+                        "properties": {
+                            "type": { "const": "full_history" },
+                            "max_records": {
+                                "type": "integer",
+                                "nullable": true,
+                                "description": "Optional limit on number of pages to sync"
+                            }
+                        }
+                    }
+                ]
             },
-            "sync_properties": {
-                "type": "boolean",
-                "default": true,
-                "description": "Sync page properties and metadata"
-            },
-            "max_pages_per_sync": {
+            "page_size": {
                 "type": "integer",
                 "default": 100,
                 "minimum": 1,
-                "maximum": 500,
-                "description": "Maximum number of pages to fetch per sync"
+                "maximum": 100,
+                "description": "Number of pages per API request batch"
             }
         }
     })
@@ -78,9 +91,11 @@ fn pages_config_example() -> serde_json::Value {
     json!({
         "database_ids": [],
         "include_archived": false,
-        "sync_page_content": true,
-        "sync_properties": true,
-        "max_pages_per_sync": 100
+        "sync_strategy": {
+            "type": "full_history",
+            "max_records": null
+        },
+        "page_size": 100
     })
 }
 

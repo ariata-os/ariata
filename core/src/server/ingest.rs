@@ -1,9 +1,9 @@
 //! Ingestion API for receiving data from all sources
 
 use axum::{
-    extract::{Json, State, Query},
+    extract::{Json, State},
     response::{IntoResponse, Response},
-    http::StatusCode,
+    http::{StatusCode, HeaderMap},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -55,12 +55,6 @@ pub struct IngestResponse {
     pub activity_id: String,
 }
 
-/// Authentication query parameters
-#[derive(Debug, Deserialize)]
-pub struct AuthQuery {
-    pub device_token: Option<String>,
-}
-
 /// Shared application state
 #[derive(Clone)]
 pub struct AppState {
@@ -71,19 +65,34 @@ pub struct AppState {
 /// Main ingestion handler
 pub async fn ingest(
     State(state): State<AppState>,
-    Query(auth_query): Query<AuthQuery>,
+    headers: HeaderMap,
     Json(payload): Json<IngestRequest>,
 ) -> Response {
-    // Validate authentication
-    if let Some(token) = auth_query.device_token {
-        if let Err(e) = validate_device_token(&state.db, &token, &payload.device_id).await {
+    // Extract and validate device token from Authorization header
+    let device_token = match extract_device_token(&headers) {
+        Some(token) => token,
+        None => {
             return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({
-                "error": e.to_string()
+                "error": "Missing Authorization header. Device token is required.",
+                "hint": "Include 'Authorization: Bearer <device_token>' header"
             }))).into_response();
         }
-    } else {
-        // For now, allow without token for testing
-        tracing::warn!("Ingestion without device token - allowing for development");
+    };
+
+    // Validate device token and get source_id
+    let source_id = match crate::api::validate_device_token(state.db.pool(), &device_token).await {
+        Ok(id) => id,
+        Err(e) => {
+            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({
+                "error": "Invalid or revoked device token",
+                "message": e.to_string()
+            }))).into_response();
+        }
+    };
+
+    // Update last_seen timestamp
+    if let Err(e) = crate::api::update_last_seen(state.db.pool(), source_id).await {
+        tracing::warn!("Failed to update last_seen: {}", e);
     }
 
     // Validate source and stream exist
@@ -154,22 +163,13 @@ pub async fn ingest(
     })).into_response()
 }
 
-/// Validate device token
-async fn validate_device_token(
-    _db: &Database,
-    _token: &str,
-    _device_id: &str,
-) -> Result<()> {
-    // SECURITY: Token validation not implemented!
-    // Device sources currently have no authentication.
-    //
-    // For production deployment, implement one of:
-    // 1. JWT-based device tokens (signed by auth server)
-    // 2. API keys stored in database with rate limiting
-    // 3. mTLS client certificates for device authentication
-    //
-    // Current behavior: Accept all requests (suitable for single-user localhost only)
-    Ok(())
+/// Extract device token from Authorization header
+fn extract_device_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(|s| s.to_string())
 }
 
 /// Validate source and stream configuration exists
@@ -378,7 +378,8 @@ mod tests {
             "timestamp": "2024-01-01T00:00:00Z"
         }"#;
 
-        let request: IngestRequest = serde_json::from_str(json).unwrap();
+        let request: IngestRequest = serde_json::from_str(json)
+            .expect("test JSON should be valid");
         assert_eq!(request.source, "ios");
         assert_eq!(request.stream, "healthkit");
         assert_eq!(request.records.len(), 1);

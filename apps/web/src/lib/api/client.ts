@@ -10,70 +10,43 @@
 
 const API_BASE = '/api';
 
-export interface Source {
-	id: string;
-	type: string;
-	name: string;
-	is_active: boolean;
-	last_sync_at: string | null;
-	created_at: string;
-	updated_at: string;
-	enabled_streams_count: number;
-	total_streams_count: number;
-}
-
-export interface StreamInfo {
-	name: string;
-	display_name: string;
-	description: string;
-	table_name: string;
-	is_enabled: boolean;
-	supports_incremental: boolean;
-	supports_full_refresh: boolean;
-	cron_schedule: string | null;
-	default_cron_schedule: string | null;
-	last_sync_at: string | null;
-	last_sync_status: string | null;
-}
-
-export interface SyncLog {
-	id: string;
-	source_id: string;
-	stream_name: string;
-	sync_mode: string;
-	status: string;
-	records_fetched: number | null;
-	records_written: number | null;
-	records_failed: number | null;
-	duration_ms: number | null;
-	error_message: string | null;
-	started_at: string;
-	completed_at: string | null;
-}
-
-export interface EnableStreamRequest {
-	config?: Record<string, unknown>;
-	cron_schedule?: string | null;
-}
-
-export interface SyncStreamRequest {
-	mode?: 'incremental' | 'full_refresh';
+// Catalog
+export async function listCatalogSources() {
+	const res = await fetch(`${API_BASE}/catalog/sources`);
+	if (!res.ok) throw new Error(`Failed to list catalog sources: ${res.statusText}`);
+	return res.json();
 }
 
 // Sources
-export async function listSources(): Promise<Source[]> {
+export async function listSources() {
 	const res = await fetch(`${API_BASE}/sources`);
 	if (!res.ok) throw new Error(`Failed to list sources: ${res.statusText}`);
 	return res.json();
 }
 
-export async function getSource(sourceId: string): Promise<Source> {
+export async function getSource(sourceId: string) {
 	const res = await fetch(`${API_BASE}/sources/${sourceId}`);
 	if (!res.ok) throw new Error(`Failed to get source: ${res.statusText}`);
 	return res.json();
 }
 
-export async function deleteSource(sourceId: string): Promise<void> {
+export async function pauseSource(sourceId: string) {
+	const res = await fetch(`${API_BASE}/sources/${sourceId}/pause`, {
+		method: 'POST'
+	});
+	if (!res.ok) throw new Error(`Failed to pause source: ${res.statusText}`);
+	return res.json();
+}
+
+export async function resumeSource(sourceId: string) {
+	const res = await fetch(`${API_BASE}/sources/${sourceId}/resume`, {
+		method: 'POST'
+	});
+	if (!res.ok) throw new Error(`Failed to resume source: ${res.statusText}`);
+	return res.json();
+}
+
+export async function deleteSource(sourceId: string) {
 	const res = await fetch(`${API_BASE}/sources/${sourceId}`, {
 		method: 'DELETE'
 	});
@@ -81,7 +54,7 @@ export async function deleteSource(sourceId: string): Promise<void> {
 }
 
 // Streams
-export async function listStreams(sourceId: string): Promise<StreamInfo[]> {
+export async function listStreams(sourceId: string) {
 	const res = await fetch(`${API_BASE}/sources/${sourceId}/streams`);
 	if (!res.ok) throw new Error(`Failed to list streams: ${res.statusText}`);
 	return res.json();
@@ -90,8 +63,8 @@ export async function listStreams(sourceId: string): Promise<StreamInfo[]> {
 export async function enableStream(
 	sourceId: string,
 	streamName: string,
-	request: EnableStreamRequest = {}
-): Promise<void> {
+	request: any = {}
+) {
 	const res = await fetch(`${API_BASE}/sources/${sourceId}/streams/${streamName}/enable`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -100,7 +73,7 @@ export async function enableStream(
 	if (!res.ok) throw new Error(`Failed to enable stream: ${res.statusText}`);
 }
 
-export async function disableStream(sourceId: string, streamName: string): Promise<void> {
+export async function disableStream(sourceId: string, streamName: string) {
 	const res = await fetch(`${API_BASE}/sources/${sourceId}/streams/${streamName}/disable`, {
 		method: 'POST'
 	});
@@ -110,47 +83,100 @@ export async function disableStream(sourceId: string, streamName: string): Promi
 export async function syncStream(
 	sourceId: string,
 	streamName: string,
-	request: SyncStreamRequest = {}
-): Promise<SyncLog> {
+	request: any = {}
+): Promise<{ job_id: string; status: string; started_at: string }> {
 	const res = await fetch(`${API_BASE}/sources/${sourceId}/streams/${streamName}/sync`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(request)
 	});
-	if (!res.ok) throw new Error(`Failed to sync stream: ${res.statusText}`);
+	if (!res.ok) {
+		const error = await res.json().catch(() => ({ error: res.statusText }));
+		throw new Error(error.error || `Failed to sync stream: ${res.statusText}`);
+	}
 	return res.json();
 }
 
-// Sync Logs
-export async function listSyncLogs(sourceId?: string, limit: number = 50): Promise<SyncLog[]> {
-	const params = new URLSearchParams();
-	if (sourceId) params.set('source_id', sourceId);
-	params.set('limit', limit.toString());
+// Jobs
+export interface Job {
+	id: string;
+	job_type: 'sync' | 'transform';
+	status: 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+	source_id?: string;
+	stream_name?: string;
+	sync_mode?: 'full_refresh' | 'incremental';
+	transform_id?: string;
+	started_at: string;
+	completed_at?: string;
+	records_processed: number;
+	error_message?: string;
+	error_class?: string;
+	metadata: any;
+	created_at: string;
+	updated_at: string;
+}
 
-	const res = await fetch(`${API_BASE}/logs?${params}`);
-	if (!res.ok) throw new Error(`Failed to list sync logs: ${res.statusText}`);
+export async function getJobStatus(jobId: string): Promise<Job> {
+	const res = await fetch(`${API_BASE}/jobs/${jobId}`);
+	if (!res.ok) throw new Error(`Failed to get job status: ${res.statusText}`);
 	return res.json();
+}
+
+export async function queryJobs(params: {
+	source_id?: string;
+	status?: string[]; // e.g., ['succeeded', 'failed']
+	limit?: number;
+}): Promise<Job[]> {
+	const queryParams = new URLSearchParams();
+	if (params.source_id) queryParams.set('source_id', params.source_id);
+	if (params.status && params.status.length > 0) {
+		queryParams.set('status', params.status.join(','));
+	}
+	if (params.limit) queryParams.set('limit', params.limit.toString());
+
+	const res = await fetch(`${API_BASE}/jobs?${queryParams}`);
+	if (!res.ok) throw new Error(`Failed to query jobs: ${res.statusText}`);
+	return res.json();
+}
+
+export async function cancelJob(jobId: string): Promise<void> {
+	const res = await fetch(`${API_BASE}/jobs/${jobId}/cancel`, {
+		method: 'POST'
+	});
+	if (!res.ok) throw new Error(`Failed to cancel job: ${res.statusText}`);
 }
 
 // OAuth
-export function getOAuthUrl(sourceType: string, redirectUri: string): string {
-	const params = new URLSearchParams({
-		source_type: sourceType,
-		redirect_uri: redirectUri
-	});
-	return `${API_BASE}/oauth/authorize?${params}`;
+export async function initiateOAuth(provider: string, redirectUri?: string, state?: string) {
+	const params = new URLSearchParams();
+	if (redirectUri) params.set('redirect_uri', redirectUri);
+	if (state) params.set('state', state);
+
+	const url = `${API_BASE}/sources/${provider}/authorize${params.toString() ? `?${params}` : ''}`;
+	const res = await fetch(url, { method: 'POST' });
+	if (!res.ok) throw new Error(`Failed to initiate OAuth: ${res.statusText}`);
+	return res.json() as Promise<{ authorization_url: string; state: string }>;
 }
 
-export async function handleOAuthCallback(
-	code: string,
-	state: string,
-	sourceType: string
-): Promise<Source> {
-	const res = await fetch(`${API_BASE}/oauth/callback`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ code, state, source_type: sourceType })
+export async function handleOAuthCallback(params: {
+	code?: string;
+	access_token?: string;
+	refresh_token?: string;
+	expires_in?: number;
+	provider: string;
+	state?: string;
+	workspace_id?: string;
+	workspace_name?: string;
+	bot_id?: string;
+}) {
+	const queryParams = new URLSearchParams();
+	Object.entries(params).forEach(([key, value]) => {
+		if (value !== undefined) {
+			queryParams.set(key, value.toString());
+		}
 	});
+
+	const res = await fetch(`${API_BASE}/sources/callback?${queryParams}`);
 	if (!res.ok) throw new Error(`Failed to complete OAuth: ${res.statusText}`);
 	return res.json();
 }

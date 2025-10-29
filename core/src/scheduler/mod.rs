@@ -61,7 +61,7 @@ impl Scheduler {
 
         // Schedule each stream
         for (source_id, source_name, source_type, stream_name, cron_schedule) in streams {
-            let cron = cron_schedule.unwrap(); // Already filtered by WHERE clause
+            let cron = cron_schedule.expect("cron_schedule is NOT NULL per WHERE clause");
 
             let db = self.db.clone();
 
@@ -83,18 +83,18 @@ impl Scheduler {
                 Box::pin(async move {
                     tracing::info!("Running scheduled sync: {} ({})", stream_name_str, source_name);
 
-                    // Use the public API!
-                    match crate::sync_stream(&db, source_id, &stream_name, None).await {
-                        Ok(log) => {
+                    // Use the job-based API
+                    match crate::api::jobs::trigger_stream_sync(&db, source_id, &stream_name, None).await {
+                        Ok(response) => {
                             tracing::info!(
-                                "Scheduled sync completed: {} - {} records in {}ms",
+                                "Scheduled sync job created: {} - job_id={}, status={}",
                                 stream_name_str,
-                                log.records_written.unwrap_or(0),
-                                log.duration_ms.unwrap_or(0)
+                                response.job_id,
+                                response.status
                             );
                         }
                         Err(e) => {
-                            tracing::error!("Scheduled sync failed for {}: {}", stream_name_str, e);
+                            tracing::error!("Failed to create scheduled sync job for {}: {}", stream_name_str, e);
                         }
                     }
                 })
