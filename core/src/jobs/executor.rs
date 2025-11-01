@@ -3,6 +3,7 @@
 use crate::error::Result;
 use crate::jobs::models::{JobStatus, JobType};
 use crate::jobs::sync_job::execute_sync_job;
+use crate::jobs::transform_job::execute_transform_job;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -60,15 +61,13 @@ impl JobExecutor {
             "Starting job execution"
         );
 
+        // Create executor for job chaining
+        let executor = JobExecutor::new(db.clone());
+
         // Execute the job based on type
         let result = match job.job_type {
-            JobType::Sync => execute_sync_job(db, &job).await,
-            JobType::Transform => {
-                // TODO: Implement transform job execution
-                Err(crate::Error::InvalidInput(
-                    "Transform jobs not yet implemented".to_string(),
-                ))
-            }
+            JobType::Sync => execute_sync_job(db, &executor, &job).await,
+            JobType::Transform => execute_transform_job(db, &job).await,
         };
 
         // Log result

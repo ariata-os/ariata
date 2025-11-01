@@ -1,16 +1,18 @@
 //! Sync job execution logic
 
 use crate::error::Result;
-use crate::jobs::models::Job;
+use crate::jobs::models::{CreateJobRequest, Job, JobStatus, JobType};
+use crate::jobs::JobExecutor;
 use crate::sources::{base::SyncMode, StreamFactory};
 use serde_json::json;
 use sqlx::PgPool;
+use uuid::Uuid;
 
 /// Execute a sync job
 ///
 /// This function is called by the job executor to perform the actual sync work.
 /// It updates the job status in the database as it progresses.
-pub async fn execute_sync_job(db: &PgPool, job: &Job) -> Result<()> {
+pub async fn execute_sync_job(db: &PgPool, executor: &JobExecutor, job: &Job) -> Result<()> {
     let source_id = job
         .source_id
         .ok_or_else(|| crate::Error::InvalidInput("Sync job missing source_id".to_string()))?;
@@ -103,6 +105,15 @@ pub async fn execute_sync_job(db: &PgPool, job: &Job) -> Result<()> {
                 "Sync job completed successfully"
             );
 
+            // Create transform job for this stream (if configured)
+            if let Err(e) = create_transform_job_for_stream(db, executor, source_id, stream_name).await {
+                tracing::warn!(
+                    error = %e,
+                    stream_name = %stream_name,
+                    "Failed to create transform job, continuing"
+                );
+            }
+
             Ok(())
         }
         Err(e) => {
@@ -145,6 +156,69 @@ pub async fn execute_sync_job(db: &PgPool, job: &Job) -> Result<()> {
             Err(e)
         }
     }
+}
+
+/// Create a transform job for a stream after successful sync
+///
+/// Maps stream names to their ontology transforms and creates appropriate transform jobs.
+/// Returns Ok(()) even if no transform is configured (just logs a debug message).
+async fn create_transform_job_for_stream(
+    db: &PgPool,
+    executor: &JobExecutor,
+    source_id: Uuid,
+    stream_name: &str,
+) -> Result<()> {
+    // Map stream_name to (source_table, target_table, domain)
+    let transform_config = match stream_name {
+        "gmail" => Some(("stream_google_gmail", "social_email", "social")),
+        // Add more transforms here as they're implemented:
+        // "calendar" => Some(("stream_google_calendar", "activity_meeting", "activity")),
+        // "imessage" => Some(("stream_mac_imessage", "social_text_message", "social")),
+        _ => None,
+    };
+
+    let Some((source_table, target_table, domain)) = transform_config else {
+        tracing::debug!(
+            stream_name,
+            "No transform configured for stream, skipping transform job creation"
+        );
+        return Ok(());
+    };
+
+    // Create transform job metadata
+    let metadata = json!({
+        "source_table": source_table,
+        "target_table": target_table,
+        "domain": domain,
+    });
+
+    // Create the transform job
+    let request = CreateJobRequest {
+        job_type: JobType::Transform,
+        status: JobStatus::Pending,
+        source_id: Some(source_id),
+        stream_name: Some(stream_name.to_string()),
+        sync_mode: None,
+        transform_id: None,
+        transform_strategy: None,
+        metadata,
+    };
+
+    let job = crate::jobs::create_job(db, request).await?;
+
+    tracing::info!(
+        job_id = %job.id,
+        source_id = %source_id,
+        stream_name,
+        source_table,
+        target_table,
+        "Created transform job, triggering execution"
+    );
+
+    // Execute the transform job asynchronously
+    executor.execute_async(job.id);
+
+    Ok(())
 }
 
 /// Classify errors for monitoring and alerting

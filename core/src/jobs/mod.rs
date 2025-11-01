@@ -6,6 +6,7 @@
 pub mod executor;
 pub mod models;
 pub mod sync_job;
+pub mod transform_job;
 
 pub use executor::JobExecutor;
 pub use models::{CreateJobRequest, Job, JobStatus, JobType, SyncJobMetadata};

@@ -132,7 +132,7 @@ impl TokenManager {
         let record = sqlx::query_as::<_, (String, Option<String>, Option<String>, Option<DateTime<Utc>>)>(
             r#"
             SELECT
-                type,
+                provider,
                 access_token,
                 refresh_token,
                 token_expires_at
@@ -278,7 +278,7 @@ impl TokenManager {
         let source_id: Uuid = sqlx::query_scalar(
             r#"
             INSERT INTO sources (
-                type, name, access_token, refresh_token, token_expires_at, is_active
+                provider, name, access_token, refresh_token, token_expires_at, is_active
             ) VALUES (
                 $1, $2, $3, $4, $5, true
             )
