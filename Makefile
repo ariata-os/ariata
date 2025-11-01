@@ -24,7 +24,7 @@ STUDIO_PORT := 4983
 
 # === PHONY TARGETS ===
 .PHONY: help dev dev-watch stop restart logs clean ps rebuild
-.PHONY: migrate migrate-rust migrate-drizzle
+.PHONY: migrate migrate-rust migrate-drizzle prepare
 .PHONY: db-reset db-status
 .PHONY: prod prod-build prod-restart
 .PHONY: env-check minio-setup
@@ -39,7 +39,7 @@ help:
 	@echo "Development Commands (Native):"
 	@echo "  make dev          Start infrastructure (Postgres + MinIO)"
 	@echo "                    Then run services natively:"
-	@echo "                      Terminal 1: cd core && cargo run -- serve"
+	@echo "                      Terminal 1: cd core && cargo run -- server"
 	@echo "                      Terminal 2: cd apps/web && npm run dev"
 	@echo "  make dev-servers  Auto-run both servers in background"
 	@echo "  make stop         Stop all development services"
@@ -48,6 +48,7 @@ help:
 	@echo ""
 	@echo "Database Commands:"
 	@echo "  make migrate      Run all migrations (Rust elt + Drizzle app schemas)"
+	@echo "  make prepare      Regenerate SQLx .sqlx/ metadata (after schema changes)"
 	@echo "  make db-reset     Reset all schemas (WARNING: deletes data)"
 	@echo "  make db-status    Check database schemas status"
 	@echo ""
@@ -161,7 +162,7 @@ migrate-rust:
 	@if docker ps | grep -q ariata-core; then \
 		docker-compose exec core ariata migrate; \
 	else \
-		cd core && cargo run -- migrate; \
+		cd core && sqlx migrate run --database-url $(DB_URL); \
 	fi
 	@echo "✅ Rust migrations complete"
 
@@ -182,6 +183,17 @@ migrate-drizzle-push:
 	@echo "⚡ Pushing Drizzle schema to database..."
 	@cd apps/web && DATABASE_URL="$(DB_URL)" npx drizzle-kit push
 	@echo "✅ Schema pushed"
+
+# Regenerate SQLx offline query metadata
+# Run this after:
+#  - Creating new queries with sqlx::query!()
+#  - Modifying existing queries
+#  - Running migrations that change table schemas
+prepare:
+	@echo "🔄 Regenerating SQLx query metadata..."
+	@cd core && cargo sqlx prepare --database-url $(DB_URL)
+	@echo "✅ SQLx metadata updated in core/.sqlx/"
+	@echo "💡 Remember to commit the updated .sqlx/ files"
 
 # === DATABASE COMMANDS ===
 

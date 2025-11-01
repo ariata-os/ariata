@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            id as source_id,\n            name,\n            type as device_type,\n            pairing_code as \"code!\",\n            code_expires_at as \"expires_at!\",\n            created_at\n        FROM sources\n        WHERE pairing_status = 'pending'\n        ORDER BY created_at DESC\n        ",
+  "query": "\n        SELECT\n            id as source_id,\n            name,\n            provider as device_type,\n            pairing_code as \"code!\",\n            code_expires_at as \"expires_at!\",\n            created_at\n        FROM sources\n        WHERE pairing_status = 'pending'\n        ORDER BY created_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -46,5 +46,5 @@
       false
     ]
   },
-  "hash": "07aebabcca7fcf97fecd7a6f17a41a1ecf94722fbff96ec26247e454e88ca963"
+  "hash": "e139e458ea04fd8be80a6b371d8af2dbc6323a68bf9b9ba8bc1b80ee13d1a963"
 }

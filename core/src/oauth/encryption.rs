@@ -14,7 +14,7 @@ const NONCE_LENGTH: usize = 12;
 
 /// Token encryptor/decryptor
 pub struct TokenEncryptor {
-    key: LessSafeKey,
+    key: Option<LessSafeKey>,
     rng: SystemRandom,
 }
 
@@ -48,9 +48,22 @@ impl TokenEncryptor {
             .map_err(|_| Error::Other("Failed to create encryption key".to_string()))?;
 
         Ok(Self {
-            key: LessSafeKey::new(unbound_key),
+            key: Some(LessSafeKey::new(unbound_key)),
             rng: SystemRandom::new(),
         })
+    }
+
+    /// Create an insecure encryptor for testing (no actual encryption)
+    ///
+    /// # Warning
+    /// This does NOT encrypt tokens - they are stored in plaintext (base64 encoded).
+    /// NEVER use in production!
+    #[cfg(test)]
+    pub fn new_insecure() -> Self {
+        Self {
+            key: None,
+            rng: SystemRandom::new(),
+        }
     }
 
     /// Encrypt a plaintext token
@@ -60,6 +73,11 @@ impl TokenEncryptor {
         if plaintext.is_empty() {
             return Ok(String::new());
         }
+
+        // If no key (insecure mode), just base64 encode without encryption
+        let Some(ref key) = self.key else {
+            return Ok(base64::engine::general_purpose::STANDARD.encode(plaintext));
+        };
 
         // Generate random nonce
         let mut nonce_bytes = [0u8; NONCE_LENGTH];
@@ -74,8 +92,7 @@ impl TokenEncryptor {
         in_out.reserve(AES_256_GCM.tag_len());
 
         // Encrypt in place
-        self.key
-            .seal_in_place_append_tag(nonce, Aad::empty(), &mut in_out)
+        key.seal_in_place_append_tag(nonce, Aad::empty(), &mut in_out)
             .map_err(|_| Error::Other("Encryption failed".to_string()))?;
 
         // Prepend nonce to ciphertext
@@ -94,6 +111,15 @@ impl TokenEncryptor {
             return Ok(String::new());
         }
 
+        // If no key (insecure mode), just base64 decode without decryption
+        let Some(ref key) = self.key else {
+            let plaintext_bytes = base64::engine::general_purpose::STANDARD
+                .decode(ciphertext_b64)
+                .map_err(|e| Error::Other(format!("Invalid base64 plaintext: {e}")))?;
+            return String::from_utf8(plaintext_bytes)
+                .map_err(|e| Error::Other(format!("Invalid UTF-8: {e}")));
+        };
+
         // Decode base64
         let ciphertext = base64::engine::general_purpose::STANDARD
             .decode(ciphertext_b64)
@@ -111,7 +137,7 @@ impl TokenEncryptor {
 
         // Decrypt in place
         let mut in_out = encrypted.to_vec();
-        let plaintext = self.key
+        let plaintext = key
             .open_in_place(nonce, Aad::empty(), &mut in_out)
             .map_err(|_| Error::Other("Decryption failed or data tampered".to_string()))?;
 

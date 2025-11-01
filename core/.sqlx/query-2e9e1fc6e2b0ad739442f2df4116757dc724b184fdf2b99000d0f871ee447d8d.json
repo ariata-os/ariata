@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, type, code_expires_at\n        FROM sources\n        WHERE pairing_code = $1 AND pairing_status = 'pending'\n        ",
+  "query": "\n        SELECT id, provider, code_expires_at\n        FROM sources\n        WHERE pairing_code = $1 AND pairing_status = 'pending'\n        ",
   "describe": {
     "columns": [
       {
@@ -10,7 +10,7 @@
       },
       {
         "ordinal": 1,
-        "name": "type",
+        "name": "provider",
         "type_info": "Text"
       },
       {
@@ -30,5 +30,5 @@
       true
     ]
   },
-  "hash": "7400b60a3c0d79eef9c71aed1f5cf219a11592b28ce5029d164fc7b8e1566e85"
+  "hash": "2e9e1fc6e2b0ad739442f2df4116757dc724b184fdf2b99000d0f871ee447d8d"
 }
