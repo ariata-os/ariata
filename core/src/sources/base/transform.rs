@@ -25,6 +25,20 @@ pub struct TransformResult {
 
     /// ID of last successfully processed source record (for cursor-based iteration)
     pub last_processed_id: Option<Uuid>,
+
+    /// Follow-up transform configurations for chained transforms
+    /// Each tuple is: (source_table, target_tables, domain, source_record_id, transform_stage)
+    pub chained_transforms: Vec<ChainedTransform>,
+}
+
+/// Configuration for a chained transform
+#[derive(Debug, Clone)]
+pub struct ChainedTransform {
+    pub source_table: String,
+    pub target_tables: Vec<String>,
+    pub domain: String,
+    pub source_record_id: Uuid,
+    pub transform_stage: String,
 }
 
 /// Trait for transforming stream data into ontology tables

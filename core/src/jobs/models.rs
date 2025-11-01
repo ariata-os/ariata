@@ -90,6 +90,10 @@ pub struct Job {
     pub transform_id: Option<Uuid>,
     pub transform_strategy: Option<String>,
 
+    // Job chaining
+    pub parent_job_id: Option<Uuid>,
+    pub transform_stage: Option<String>,
+
     // Tracking
     pub started_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -137,6 +141,10 @@ pub struct CreateJobRequest {
     pub transform_id: Option<Uuid>,
     pub transform_strategy: Option<String>,
 
+    // Job chaining
+    pub parent_job_id: Option<Uuid>,
+    pub transform_stage: Option<String>,
+
     // Metadata
     pub metadata: serde_json::Value,
 }
@@ -164,6 +172,8 @@ impl CreateJobRequest {
             sync_mode: Some(sync_mode),
             transform_id: None,
             transform_strategy: None,
+            parent_job_id: None,
+            transform_stage: None,
             metadata: serde_json::to_value(metadata).unwrap_or_default(),
         }
     }
@@ -178,6 +188,8 @@ impl CreateJobRequest {
             sync_mode: None,
             transform_id: Some(transform_id),
             transform_strategy: Some(transform_strategy),
+            parent_job_id: None,
+            transform_stage: None,
             metadata: serde_json::json!({}),
         }
     }

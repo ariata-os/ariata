@@ -99,8 +99,42 @@ pub async fn execute_transform_job(db: &PgPool, job: &Job) -> Result<()> {
                 records_read = transform_result.records_read,
                 records_written = transform_result.records_written,
                 records_failed = transform_result.records_failed,
+                chained_transforms_count = transform_result.chained_transforms.len(),
                 "Transform job completed successfully"
             );
+
+            // Create chained transform jobs if any were returned
+            for chained in &transform_result.chained_transforms {
+                let chained_job = crate::jobs::create_chained_transform_job(
+                    db,
+                    job.id,
+                    &chained.source_table,
+                    chained.target_tables.iter().map(|s| s.as_str()).collect(),
+                    &chained.domain,
+                    chained.source_record_id,
+                    &chained.transform_stage,
+                ).await;
+
+                match chained_job {
+                    Ok(child_job) => {
+                        tracing::info!(
+                            parent_job_id = %job.id,
+                            child_job_id = %child_job.id,
+                            transform_stage = %chained.transform_stage,
+                            source_table = %chained.source_table,
+                            "Created chained transform job"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            parent_job_id = %job.id,
+                            transform_stage = %chained.transform_stage,
+                            error = %e,
+                            "Failed to create chained transform job"
+                        );
+                    }
+                }
+            }
 
             Ok(())
         }

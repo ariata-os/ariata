@@ -179,6 +179,7 @@ impl OntologyTransform for GmailEmailTransform {
             records_written,
             records_failed,
             last_processed_id,
+            chained_transforms: vec![], // Gmail transform doesn't chain to other transforms
         })
     }
 }

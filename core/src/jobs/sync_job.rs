@@ -201,6 +201,8 @@ async fn create_transform_job_for_stream(
         sync_mode: None,
         transform_id: None,
         transform_strategy: None,
+        parent_job_id: None,
+        transform_stage: None,
         metadata,
     };
 
