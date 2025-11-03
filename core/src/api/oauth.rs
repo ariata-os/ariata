@@ -7,7 +7,7 @@ use uuid::Uuid;
 use super::sources::get_source;
 use super::types::Source;
 use crate::error::{Error, Result};
-use crate::oauth::TokenManager;
+use crate::sources::base::TokenManager;
 
 /// Request parameters for initiating OAuth authorization
 #[derive(Debug, serde::Deserialize)]
@@ -82,7 +82,7 @@ pub async fn initiate_oauth_flow(
         .ok_or_else(|| Error::Configuration(format!("No OAuth config for provider: {provider}")))?;
 
     // Generate signed state token (use provided state as session data)
-    let state_token = crate::oauth::state::generate_state(state.as_deref())?;
+    let state_token = crate::sources::base::oauth::state::generate_state(state.as_deref())?;
 
     let proxy_url =
         std::env::var("OAUTH_PROXY_URL").unwrap_or_else(|_| "https://auth.ariata.com".to_string());
@@ -117,7 +117,7 @@ pub async fn handle_oauth_callback(
 ) -> Result<Source> {
     // SECURITY: Validate state parameter to prevent CSRF attacks
     if let Some(ref state) = params.state {
-        crate::oauth::state::validate_state(state)?;
+        crate::sources::base::oauth::state::validate_state(state)?;
     } else {
         return Err(Error::InvalidInput(
             "Missing state parameter - possible CSRF attempt".to_string()

@@ -6,7 +6,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::oauth::encryption::TokenEncryptor;
+use crate::sources::base::TokenEncryptor;
 use crate::registry::StreamDescriptor;
 
 /// Response when pairing is initiated

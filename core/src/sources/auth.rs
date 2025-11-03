@@ -6,10 +6,8 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::{
-    error::Result,
-    oauth::token_manager::TokenManager,
-};
+use crate::error::Result;
+use super::base::TokenManager;
 
 /// Unified authentication abstraction for all source types
 ///

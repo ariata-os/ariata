@@ -8,7 +8,6 @@ pub mod client;
 pub mod database;
 pub mod error;
 pub mod jobs;
-pub mod oauth;
 pub mod registry;
 pub mod scheduler;
 pub mod server;
@@ -21,7 +20,7 @@ pub use client::{Ariata, AriataBuilder};
 pub use error::{Error, Result};
 
 // Re-export OAuth types
-pub use oauth::TokenManager;
+pub use sources::base::TokenManager;
 
 // Re-export Scheduler
 pub use scheduler::Scheduler;

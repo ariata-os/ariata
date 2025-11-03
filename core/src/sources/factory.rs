@@ -7,10 +7,8 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{
-    error::{Error, Result},
-    oauth::token_manager::TokenManager,
-};
+use crate::error::{Error, Result};
+use super::base::TokenManager;
 
 use super::{
     auth::SourceAuth,

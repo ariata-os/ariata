@@ -11,8 +11,7 @@ use uuid::Uuid;
 use super::error_handler::NotionErrorHandler;
 use crate::{
     error::Result,
-    oauth::token_manager::TokenManager,
-    sources::base::{OAuthHttpClient, RetryConfig},
+    sources::base::{OAuthHttpClient, RetryConfig, TokenManager},
 };
 
 /// Notion API client with automatic token refresh and retry logic

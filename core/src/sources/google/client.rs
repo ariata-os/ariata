@@ -9,8 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{Error, Result},
-    oauth::token_manager::TokenManager,
-    sources::base::{OAuthHttpClient, RetryConfig},
+    sources::base::{OAuthHttpClient, RetryConfig, TokenManager},
 };
 use super::error_handler::GoogleErrorHandler;
 

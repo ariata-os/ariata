@@ -28,10 +28,8 @@ use reqwest::{Client, RequestBuilder, Response, StatusCode, header::HeaderMap};
 use serde::{de::DeserializeOwned, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    error::{Error, Result},
-    oauth::token_manager::TokenManager,
-};
+use crate::error::{Error, Result};
+use super::oauth::TokenManager;
 use super::error_handler::{ErrorHandler, ErrorClass, DefaultErrorHandler};
 
 /// Configuration for retry behavior

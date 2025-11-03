@@ -1,5 +1,5 @@
--- Core schema for Ariata ELT System
--- Includes: sources (with OAuth + device auth), sync_logs, streams, sync_schedules
+-- Core Infrastructure for Ariata ELT System
+-- Includes: schema, extensions, sources, streams, jobs, sync_schedules
 
 -- Create schema for all ELT operations
 CREATE SCHEMA IF NOT EXISTS elt;
@@ -7,8 +7,22 @@ CREATE SCHEMA IF NOT EXISTS elt;
 -- Use the elt schema for all ELT operations
 SET search_path TO elt, public;
 
--- Enable UUID generation extension
+-- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+-- ============================================================================
+-- HELPER FUNCTIONS
+-- ============================================================================
+
+-- Function to automatically update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
 -- ============================================================================
 -- SOURCES: Authentication boundary for all data sources
@@ -77,20 +91,13 @@ CREATE INDEX idx_sources_code_expires ON sources(code_expires_at)
 CREATE INDEX idx_sources_last_seen ON sources(last_seen_at)
   WHERE last_seen_at IS NOT NULL;
 
--- Function to automatically update updated_at
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
 -- Trigger to update updated_at on any change
 CREATE TRIGGER sources_updated_at
     BEFORE UPDATE ON sources
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
+
+COMMENT ON TABLE sources IS 'Authentication boundary for all data sources (OAuth and device)';
 
 -- ============================================================================
 -- STREAMS: Track enabled streams, schedules, and stream-specific config
@@ -127,6 +134,8 @@ CREATE TRIGGER streams_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
+COMMENT ON TABLE streams IS 'Tracks enabled streams, schedules, and stream-specific config';
+
 -- ============================================================================
 -- SYNC SCHEDULES: Cron-based scheduling for periodic source syncs
 -- ============================================================================
@@ -156,3 +165,75 @@ CREATE TRIGGER sync_schedules_updated_at
     BEFORE UPDATE ON sync_schedules
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
+
+COMMENT ON TABLE sync_schedules IS 'Cron-based scheduling for periodic source syncs';
+
+-- ============================================================================
+-- JOBS: Job queue for async processing (sync jobs, transform jobs, etc.)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    job_type TEXT NOT NULL,
+
+    source_id UUID REFERENCES sources(id) ON DELETE CASCADE,
+    stream_id UUID REFERENCES streams(id) ON DELETE CASCADE,
+
+    status TEXT NOT NULL DEFAULT 'pending',
+
+    priority INTEGER NOT NULL DEFAULT 0,
+
+    payload JSONB NOT NULL DEFAULT '{}',
+
+    result JSONB,
+    error_message TEXT,
+
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Constraints
+    CONSTRAINT jobs_status_check
+        CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled'))
+);
+
+CREATE INDEX idx_jobs_status ON jobs(status);
+CREATE INDEX idx_jobs_type ON jobs(job_type);
+CREATE INDEX idx_jobs_source ON jobs(source_id);
+CREATE INDEX idx_jobs_stream ON jobs(stream_id);
+CREATE INDEX idx_jobs_priority ON jobs(priority DESC);
+CREATE INDEX idx_jobs_created ON jobs(created_at DESC);
+CREATE INDEX idx_jobs_pending_priority ON jobs(priority DESC, created_at ASC)
+    WHERE status = 'pending';
+
+CREATE TRIGGER jobs_updated_at
+    BEFORE UPDATE ON jobs
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at();
+
+COMMENT ON TABLE jobs IS 'Job queue for async processing (sync jobs, transform jobs, etc.)';
+
+-- ============================================================================
+-- JOB DEPENDENCIES: Job chaining and dependency management
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS job_dependencies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    depends_on_job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    UNIQUE(job_id, depends_on_job_id),
+
+    CONSTRAINT no_self_dependency CHECK (job_id != depends_on_job_id)
+);
+
+CREATE INDEX idx_job_dependencies_job ON job_dependencies(job_id);
+CREATE INDEX idx_job_dependencies_depends ON job_dependencies(depends_on_job_id);
+
+COMMENT ON TABLE job_dependencies IS 'Tracks job dependencies for chaining and sequencing';
