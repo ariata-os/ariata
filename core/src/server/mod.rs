@@ -4,6 +4,7 @@ mod api;
 mod ingest;
 
 use axum::{
+    extract::DefaultBodyLimit,
     response::IntoResponse,
     routing::{delete, get, post, put},
     Json, Router,
@@ -17,8 +18,9 @@ use crate::Ariata;
 pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
     // Start the scheduler in the background
     let db_pool = client.database.pool().clone();
+    let storage = (*client.storage).clone();
     let _scheduler_handle = tokio::spawn(async move {
-        match crate::Scheduler::new(db_pool).await {
+        match crate::Scheduler::new(db_pool, storage).await {
             Ok(sched) => {
                 if let Err(e) = sched.start().await {
                     tracing::warn!("Failed to start scheduler: {}", e);
@@ -96,6 +98,10 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
             post(api::enable_stream_handler),
         )
         .route(
+            "/api/sources/:id/streams/:name/disable",
+            post(api::disable_stream_handler),
+        )
+        .route(
             "/api/sources/:id/streams/:name",
             delete(api::disable_stream_handler),
         )
@@ -111,13 +117,24 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
             "/api/sources/:id/streams/:name/sync",
             post(api::sync_stream_handler),
         )
+        .route(
+            "/api/sources/:id/transforms/:name",
+            post(api::trigger_transform_handler),
+        )
         // Catalog/Registry API
         .route("/api/catalog/sources", get(api::list_catalog_sources_handler))
+        // Ontologies API
+        .route(
+            "/api/ontologies/available",
+            get(api::list_available_ontologies_handler),
+        )
         // Jobs API
         .route("/api/jobs/:id", get(api::get_job_handler))
         .route("/api/jobs", get(api::query_jobs_handler))
         .route("/api/jobs/:id/cancel", post(api::cancel_job_handler))
-        .with_state(state);
+        .with_state(state)
+        .layer(DefaultBodyLimit::disable())  // Disable default 2MB limit
+        .layer(DefaultBodyLimit::max(20 * 1024 * 1024));  // Set 20MB limit for audio files
 
     let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;

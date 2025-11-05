@@ -7,7 +7,8 @@
         icon?: string;
         text: string;
         pagespace?: string;
-        type?: "item" | "title";
+        type?: "item" | "title" | "action";
+        onclick?: () => void;
     }
 
     let {
@@ -60,6 +61,23 @@
                         {item.text}
                     </div>
                 </div>
+            {:else if item.onclick || item.type === "action"}
+                <button
+                    onclick={item.onclick}
+                    class="mx-3 rounded-lg mb-1 flex h-9 items-center px-3 text-sm transition-colors hover:bg-neutral-200 w-full text-left"
+                >
+                    <div class="flex w-full items-center">
+                        <div class="flex items-center justify-between">
+                            <iconify-icon
+                                icon={item.icon}
+                                class="text-base text-neutral-600 font-medium"
+                            ></iconify-icon>
+                        </div>
+                        <div class="ml-3 whitespace-nowrap text-neutral-600">
+                            {item.text}
+                        </div>
+                    </div>
+                </button>
             {:else}
                 <a
                     href={item.href}

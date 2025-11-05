@@ -78,8 +78,8 @@ pub async fn initiate_device_pairing(
     // Create pending source
     let source_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO sources (provider, name, auth_type, pairing_code, pairing_status, code_expires_at, is_active)
-        VALUES ($1, $2, 'device', $3, 'pending', $4, false)
+        INSERT INTO sources (provider, name, auth_type, pairing_code, pairing_status, code_expires_at, is_active, is_internal)
+        VALUES ($1, $2, 'device', $3, 'pending', $4, false, false)
         RETURNING id
         "#,
     )

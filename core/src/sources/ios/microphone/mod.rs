@@ -1,5 +1,7 @@
 //! iOS Microphone data processor
 
+pub mod transform;
+
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -9,6 +11,8 @@ use crate::{
     sources::base::{get_or_create_device_source, validation::validate_timestamp_reasonable},
     storage::Storage,
 };
+
+pub use transform::MicrophoneTranscriptionTransform;
 
 /// Process iOS Microphone data
 ///

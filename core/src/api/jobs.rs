@@ -2,8 +2,9 @@
 
 use crate::error::{Error, Result};
 use crate::jobs::{
-    self, CreateJobRequest, Job, JobExecutor, JobStatus, SyncJobMetadata,
+    self, CreateJobRequest, Job, JobExecutor, JobStatus, SyncJobMetadata, TransformContext, ApiKeys,
 };
+use crate::storage::Storage;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -21,6 +22,7 @@ pub struct CreateJobResponse {
 /// This creates a job and starts it in the background, returning immediately.
 pub async fn trigger_stream_sync(
     db: &PgPool,
+    storage: &Storage,
     source_id: Uuid,
     stream_name: &str,
     sync_mode: Option<crate::sources::base::SyncMode>,
@@ -54,8 +56,86 @@ pub async fn trigger_stream_sync(
     // Create job in database
     let job = jobs::create_job(db, request).await?;
 
+    // Create transform context with storage and API keys
+    let api_keys = ApiKeys::from_env();
+    let context = TransformContext::new(storage.clone(), api_keys);
+
     // Start job execution in background
-    let executor = JobExecutor::new(db.clone());
+    let executor = JobExecutor::new(db.clone(), context);
+    executor.execute_async(job.id);
+
+    Ok(CreateJobResponse {
+        job_id: job.id,
+        status: job.status.to_string(),
+        started_at: job.started_at,
+    })
+}
+
+/// Trigger a transform job for a specific source/stream
+///
+/// This creates a transform job directly and executes it in the background.
+/// Useful for manually triggering transformations on existing stream data.
+///
+/// # Arguments
+/// * `db` - Database connection pool
+/// * `storage` - Storage backend
+/// * `source_id` - UUID of the source
+/// * `source_table` - Source stream table name (e.g., "stream_ios_microphone")
+/// * `target_tables` - Target ontology tables (e.g., ["speech_transcription"])
+///
+/// # Returns
+/// Job response with job_id for monitoring
+pub async fn trigger_transform_job(
+    db: &PgPool,
+    storage: &Storage,
+    source_id: Uuid,
+    source_table: &str,
+    target_tables: Vec<&str>,
+) -> Result<CreateJobResponse> {
+    // Look up domain and transform_stage from centralized transform registry
+    let route = crate::transforms::get_transform_route(source_table)
+        .map_err(|_| Error::InvalidInput(format!(
+            "Unknown source table for transform: {}. Not found in transform registry.",
+            source_table
+        )))?;
+
+    let domain = route.domain;
+    let transform_stage = route.transform_stage;
+
+    // Create the transform job
+    // For now, we only support single target table transforms
+    let target_table = target_tables.first().ok_or_else(|| {
+        Error::InvalidInput("At least one target table must be specified".into())
+    })?;
+
+    let metadata = serde_json::json!({
+        "source_table": source_table,
+        "target_table": target_table,
+        "domain": domain,
+        "transform_stage": transform_stage,
+    });
+
+    let request = jobs::CreateJobRequest {
+        job_type: jobs::JobType::Transform,
+        status: jobs::JobStatus::Pending,
+        source_id: Some(source_id),
+        stream_name: None,
+        sync_mode: None,
+        transform_id: None,
+        transform_strategy: None,
+        parent_job_id: None,  // No parent job for manually triggered transforms
+        transform_stage: Some(transform_stage.to_string()),
+        metadata,
+    };
+
+    let job = jobs::create_job(db, request).await?;
+
+    // Create transform context with storage and API keys
+    let api_keys = ApiKeys::from_env();
+    let context = TransformContext::new(storage.clone(), api_keys);
+
+    // Start job execution in background
+    let executor = JobExecutor::new(db.clone(), context);
     executor.execute_async(job.id);
 
     Ok(CreateJobResponse {
@@ -103,7 +183,6 @@ pub async fn cancel_job(db: &PgPool, job_id: Uuid) -> Result<()> {
 
 /// Get job history for a specific stream
 ///
-/// Replaces the old `get_stream_sync_history()` function.
 /// Returns jobs for a specific source and stream, ordered by most recent first.
 pub async fn get_job_history(
     db: &PgPool,
@@ -113,9 +192,7 @@ pub async fn get_job_history(
 ) -> Result<Vec<Job>> {
     let jobs = sqlx::query_as::<_, Job>(
         r#"
-        SELECT id, job_type, status, source_id, stream_name, sync_mode,
-               started_at, completed_at, records_processed, error_message,
-               error_class, metadata, created_at, updated_at
+        SELECT *
         FROM elt.jobs
         WHERE source_id = $1 AND stream_name = $2 AND job_type = 'sync'
         ORDER BY created_at DESC

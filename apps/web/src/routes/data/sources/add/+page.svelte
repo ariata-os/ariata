@@ -166,15 +166,25 @@
 	}
 
 	async function handleSaveStreams() {
-		if (!configureSource || selectedStreams.size === 0) return;
+		if (!configureSource) return;
 
 		isLoading = true;
 		error = null;
 
 		try {
+			// Get all available stream names
+			const allStreamNames = configureStreams.map((s) => s.stream_name);
+
 			// Enable each selected stream
 			for (const streamName of selectedStreams) {
 				await api.enableStream(configureSource.id, streamName);
+			}
+
+			// Disable unselected streams
+			for (const streamName of allStreamNames) {
+				if (!selectedStreams.has(streamName)) {
+					await api.disableStream(configureSource.id, streamName);
+				}
 			}
 
 			// Show success toast with sync info
@@ -194,15 +204,25 @@
 	async function handleEnableStreams() {
 		// For device sources, use devicePairingSourceId; for OAuth, use createdSourceId
 		const sourceId = devicePairingSourceId || createdSourceId;
-		if (!sourceId || selectedStreams.size === 0) return;
+		if (!sourceId) return;
 
 		isLoading = true;
 		error = null;
 
 		try {
+			// Get all available stream names
+			const allStreamNames = availableStreams.map((s) => s.stream_name);
+
 			// Enable each selected stream
 			for (const streamName of selectedStreams) {
 				await api.enableStream(sourceId, streamName);
+			}
+
+			// Disable unselected streams
+			for (const streamName of allStreamNames) {
+				if (!selectedStreams.has(streamName)) {
+					await api.disableStream(sourceId, streamName);
+				}
 			}
 
 			// Show success toast
@@ -222,11 +242,11 @@
 	function formatCron(cron: string | null): string {
 		if (!cron) return "Manual";
 		const map: Record<string, string> = {
-			"*/15 * * * *": "Every 15 minutes",
-			"*/30 * * * *": "Every 30 minutes",
-			"0 */1 * * *": "Every hour",
-			"0 */6 * * *": "Every 6 hours",
-			"0 0 * * *": "Daily at midnight",
+			"0 */15 * * * *": "Every 15 minutes",
+			"0 */30 * * * *": "Every 30 minutes",
+			"0 0 */1 * * *": "Every hour",
+			"0 0 */6 * * *": "Every 6 hours",
+			"0 0 0 * * *": "Daily at midnight",
 		};
 		return map[cron] || cron;
 	}
@@ -441,7 +461,7 @@
 									checked={selectedStreams.has(
 										stream.stream_name,
 									)}
-									onchange={() =>
+									onclick={() =>
 										toggleStream(stream.stream_name)}
 									class="mt-1 w-4 h-4 border-neutral-300"
 								/>
@@ -499,7 +519,7 @@
 									checked={selectedStreams.has(
 										stream.stream_name,
 									)}
-									onchange={() =>
+									onclick={() =>
 										toggleStream(stream.stream_name)}
 									class="mt-1 w-4 h-4 border-neutral-300"
 								/>

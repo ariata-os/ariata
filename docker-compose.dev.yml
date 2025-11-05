@@ -11,7 +11,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: joshuasundance/postgis_pgvector
     container_name: ariata-postgres
     restart: unless-stopped
     ports:

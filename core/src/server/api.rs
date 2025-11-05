@@ -10,30 +10,39 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::ingest::AppState;
+use crate::error::Error;
 
-/// Query parameters for pagination
-#[derive(Debug, Deserialize)]
-pub struct PaginationQuery {
-    #[serde(default = "default_limit")]
-    pub limit: i64,
+/// Helper to convert Result to Response with proper status code
+fn api_response<T: Serialize>(result: crate::error::Result<T>) -> Response {
+    match result {
+        Ok(data) => (StatusCode::OK, Json(data)).into_response(),
+        Err(e) => error_response(e),
+    }
 }
 
-fn default_limit() -> i64 {
-    10
+/// Helper to convert Error to Response with appropriate status code
+fn error_response(error: Error) -> Response {
+    let (status, message) = match &error {
+        Error::NotFound(_) => (StatusCode::NOT_FOUND, error.to_string()),
+        Error::Unauthorized(_) => (StatusCode::UNAUTHORIZED, error.to_string()),
+        Error::InvalidInput(_) => (StatusCode::BAD_REQUEST, error.to_string()),
+        Error::Database(msg) if msg.contains("already has an active") => {
+            (StatusCode::CONFLICT, error.to_string())
+        }
+        _ => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    };
+
+    (status, Json(serde_json::json!({ "error": message }))).into_response()
+}
+
+/// Helper to create a success message response
+fn success_message(message: &str) -> Response {
+    (StatusCode::OK, Json(serde_json::json!({ "message": message }))).into_response()
 }
 
 /// List all sources
 pub async fn list_sources_handler(State(state): State<AppState>) -> Response {
-    match crate::api::list_sources(state.db.pool()).await {
-        Ok(sources) => (StatusCode::OK, Json(sources)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": e.to_string()
-            })),
-        )
-            .into_response(),
-    }
+    api_response(crate::api::list_sources(state.db.pool()).await)
 }
 
 /// Get a specific source by ID
@@ -41,16 +50,7 @@ pub async fn get_source_handler(
     State(state): State<AppState>,
     Path(source_id): Path<Uuid>,
 ) -> Response {
-    match crate::api::get_source(state.db.pool(), source_id).await {
-        Ok(source) => (StatusCode::OK, Json(source)).into_response(),
-        Err(e) => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({
-                "error": e.to_string()
-            })),
-        )
-            .into_response(),
-    }
+    api_response(crate::api::get_source(state.db.pool(), source_id).await)
 }
 
 /// Pause a source
@@ -58,16 +58,7 @@ pub async fn pause_source_handler(
     State(state): State<AppState>,
     Path(source_id): Path<Uuid>,
 ) -> Response {
-    match crate::api::pause_source(state.db.pool(), source_id).await {
-        Ok(source) => (StatusCode::OK, Json(source)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": e.to_string()
-            })),
-        )
-            .into_response(),
-    }
+    api_response(crate::api::pause_source(state.db.pool(), source_id).await)
 }
 
 /// Resume a source
@@ -75,16 +66,7 @@ pub async fn resume_source_handler(
     State(state): State<AppState>,
     Path(source_id): Path<Uuid>,
 ) -> Response {
-    match crate::api::resume_source(state.db.pool(), source_id).await {
-        Ok(source) => (StatusCode::OK, Json(source)).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": e.to_string()
-            })),
-        )
-            .into_response(),
-    }
+    api_response(crate::api::resume_source(state.db.pool(), source_id).await)
 }
 
 /// Delete a source by ID
@@ -93,20 +75,8 @@ pub async fn delete_source_handler(
     Path(source_id): Path<Uuid>,
 ) -> Response {
     match crate::api::delete_source(state.db.pool(), source_id).await {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "message": "Source deleted successfully"
-            })),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": e.to_string()
-            })),
-        )
-            .into_response(),
+        Ok(_) => success_message("Source deleted successfully"),
+        Err(e) => error_response(e),
     }
 }
 
@@ -235,7 +205,7 @@ pub async fn enable_stream_handler(
     Path((source_id, stream_name)): Path<(Uuid, String)>,
     Json(request): Json<crate::api::EnableStreamRequest>,
 ) -> Response {
-    match crate::api::enable_stream(state.db.pool(), source_id, &stream_name, request.config).await
+    match crate::api::enable_stream(state.db.pool(), &*state.storage, source_id, &stream_name, request.config).await
     {
         Ok(stream) => (StatusCode::OK, Json(stream)).into_response(),
         Err(e) => (
@@ -329,7 +299,7 @@ pub async fn sync_stream_handler(
     }));
 
     // Use the new async job-based sync
-    match crate::api::trigger_stream_sync(state.db.pool(), source_id, &stream_name, sync_mode).await {
+    match crate::api::trigger_stream_sync(state.db.pool(), &*state.storage, source_id, &stream_name, sync_mode).await {
         Ok(response) => (StatusCode::CREATED, Json(response)).into_response(),
         Err(e) => {
             let status = if e.to_string().contains("already has an active sync") {
@@ -352,6 +322,33 @@ pub async fn sync_stream_handler(
 #[derive(Debug, Deserialize)]
 pub struct SyncStreamRequest {
     pub sync_mode: Option<String>,
+}
+
+/// Trigger a transform job for a stream
+///
+/// POST /api/sources/:source_id/transforms/:stream_name
+pub async fn trigger_transform_handler(
+    State(state): State<AppState>,
+    Path((source_id, stream_name)): Path<(Uuid, String)>,
+) -> Response {
+    // Get transform route from centralized registry
+    let route = match crate::transforms::get_transform_route(&stream_name) {
+        Ok(route) => route,
+        Err(e) => return error_response(e),
+    };
+
+    match crate::api::jobs::trigger_transform_job(
+        state.db.pool(),
+        &*state.storage,
+        source_id,
+        route.source_table,
+        route.target_tables,
+    )
+    .await
+    {
+        Ok(response) => (StatusCode::CREATED, Json(response)).into_response(),
+        Err(e) => error_response(e),
+    }
 }
 
 // ============================================================================
@@ -386,6 +383,14 @@ pub async fn list_catalog_sources_handler() -> Response {
         .collect();
 
     (StatusCode::OK, Json(catalog)).into_response()
+}
+
+// ============================================================================
+// Ontologies API
+
+/// List available ontology tables
+pub async fn list_available_ontologies_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::ontologies::list_available_ontologies(state.db.pool()).await)
 }
 
 // ============================================================================

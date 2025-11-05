@@ -692,23 +692,6 @@ impl GoogleGmailStream {
         self.client.get("users/me/profile").await
     }
 
-    /// Get the last history ID from the database
-    async fn get_last_history_id(&self) -> Result<Option<String>> {
-        // Try streams table first (new pattern)
-        let row = sqlx::query_as::<_, (Option<String>,)>(
-            "SELECT last_sync_token FROM streams WHERE source_id = $1 AND stream_name = 'gmail'",
-        )
-        .bind(self.source_id)
-        .fetch_optional(&self.db)
-        .await?;
-
-        if let Some((token,)) = row {
-            return Ok(token);
-        }
-
-        Ok(None)
-    }
-
     /// Save the history ID to the database
     async fn save_history_id(&self, history_id: &str) -> Result<()> {
         sqlx::query(

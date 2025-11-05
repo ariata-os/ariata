@@ -13,10 +13,12 @@
 //! - `streams` - Stream management and configuration
 //! - `jobs` - Async job tracking and management
 //! - `registry` - Catalog/registry queries
+//! - `ontologies` - Ontology table queries
 
 pub mod device_pairing;
 pub mod jobs;
 pub mod oauth;
+pub mod ontologies;
 pub mod registry;
 pub mod sources;
 pub mod streams;

@@ -146,6 +146,7 @@ pub async fn get_stream_info(
 ///
 /// # Arguments
 /// * `db` - Database connection pool
+/// * `storage` - Storage backend for job execution
 /// * `source_id` - UUID of the source
 /// * `stream_name` - Name of the stream to enable
 /// * `config` - Optional configuration (uses defaults if not provided)
@@ -154,6 +155,7 @@ pub async fn get_stream_info(
 /// Updated StreamInfo
 pub async fn enable_stream(
     db: &PgPool,
+    storage: &crate::storage::Storage,
     source_id: Uuid,
     stream_name: &str,
     config: Option<serde_json::Value>,
@@ -198,9 +200,10 @@ pub async fn enable_stream(
     // Device sources (iOS, Mac) push data themselves via ingest endpoint
     if source.auth_type == "oauth2" {
         let db_clone = db.clone();
+        let storage_clone = storage.clone();
         let stream_name_clone = stream_name.to_string();
         tokio::spawn(async move {
-            match crate::api::jobs::trigger_stream_sync(&db_clone, source_id, &stream_name_clone, None).await {
+            match crate::api::jobs::trigger_stream_sync(&db_clone, &storage_clone, source_id, &stream_name_clone, None).await {
                 Ok(response) => {
                     tracing::info!(
                         "Initial sync job created for {}: job_id={}, status={}",
@@ -293,7 +296,7 @@ pub async fn update_stream_config(
 /// * `db` - Database connection pool
 /// * `source_id` - UUID of the source
 /// * `stream_name` - Name of the stream
-/// * `cron_schedule` - Cron expression (e.g., "0 */6 * * *") or None to disable scheduling
+/// * `cron_schedule` - Cron expression in 6-field format (e.g., "0 0 */6 * * *" for every 6 hours) or None to disable scheduling
 ///
 /// # Returns
 /// Updated StreamInfo

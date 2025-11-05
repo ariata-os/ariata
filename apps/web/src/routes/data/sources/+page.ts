@@ -14,8 +14,11 @@ export const load: PageLoad = async ({ fetch }) => {
 			throw new Error(`Failed to load catalog: ${catalogRes.statusText}`);
 		}
 
-		const sources = await sourcesRes.json();
+		const allSources = await sourcesRes.json();
 		const catalog = await catalogRes.json();
+
+		// Filter out internal sources (like ariata-app) from user-facing UI
+		const sources = allSources.filter((s: any) => !s.is_internal);
 
 		return {
 			sources,

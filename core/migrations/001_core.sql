@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS sources (
 
     -- Status tracking
     is_active BOOLEAN DEFAULT true,
+    is_internal BOOLEAN DEFAULT false,  -- Marks system/internal sources (e.g., ariata-app)
     error_message TEXT,
     error_at TIMESTAMPTZ,
 
@@ -66,12 +67,6 @@ CREATE TABLE IF NOT EXISTS sources (
       CHECK (pairing_status IS NULL OR pairing_status IN ('pending', 'active', 'revoked'))
 );
 
--- Indexes for common queries
-CREATE INDEX idx_sources_provider ON sources(provider);
-CREATE INDEX idx_sources_active ON sources(is_active);
-CREATE INDEX idx_sources_auth_type ON sources(auth_type);
-CREATE INDEX idx_sources_token_expires ON sources(token_expires_at) WHERE token_expires_at IS NOT NULL;
-
 -- Device-specific indexes
 CREATE UNIQUE INDEX idx_sources_device_id ON sources(device_id)
   WHERE device_id IS NOT NULL;
@@ -81,15 +76,6 @@ CREATE UNIQUE INDEX idx_sources_device_token ON sources(device_token)
 
 CREATE UNIQUE INDEX idx_sources_pairing_code ON sources(pairing_code)
   WHERE pairing_code IS NOT NULL AND pairing_status = 'pending';
-
-CREATE INDEX idx_sources_pairing_status ON sources(pairing_status)
-  WHERE pairing_status = 'pending';
-
-CREATE INDEX idx_sources_code_expires ON sources(code_expires_at)
-  WHERE code_expires_at IS NOT NULL AND pairing_status = 'pending';
-
-CREATE INDEX idx_sources_last_seen ON sources(last_seen_at)
-  WHERE last_seen_at IS NOT NULL;
 
 -- Trigger to update updated_at on any change
 CREATE TRIGGER sources_updated_at
@@ -125,10 +111,6 @@ CREATE TABLE IF NOT EXISTS streams (
     UNIQUE(source_id, stream_name)
 );
 
-CREATE INDEX idx_streams_source_id ON streams(source_id);
-CREATE INDEX idx_streams_enabled ON streams(is_enabled) WHERE is_enabled = true;
-CREATE INDEX idx_streams_scheduled ON streams(cron_schedule) WHERE cron_schedule IS NOT NULL;
-
 CREATE TRIGGER streams_updated_at
     BEFORE UPDATE ON streams
     FOR EACH ROW
@@ -157,14 +139,6 @@ CREATE TABLE IF NOT EXISTS sync_schedules (
     UNIQUE(source_id)
 );
 
-CREATE INDEX idx_sync_schedules_enabled ON sync_schedules(enabled);
-CREATE INDEX idx_sync_schedules_next_run ON sync_schedules(next_run) WHERE enabled = true;
-CREATE INDEX idx_sync_schedules_source ON sync_schedules(source_id);
-
-CREATE TRIGGER sync_schedules_updated_at
-    BEFORE UPDATE ON sync_schedules
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at();
 
 COMMENT ON TABLE sync_schedules IS 'Cron-based scheduling for periodic source syncs';
 
@@ -176,38 +150,44 @@ CREATE TABLE IF NOT EXISTS jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     job_type TEXT NOT NULL,
-
-    source_id UUID REFERENCES sources(id) ON DELETE CASCADE,
-    stream_id UUID REFERENCES streams(id) ON DELETE CASCADE,
-
     status TEXT NOT NULL DEFAULT 'pending',
 
-    priority INTEGER NOT NULL DEFAULT 0,
+    -- Sync job fields
+    source_id UUID REFERENCES sources(id) ON DELETE CASCADE,
+    stream_name TEXT,
+    sync_mode TEXT,
 
-    payload JSONB NOT NULL DEFAULT '{}',
+    -- Transform job fields
+    transform_id UUID,
+    transform_strategy TEXT,
 
-    result JSONB,
-    error_message TEXT,
+    -- Job chaining
+    parent_job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
+    transform_stage TEXT,
 
-    started_at TIMESTAMPTZ,
+    -- Tracking
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMPTZ,
+    records_processed BIGINT NOT NULL DEFAULT 0,
+    error_message TEXT,
+    error_class TEXT,
 
+    -- Metadata
+    metadata JSONB NOT NULL DEFAULT '{}',
+
+    -- Timestamps
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     -- Constraints
     CONSTRAINT jobs_status_check
-        CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled'))
+        CHECK (status IN ('pending', 'running', 'succeeded', 'failed', 'cancelled'))
 );
 
-CREATE INDEX idx_jobs_status ON jobs(status);
-CREATE INDEX idx_jobs_type ON jobs(job_type);
-CREATE INDEX idx_jobs_source ON jobs(source_id);
-CREATE INDEX idx_jobs_stream ON jobs(stream_id);
-CREATE INDEX idx_jobs_priority ON jobs(priority DESC);
-CREATE INDEX idx_jobs_created ON jobs(created_at DESC);
-CREATE INDEX idx_jobs_pending_priority ON jobs(priority DESC, created_at ASC)
+CREATE INDEX idx_jobs_pending ON jobs(created_at ASC)
     WHERE status = 'pending';
+CREATE INDEX idx_jobs_parent ON jobs(parent_job_id)
+    WHERE parent_job_id IS NOT NULL;
 
 CREATE TRIGGER jobs_updated_at
     BEFORE UPDATE ON jobs
@@ -233,7 +213,56 @@ CREATE TABLE IF NOT EXISTS job_dependencies (
     CONSTRAINT no_self_dependency CHECK (job_id != depends_on_job_id)
 );
 
-CREATE INDEX idx_job_dependencies_job ON job_dependencies(job_id);
-CREATE INDEX idx_job_dependencies_depends ON job_dependencies(depends_on_job_id);
-
 COMMENT ON TABLE job_dependencies IS 'Tracks job dependencies for chaining and sequencing';
+
+-- ============================================================================
+-- BOOTSTRAP DATA: Internal sources
+-- ============================================================================
+
+-- Insert ariata source (idempotent)
+-- Using a deterministic UUID so it's consistent across all instances
+INSERT INTO sources (
+    id,
+    provider,
+    name,
+    auth_type,
+    is_active,
+    is_internal,
+    created_at,
+    updated_at
+)
+VALUES (
+    '00000000-0000-0000-0000-000000000001'::uuid,
+    'ariata',
+    'ariata-app',
+    'none',
+    true,
+    true,
+    NOW(),
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Insert ai_chat stream (idempotent)
+INSERT INTO streams (
+    id,
+    source_id,
+    stream_name,
+    table_name,
+    is_enabled,
+    created_at,
+    updated_at
+)
+SELECT
+    gen_random_uuid(),
+    '00000000-0000-0000-0000-000000000001'::uuid,
+    'ai_chat',
+    'stream_ariata_ai_chat',
+    true,
+    NOW(),
+    NOW()
+WHERE NOT EXISTS (
+    SELECT 1 FROM streams
+    WHERE source_id = '00000000-0000-0000-0000-000000000001'::uuid
+    AND stream_name = 'ai_chat'
+);

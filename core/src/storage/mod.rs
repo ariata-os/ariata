@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 
@@ -16,6 +17,16 @@ pub trait StorageBackend: Send + Sync {
     async fn delete(&self, key: &str) -> Result<()>;
     async fn list(&self, prefix: &str) -> Result<Vec<String>>;
     async fn health_check(&self) -> Result<HealthStatus>;
+
+    /// Generate a presigned URL for temporary public access to an object
+    ///
+    /// # Arguments
+    /// * `key` - The object key
+    /// * `expires_in` - How long the URL should be valid for
+    ///
+    /// # Returns
+    /// A public URL that can be used to access the object until it expires
+    async fn get_presigned_url(&self, key: &str, expires_in: Duration) -> Result<String>;
 }
 
 /// Main storage interface
@@ -67,6 +78,25 @@ impl Storage {
     pub async fn health_check(&self) -> Result<HealthStatus> {
         self.backend.health_check().await
     }
+
+    /// Generate a presigned URL for temporary public access to an object
+    ///
+    /// This is useful for allowing external services (like AssemblyAI) to access
+    /// files stored in S3/MinIO without giving them permanent credentials.
+    ///
+    /// # Arguments
+    /// * `key` - The object key (e.g., "ios/microphone/device123/audio.m4a")
+    /// * `expires_in` - How long the URL should be valid for (e.g., Duration::from_secs(3600) for 1 hour)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let url = storage.get_presigned_url("audio.m4a", Duration::from_secs(3600)).await?;
+    /// // Pass URL to external service
+    /// external_service.process(url).await?;
+    /// ```
+    pub async fn get_presigned_url(&self, key: &str, expires_in: Duration) -> Result<String> {
+        self.backend.get_presigned_url(key, expires_in).await
+    }
 }
 
 /// S3/MinIO storage backend
@@ -88,6 +118,8 @@ impl S3Storage {
         // Configure endpoint if provided (for MinIO)
         if let Some(endpoint_url) = endpoint {
             config_loader = config_loader.endpoint_url(endpoint_url);
+            // Set a default region for MinIO (required by AWS SDK)
+            config_loader = config_loader.region(aws_sdk_s3::config::Region::new("us-east-1"));
         }
 
         // Configure credentials if provided
@@ -103,7 +135,13 @@ impl S3Storage {
         }
 
         let config = config_loader.load().await;
-        let client = aws_sdk_s3::Client::new(&config);
+
+        // Build S3 client with path-style addressing for MinIO compatibility
+        let s3_config = aws_sdk_s3::config::Builder::from(&config)
+            .force_path_style(true)
+            .build();
+
+        let client = aws_sdk_s3::Client::from_conf(s3_config);
 
         Ok(Self { bucket, client })
     }
@@ -197,6 +235,23 @@ impl StorageBackend for S3Storage {
             }),
         }
     }
+
+    async fn get_presigned_url(&self, key: &str, expires_in: Duration) -> Result<String> {
+        // Create presigning config
+        let presigning_config = aws_sdk_s3::presigning::PresigningConfig::expires_in(expires_in)
+            .map_err(|e| Error::S3(format!("Failed to create presigning config: {}", e)))?;
+
+        // Generate presigned URL
+        let presigned_request = self.client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .presigned(presigning_config)
+            .await
+            .map_err(|e| Error::S3(format!("Failed to generate presigned URL: {}", e)))?;
+
+        Ok(presigned_request.uri().to_string())
+    }
 }
 
 /// Local file storage backend
@@ -271,6 +326,15 @@ impl StorageBackend for LocalStorage {
                 message: format!("Local storage at {:?} not accessible", self.base_path),
             }),
         }
+    }
+
+    async fn get_presigned_url(&self, _key: &str, _expires_in: Duration) -> Result<String> {
+        // Local storage doesn't support presigned URLs
+        // In a real implementation, you might set up a local HTTP server
+        // For now, return an error
+        Err(Error::Other(
+            "Presigned URLs not supported for local storage".into()
+        ))
     }
 }
 

@@ -67,6 +67,7 @@ pub async fn run(cli: Cli, ariata: Ariata) -> Result<(), Box<dyn std::error::Err
 
                 match crate::api::jobs::trigger_stream_sync(
                     ariata.database.pool(),
+                    &*ariata.storage,
                     source_id,
                     &stream.stream_name,
                     Some(sync_mode.clone())

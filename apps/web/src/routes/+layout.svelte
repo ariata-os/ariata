@@ -4,11 +4,13 @@
 	import { Toaster } from "svelte-sonner";
 	import "iconify-icon";
 	import { Modules, Sidebar, Breadcrumbs } from "$lib";
+	import { chatSessions } from "$lib/stores/chatSessions.svelte";
 	import { goto, onNavigate } from "$app/navigation";
+	import { onMount } from "svelte";
 
 	let { children, data } = $props();
 
-	let activeModule = $state("home");
+	let activeModule = $state("chat");
 	let isSideNavOpen = $state(true);
 
 	interface Module {
@@ -23,23 +25,24 @@
 			icon?: string;
 			text: string;
 			pagespace?: string;
-			type?: "item" | "title";
+			type?: "item" | "title" | "action";
+			onclick?: () => void;
 		}>;
 	}
 
 	// Define modules
 	const modules: Record<string, Module> = {
-		home: {
-			id: "home",
-			name: "Home",
-			icon: "ri:home-line",
-			iconFilled: "ri:home-fill",
-			title: "Home",
+		chat: {
+			id: "chat",
+			name: "Chat",
+			icon: "ri:message-3-line",
+			iconFilled: "ri:message-3-fill",
+			title: "Chat",
 			items: [
 				{
-					href: "/",
-					icon: "ri:home-line",
-					text: "Home",
+					href: "/new",
+					icon: "ri:message-3-line",
+					text: "Chat",
 					pagespace: "",
 				},
 			],
@@ -91,6 +94,13 @@
 	let currentModule = $derived.by(() => {
 		const path = page.url.pathname.split("/")[1] || "";
 
+		// Special handling for root-level chat routes
+		// Root (/) and /[conversationId] are chat
+		if (path === '' || !['data', 'settings', 'api', 'oauth'].includes(path)) {
+			// If it's not one of the known modules, assume it's a conversation ID (chat)
+			return 'chat';
+		}
+
 		// Find which module contains this path
 		for (const [moduleId, module] of Object.entries(modules)) {
 			if (module.paths?.includes(path)) {
@@ -102,7 +112,7 @@
 			}
 		}
 
-		return "home"; // Default to home if no match
+		return "chat"; // Default to chat if no match
 	});
 
 	// Update active module when page changes
@@ -130,6 +140,35 @@
 			isSideNavOpen = true;
 		}
 	}
+
+	// Load chat sessions on mount
+	onMount(() => {
+		chatSessions.load();
+	});
+
+	// Create dynamic chat items from loaded sessions
+	const chatItems = $derived.by(() => {
+		const items: Module['items'] = [
+			{
+				text: "New Chat",
+				icon: "ri:add-line",
+				onclick: () => goto('/'),
+				type: "action" as const
+			}
+		];
+
+		// Add loaded sessions as navigation items
+		for (const session of chatSessions.sessions) {
+			items.push({
+				href: `/${session.conversation_id}`,
+				text: session.title || 'Untitled',
+				pagespace: session.conversation_id,
+				icon: "ri:message-3-line"
+			});
+		}
+
+		return items;
+	});
 
 	onNavigate((navigation) => {
 		// @ts-ignore
@@ -166,9 +205,8 @@
 		style="width: {isSideNavOpen ? '14rem' : '0'}"
 	>
 		<Sidebar
-			items={modules[activeModule as keyof typeof modules]?.items || []}
-			moduleTitle={modules[activeModule as keyof typeof modules]?.title ||
-				""}
+			items={activeModule === 'chat' ? chatItems : (modules[activeModule as keyof typeof modules]?.items || [])}
+			moduleTitle={modules[activeModule as keyof typeof modules]?.title || ""}
 			class="h-full w-56"
 		></Sidebar>
 	</div>
@@ -185,11 +223,11 @@
 			<Breadcrumbs />
 		</header>
 		<div
-			class="border-t border-r border-b overflow-auto {!isSideNavOpen
+			class="border-t border-r border-b {!isSideNavOpen
 				? ''
 				: 'border-l'} flex-1 bg-white border-neutral-200 transition-all duration-300 {isSideNavOpen
 				? 'rounded-tl-3xl'
-				: 'rounded-none'} min-w-0"
+				: 'rounded-none'} min-w-0 overflow-y-auto"
 		>
 			{@render children()}
 		</div>

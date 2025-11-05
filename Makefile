@@ -106,11 +106,6 @@ dev: env-check
 	@echo "Or run both in background:"
 	@echo "    make dev-servers"
 	@echo ""
-	@echo "Services will be available at:"
-	@echo "  Web:      http://localhost:$(WEB_DEV_PORT)"
-	@echo "  API:      http://localhost:$(API_PORT)"
-	@echo "  MinIO:    http://localhost:$(MINIO_CONSOLE_PORT) (minioadmin/minioadmin)"
-	@echo ""
 
 # Run both dev servers in background (parallel make)
 dev-servers:
@@ -243,10 +238,10 @@ db-reset:
 # Setup MinIO bucket (works with dev or prod)
 minio-setup:
 	@echo "🪣 Setting up MinIO..."
-	@docker-compose -f docker-compose.dev.yml exec minio mc alias set local http://localhost:9000 minioadmin minioadmin 2>/dev/null || \
-		docker-compose exec minio mc alias set local http://localhost:9000 minioadmin minioadmin 2>/dev/null || true
-	@docker-compose -f docker-compose.dev.yml exec minio mc mb local/ariata-data --ignore-existing 2>/dev/null || \
-		docker-compose exec minio mc mb local/ariata-data --ignore-existing 2>/dev/null || true
+	@docker-compose -f docker-compose.dev.yml exec minio mc alias set local http://localhost:9000 minioadmin minioadmin > /dev/null 2>&1 || \
+		docker-compose exec minio mc alias set local http://localhost:9000 minioadmin minioadmin > /dev/null 2>&1 || true
+	@docker-compose -f docker-compose.dev.yml exec minio mc mb local/ariata-data --ignore-existing > /dev/null 2>&1 || \
+		docker-compose exec minio mc mb local/ariata-data --ignore-existing > /dev/null 2>&1 || true
 	@echo "✅ MinIO bucket ready"
 
 # === PRODUCTION COMMANDS ===

@@ -47,8 +47,8 @@ pub async fn get_or_create_device_source(
     // Create new device source
     let new_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO sources (id, provider, name, is_active)
-         VALUES ($1, $2, $3, true)
+        "INSERT INTO sources (id, provider, name, is_active, is_internal)
+         VALUES ($1, $2, $3, true, false)
          ON CONFLICT (name) DO NOTHING"
     )
     .bind(new_id)

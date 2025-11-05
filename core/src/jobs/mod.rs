@@ -6,10 +6,12 @@
 pub mod executor;
 pub mod models;
 pub mod sync_job;
+pub mod transform_context;
 pub mod transform_job;
 
 pub use executor::JobExecutor;
 pub use models::{CreateJobRequest, Job, JobStatus, JobType, SyncJobMetadata};
+pub use transform_context::{ApiKeys, TransformContext};
 
 use crate::error::{Error, Result};
 use sqlx::PgPool;
@@ -160,9 +162,6 @@ pub async fn update_job_status(
 
     Ok(())
 }
-
-// Note: update_job_progress() was removed - not needed since we update progress
-// in execute_sync_job() directly when the job completes
 
 /// Query jobs with filters
 pub async fn query_jobs(

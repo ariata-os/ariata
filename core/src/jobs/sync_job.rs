@@ -168,28 +168,27 @@ async fn create_transform_job_for_stream(
     source_id: Uuid,
     stream_name: &str,
 ) -> Result<()> {
-    // Map stream_name to (source_table, target_table, domain)
-    let transform_config = match stream_name {
-        "gmail" => Some(("stream_google_gmail", "social_email", "social")),
-        // Add more transforms here as they're implemented:
-        // "calendar" => Some(("stream_google_calendar", "activity_meeting", "activity")),
-        // "imessage" => Some(("stream_mac_imessage", "social_text_message", "social")),
-        _ => None,
+    // Normalize stream name using centralized registry function
+    let table_name = crate::transforms::normalize_stream_name(stream_name);
+
+    // Use centralized transform registry as single source of truth
+    let route = match crate::transforms::get_transform_route(&table_name) {
+        Ok(route) => route,
+        Err(_) => {
+            tracing::debug!(
+                stream_name,
+                table_name,
+                "No transform configured for stream, skipping transform job creation"
+            );
+            return Ok(());
+        }
     };
 
-    let Some((source_table, target_table, domain)) = transform_config else {
-        tracing::debug!(
-            stream_name,
-            "No transform configured for stream, skipping transform job creation"
-        );
-        return Ok(());
-    };
-
-    // Create transform job metadata
+    // Create transform job metadata from registry
     let metadata = json!({
-        "source_table": source_table,
-        "target_table": target_table,
-        "domain": domain,
+        "source_table": route.source_table,
+        "target_table": route.target_tables[0], // Use first target for now
+        "domain": route.domain,
     });
 
     // Create the transform job
@@ -212,8 +211,9 @@ async fn create_transform_job_for_stream(
         job_id = %job.id,
         source_id = %source_id,
         stream_name,
-        source_table,
-        target_table,
+        source_table = route.source_table,
+        target_table = route.target_tables[0],
+        domain = route.domain,
         "Created transform job, triggering execution"
     );
 

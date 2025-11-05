@@ -89,7 +89,7 @@ pub struct StreamDescriptor {
     /// Whether this stream supports full refresh
     pub supports_full_refresh: bool,
 
-    /// Default cron schedule for this stream (e.g., "0 */6 * * *")
+    /// Default cron schedule for this stream in 6-field format: sec min hour day month dow (e.g., "0 0 */6 * * *")
     pub default_cron_schedule: Option<&'static str>,
 }
 
@@ -241,6 +241,9 @@ static REGISTRY: OnceLock<Registry> = OnceLock::new();
 /// Initialize the global registry (called once at startup)
 fn init_registry() -> Registry {
     let mut registry = Registry::new();
+
+    // Register internal sources
+    registry.register(crate::sources::ariata_app::registry::AriataAppSource::descriptor());
 
     // Register OAuth sources
     registry.register(crate::sources::google::registry::GoogleSource::descriptor());

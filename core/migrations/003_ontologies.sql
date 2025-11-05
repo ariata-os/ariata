@@ -37,8 +37,6 @@ CREATE TABLE IF NOT EXISTS entities_person (
 CREATE INDEX idx_entities_person_name ON entities_person(canonical_name);
 CREATE INDEX idx_entities_person_emails ON entities_person USING GIN(email_addresses);
 CREATE INDEX idx_entities_person_phones ON entities_person USING GIN(phone_numbers);
-CREATE INDEX idx_entities_person_relationship ON entities_person(relationship_category);
-CREATE INDEX idx_entities_person_last_interaction ON entities_person(last_interaction DESC);
 
 CREATE TRIGGER entities_person_updated_at
     BEFORE UPDATE ON entities_person
@@ -73,9 +71,7 @@ CREATE TABLE IF NOT EXISTS entities_place (
 );
 
 CREATE INDEX idx_entities_place_name ON entities_place(canonical_name);
-CREATE INDEX idx_entities_place_category ON entities_place(category);
 CREATE INDEX idx_entities_place_geo ON entities_place USING GIST(geo_center);
-CREATE INDEX idx_entities_place_visit_count ON entities_place(visit_count DESC);
 
 CREATE TRIGGER entities_place_updated_at
     BEFORE UPDATE ON entities_place
@@ -109,9 +105,6 @@ CREATE TABLE IF NOT EXISTS entities_topic (
 );
 
 CREATE INDEX idx_entities_topic_name ON entities_topic(name);
-CREATE INDEX idx_entities_topic_category ON entities_topic(category);
-CREATE INDEX idx_entities_topic_keywords ON entities_topic USING GIN(keywords);
-CREATE INDEX idx_entities_topic_last_mentioned ON entities_topic(last_mentioned DESC);
 
 CREATE TRIGGER entities_topic_updated_at
     BEFORE UPDATE ON entities_topic
@@ -149,11 +142,6 @@ CREATE TABLE IF NOT EXISTS health_heart_rate (
         ))
 );
 
-CREATE INDEX idx_health_heart_rate_timestamp ON health_heart_rate(timestamp DESC);
-CREATE INDEX idx_health_heart_rate_source ON health_heart_rate(source_stream_id);
-CREATE INDEX idx_health_heart_rate_provider ON health_heart_rate(source_provider, timestamp DESC);
-
-CREATE TRIGGER health_heart_rate_updated_at BEFORE UPDATE ON health_heart_rate FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_hrv (signal)
 CREATE TABLE IF NOT EXISTS health_hrv (
@@ -177,9 +165,6 @@ CREATE TABLE IF NOT EXISTS health_hrv (
         CHECK (measurement_type IS NULL OR measurement_type IN ('rmssd', 'sdnn', 'pnn50'))
 );
 
-CREATE INDEX idx_health_hrv_timestamp ON health_hrv(timestamp DESC);
-CREATE INDEX idx_health_hrv_source ON health_hrv(source_stream_id);
-CREATE TRIGGER health_hrv_updated_at BEFORE UPDATE ON health_hrv FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_blood_oxygen (signal)
 CREATE TABLE IF NOT EXISTS health_blood_oxygen (
@@ -199,9 +184,6 @@ CREATE TABLE IF NOT EXISTS health_blood_oxygen (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_health_blood_oxygen_timestamp ON health_blood_oxygen(timestamp DESC);
-CREATE INDEX idx_health_blood_oxygen_source ON health_blood_oxygen(source_stream_id);
-CREATE TRIGGER health_blood_oxygen_updated_at BEFORE UPDATE ON health_blood_oxygen FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_blood_pressure (signal)
 CREATE TABLE IF NOT EXISTS health_blood_pressure (
@@ -222,9 +204,6 @@ CREATE TABLE IF NOT EXISTS health_blood_pressure (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_health_blood_pressure_timestamp ON health_blood_pressure(timestamp DESC);
-CREATE INDEX idx_health_blood_pressure_source ON health_blood_pressure(source_stream_id);
-CREATE TRIGGER health_blood_pressure_updated_at BEFORE UPDATE ON health_blood_pressure FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_blood_glucose (signal)
 CREATE TABLE IF NOT EXISTS health_blood_glucose (
@@ -248,9 +227,6 @@ CREATE TABLE IF NOT EXISTS health_blood_glucose (
         CHECK (meal_context IS NULL OR meal_context IN ('fasting', 'pre_meal', 'post_meal', 'random'))
 );
 
-CREATE INDEX idx_health_blood_glucose_timestamp ON health_blood_glucose(timestamp DESC);
-CREATE INDEX idx_health_blood_glucose_source ON health_blood_glucose(source_stream_id);
-CREATE TRIGGER health_blood_glucose_updated_at BEFORE UPDATE ON health_blood_glucose FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_body_temperature (signal)
 CREATE TABLE IF NOT EXISTS health_body_temperature (
@@ -274,9 +250,6 @@ CREATE TABLE IF NOT EXISTS health_body_temperature (
         CHECK (measurement_location IS NULL OR measurement_location IN ('oral', 'forehead', 'wrist', 'ear', 'axillary'))
 );
 
-CREATE INDEX idx_health_body_temperature_timestamp ON health_body_temperature(timestamp DESC);
-CREATE INDEX idx_health_body_temperature_source ON health_body_temperature(source_stream_id);
-CREATE TRIGGER health_body_temperature_updated_at BEFORE UPDATE ON health_body_temperature FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_respiratory_rate (signal)
 CREATE TABLE IF NOT EXISTS health_respiratory_rate (
@@ -296,9 +269,6 @@ CREATE TABLE IF NOT EXISTS health_respiratory_rate (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_health_respiratory_rate_timestamp ON health_respiratory_rate(timestamp DESC);
-CREATE INDEX idx_health_respiratory_rate_source ON health_respiratory_rate(source_stream_id);
-CREATE TRIGGER health_respiratory_rate_updated_at BEFORE UPDATE ON health_respiratory_rate FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_steps (signal)
 CREATE TABLE IF NOT EXISTS health_steps (
@@ -318,9 +288,6 @@ CREATE TABLE IF NOT EXISTS health_steps (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_health_steps_timestamp ON health_steps(timestamp DESC);
-CREATE INDEX idx_health_steps_source ON health_steps(source_stream_id);
-CREATE TRIGGER health_steps_updated_at BEFORE UPDATE ON health_steps FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_sleep (temporal)
 CREATE TABLE IF NOT EXISTS health_sleep (
@@ -343,9 +310,6 @@ CREATE TABLE IF NOT EXISTS health_sleep (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_health_sleep_start ON health_sleep(start_time DESC);
-CREATE INDEX idx_health_sleep_source ON health_sleep(source_stream_id);
-CREATE TRIGGER health_sleep_updated_at BEFORE UPDATE ON health_sleep FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_workout (temporal)
 CREATE TABLE IF NOT EXISTS health_workout (
@@ -377,11 +341,6 @@ CREATE TABLE IF NOT EXISTS health_workout (
         CHECK (intensity IS NULL OR intensity IN ('low', 'moderate', 'high', 'max'))
 );
 
-CREATE INDEX idx_health_workout_start ON health_workout(start_time DESC);
-CREATE INDEX idx_health_workout_type ON health_workout(activity_type);
-CREATE INDEX idx_health_workout_place ON health_workout(place_id);
-CREATE INDEX idx_health_workout_source ON health_workout(source_stream_id);
-CREATE TRIGGER health_workout_updated_at BEFORE UPDATE ON health_workout FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_meal (temporal)
 CREATE TABLE IF NOT EXISTS health_meal (
@@ -412,10 +371,6 @@ CREATE TABLE IF NOT EXISTS health_meal (
         CHECK (meal_type IS NULL OR meal_type IN ('breakfast', 'lunch', 'dinner', 'snack'))
 );
 
-CREATE INDEX idx_health_meal_timestamp ON health_meal(timestamp DESC);
-CREATE INDEX idx_health_meal_place ON health_meal(place_id);
-CREATE INDEX idx_health_meal_source ON health_meal(source_stream_id);
-CREATE TRIGGER health_meal_updated_at BEFORE UPDATE ON health_meal FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_medication (temporal)
 CREATE TABLE IF NOT EXISTS health_medication (
@@ -437,10 +392,6 @@ CREATE TABLE IF NOT EXISTS health_medication (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_health_medication_timestamp ON health_medication(timestamp DESC);
-CREATE INDEX idx_health_medication_name ON health_medication(medication_name);
-CREATE INDEX idx_health_medication_source ON health_medication(source_stream_id);
-CREATE TRIGGER health_medication_updated_at BEFORE UPDATE ON health_medication FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_symptom (temporal)
 CREATE TABLE IF NOT EXISTS health_symptom (
@@ -466,10 +417,6 @@ CREATE TABLE IF NOT EXISTS health_symptom (
         CHECK (severity IS NULL OR severity IN ('mild', 'moderate', 'severe'))
 );
 
-CREATE INDEX idx_health_symptom_start ON health_symptom(start_time DESC);
-CREATE INDEX idx_health_symptom_name ON health_symptom(symptom_name);
-CREATE INDEX idx_health_symptom_source ON health_symptom(source_stream_id);
-CREATE TRIGGER health_symptom_updated_at BEFORE UPDATE ON health_symptom FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- health_mood (temporal)
 CREATE TABLE IF NOT EXISTS health_mood (
@@ -503,10 +450,6 @@ CREATE TABLE IF NOT EXISTS health_mood (
         ))
 );
 
-CREATE INDEX idx_health_mood_timestamp ON health_mood(timestamp DESC);
-CREATE INDEX idx_health_mood_category ON health_mood(mood_category);
-CREATE INDEX idx_health_mood_source ON health_mood(source_stream_id);
-CREATE TRIGGER health_mood_updated_at BEFORE UPDATE ON health_mood FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================================
 -- LOCATION DOMAIN PRIMITIVES
@@ -538,10 +481,7 @@ CREATE TABLE IF NOT EXISTS location_point (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_location_point_timestamp ON location_point(timestamp DESC);
 CREATE INDEX idx_location_point_coords ON location_point USING GIST(coordinates);
-CREATE INDEX idx_location_point_source ON location_point(source_stream_id);
-CREATE TRIGGER location_point_updated_at BEFORE UPDATE ON location_point FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- location_visit (temporal)
 CREATE TABLE IF NOT EXISTS location_visit (
@@ -566,29 +506,76 @@ CREATE TABLE IF NOT EXISTS location_visit (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_location_visit_start ON location_visit(start_time DESC);
 CREATE INDEX idx_location_visit_place ON location_visit(place_id);
-CREATE INDEX idx_location_visit_coords ON location_visit USING GIST(centroid_coordinates);
-CREATE INDEX idx_location_visit_source ON location_visit(source_stream_id);
-CREATE TRIGGER location_visit_updated_at BEFORE UPDATE ON location_visit FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================================
 -- SOCIAL DOMAIN PRIMITIVES
 -- Communication and interpersonal interactions
 -- ============================================================================
 
--- social_email (temporal) - ALREADY IMPLEMENTED IN MIGRATION 009
--- Updating to add entity FK references
+-- social_email (temporal)
+-- Email communications from various providers (Gmail, Outlook, etc.)
+CREATE TABLE IF NOT EXISTS social_email (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-ALTER TABLE social_email
-    ADD COLUMN IF NOT EXISTS from_person_id UUID REFERENCES entities_person(id),
-    ADD COLUMN IF NOT EXISTS to_person_ids UUID[] DEFAULT '{}',
-    ADD COLUMN IF NOT EXISTS cc_person_ids UUID[] DEFAULT '{}',
-    ADD COLUMN IF NOT EXISTS bcc_addresses TEXT[] DEFAULT '{}',
-    ADD COLUMN IF NOT EXISTS bcc_person_ids UUID[] DEFAULT '{}';
+    -- Email identifiers
+    message_id TEXT NOT NULL,
+    thread_id TEXT,
+    subject TEXT,
+    snippet TEXT,
 
-CREATE INDEX IF NOT EXISTS idx_social_email_from_person ON social_email(from_person_id);
-CREATE INDEX IF NOT EXISTS idx_social_email_to_persons ON social_email USING GIN(to_person_ids);
+    -- Email content
+    body_plain TEXT,
+    body_html TEXT,
+
+    -- Timestamp
+    timestamp TIMESTAMPTZ NOT NULL,
+
+    -- Sender information
+    from_address TEXT,
+    from_name TEXT,
+
+    -- Recipient information
+    to_addresses TEXT[] DEFAULT '{}',
+    to_names TEXT[] DEFAULT '{}',
+    cc_addresses TEXT[] DEFAULT '{}',
+    cc_names TEXT[] DEFAULT '{}',
+    bcc_addresses TEXT[] DEFAULT '{}',
+
+    -- Entity references (for person resolution)
+    from_person_id UUID REFERENCES entities_person(id),
+    to_person_ids UUID[] DEFAULT '{}',
+    cc_person_ids UUID[] DEFAULT '{}',
+    bcc_person_ids UUID[] DEFAULT '{}',
+
+    -- Email metadata
+    direction TEXT NOT NULL,
+    labels TEXT[] DEFAULT '{}',
+    is_read BOOLEAN DEFAULT false,
+    is_starred BOOLEAN DEFAULT false,
+
+    -- Attachment information
+    has_attachments BOOLEAN DEFAULT false,
+    attachment_count INTEGER DEFAULT 0,
+
+    -- Thread information
+    thread_position INTEGER,
+    thread_message_count INTEGER,
+
+    -- Source tracking
+    source_stream_id UUID NOT NULL,
+    source_table TEXT NOT NULL,
+    source_provider TEXT NOT NULL,
+
+    -- Timestamps
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT social_email_direction_check CHECK (direction IN ('sent', 'received')),
+    CONSTRAINT social_email_unique_source UNIQUE (source_table, message_id)
+);
+
+CREATE INDEX idx_social_email_from_person ON social_email(from_person_id);
 
 -- social_message (temporal)
 CREATE TABLE IF NOT EXISTS social_message (
@@ -625,11 +612,7 @@ CREATE TABLE IF NOT EXISTS social_message (
         CHECK (channel IN ('sms', 'imessage', 'slack', 'whatsapp', 'discord', 'telegram'))
 );
 
-CREATE INDEX idx_social_message_timestamp ON social_message(timestamp DESC);
-CREATE INDEX idx_social_message_thread ON social_message(thread_id);
 CREATE INDEX idx_social_message_from_person ON social_message(from_person_id);
-CREATE INDEX idx_social_message_source ON social_message(source_stream_id);
-CREATE TRIGGER social_message_updated_at BEFORE UPDATE ON social_message FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- social_call (temporal)
 CREATE TABLE IF NOT EXISTS social_call (
@@ -664,10 +647,7 @@ CREATE TABLE IF NOT EXISTS social_call (
     CONSTRAINT social_call_status_check CHECK (call_status IN ('answered', 'missed', 'declined', 'voicemail'))
 );
 
-CREATE INDEX idx_social_call_start ON social_call(start_time DESC);
 CREATE INDEX idx_social_call_caller_person ON social_call(caller_person_id);
-CREATE INDEX idx_social_call_source ON social_call(source_stream_id);
-CREATE TRIGGER social_call_updated_at BEFORE UPDATE ON social_call FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- social_interaction (temporal)
 CREATE TABLE IF NOT EXISTS social_interaction (
@@ -699,10 +679,7 @@ CREATE TABLE IF NOT EXISTS social_interaction (
         CHECK (interaction_type IN ('meeting', 'gathering', 'event', 'casual_encounter'))
 );
 
-CREATE INDEX idx_social_interaction_start ON social_interaction(start_time DESC);
 CREATE INDEX idx_social_interaction_place ON social_interaction(place_id);
-CREATE INDEX idx_social_interaction_source ON social_interaction(source_stream_id);
-CREATE TRIGGER social_interaction_updated_at BEFORE UPDATE ON social_interaction FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- social_post (temporal)
 CREATE TABLE IF NOT EXISTS social_post (
@@ -736,10 +713,6 @@ CREATE TABLE IF NOT EXISTS social_post (
         CHECK (post_type IN ('original', 'repost', 'reply', 'quote'))
 );
 
-CREATE INDEX idx_social_post_timestamp ON social_post(timestamp DESC);
-CREATE INDEX idx_social_post_platform ON social_post(platform);
-CREATE INDEX idx_social_post_source ON social_post(source_stream_id);
-CREATE TRIGGER social_post_updated_at BEFORE UPDATE ON social_post FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================================
 -- ACTIVITY DOMAIN PRIMITIVES
@@ -789,14 +762,12 @@ CREATE TABLE IF NOT EXISTS activity_calendar_entry (
     CONSTRAINT activity_calendar_event_type_check
         CHECK (event_type IS NULL OR event_type IN ('meeting', 'appointment', 'reminder', 'focus_block')),
     CONSTRAINT activity_calendar_status_check
-        CHECK (status IS NULL OR status IN ('confirmed', 'tentative', 'cancelled'))
+        CHECK (status IS NULL OR status IN ('confirmed', 'tentative', 'cancelled')),
+    CONSTRAINT activity_calendar_entry_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_activity_calendar_start ON activity_calendar_entry(start_time DESC);
 CREATE INDEX idx_activity_calendar_topic ON activity_calendar_entry(topic_id);
 CREATE INDEX idx_activity_calendar_place ON activity_calendar_entry(place_id);
-CREATE INDEX idx_activity_calendar_source ON activity_calendar_entry(source_stream_id);
-CREATE TRIGGER activity_calendar_entry_updated_at BEFORE UPDATE ON activity_calendar_entry FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- activity_app_usage (temporal)
 CREATE TABLE IF NOT EXISTS activity_app_usage (
@@ -822,10 +793,6 @@ CREATE TABLE IF NOT EXISTS activity_app_usage (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_activity_app_usage_start ON activity_app_usage(start_time DESC);
-CREATE INDEX idx_activity_app_usage_app ON activity_app_usage(app_name);
-CREATE INDEX idx_activity_app_usage_source ON activity_app_usage(source_stream_id);
-CREATE TRIGGER activity_app_usage_updated_at BEFORE UPDATE ON activity_app_usage FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- activity_screen_time (temporal)
 CREATE TABLE IF NOT EXISTS activity_screen_time (
@@ -850,9 +817,6 @@ CREATE TABLE IF NOT EXISTS activity_screen_time (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_activity_screen_time_start ON activity_screen_time(start_time DESC);
-CREATE INDEX idx_activity_screen_time_source ON activity_screen_time(source_stream_id);
-CREATE TRIGGER activity_screen_time_updated_at BEFORE UPDATE ON activity_screen_time FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- activity_web_browsing (temporal)
 CREATE TABLE IF NOT EXISTS activity_web_browsing (
@@ -877,10 +841,6 @@ CREATE TABLE IF NOT EXISTS activity_web_browsing (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_activity_web_browsing_timestamp ON activity_web_browsing(timestamp DESC);
-CREATE INDEX idx_activity_web_browsing_domain ON activity_web_browsing(domain);
-CREATE INDEX idx_activity_web_browsing_source ON activity_web_browsing(source_stream_id);
-CREATE TRIGGER activity_web_browsing_updated_at BEFORE UPDATE ON activity_web_browsing FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- activity_focus_session (temporal)
 CREATE TABLE IF NOT EXISTS activity_focus_session (
@@ -910,10 +870,7 @@ CREATE TABLE IF NOT EXISTS activity_focus_session (
         CHECK (session_type IN ('deep_work', 'pomodoro', 'flow_state'))
 );
 
-CREATE INDEX idx_activity_focus_session_start ON activity_focus_session(start_time DESC);
 CREATE INDEX idx_activity_focus_session_topic ON activity_focus_session(topic_id);
-CREATE INDEX idx_activity_focus_session_source ON activity_focus_session(source_stream_id);
-CREATE TRIGGER activity_focus_session_updated_at BEFORE UPDATE ON activity_focus_session FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================================
 -- FINANCE DOMAIN PRIMITIVES
@@ -943,10 +900,6 @@ CREATE TABLE IF NOT EXISTS finance_balance (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_finance_balance_timestamp ON finance_balance(timestamp DESC);
-CREATE INDEX idx_finance_balance_account ON finance_balance(account_name);
-CREATE INDEX idx_finance_balance_source ON finance_balance(source_stream_id);
-CREATE TRIGGER finance_balance_updated_at BEFORE UPDATE ON finance_balance FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- finance_transaction (temporal)
 CREATE TABLE IF NOT EXISTS finance_transaction (
@@ -981,12 +934,7 @@ CREATE TABLE IF NOT EXISTS finance_transaction (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_finance_transaction_timestamp ON finance_transaction(timestamp DESC);
-CREATE INDEX idx_finance_transaction_merchant ON finance_transaction(merchant_name);
-CREATE INDEX idx_finance_transaction_category ON finance_transaction(category);
 CREATE INDEX idx_finance_transaction_place ON finance_transaction(place_id);
-CREATE INDEX idx_finance_transaction_source ON finance_transaction(source_stream_id);
-CREATE TRIGGER finance_transaction_updated_at BEFORE UPDATE ON finance_transaction FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- finance_subscription (temporal)
 CREATE TABLE IF NOT EXISTS finance_subscription (
@@ -1018,11 +966,8 @@ CREATE TABLE IF NOT EXISTS finance_subscription (
         CHECK (status IN ('active', 'cancelled', 'paused', 'trial'))
 );
 
-CREATE INDEX idx_finance_subscription_service ON finance_subscription(service_name);
 CREATE INDEX idx_finance_subscription_status ON finance_subscription(status);
 CREATE INDEX idx_finance_subscription_next_billing ON finance_subscription(next_billing_date);
-CREATE INDEX idx_finance_subscription_source ON finance_subscription(source_stream_id);
-CREATE TRIGGER finance_subscription_updated_at BEFORE UPDATE ON finance_subscription FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================================
 -- AMBIENT DOMAIN PRIMITIVES
@@ -1063,10 +1008,7 @@ CREATE TABLE IF NOT EXISTS ambient_weather (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_ambient_weather_timestamp ON ambient_weather(timestamp DESC);
 CREATE INDEX idx_ambient_weather_place ON ambient_weather(place_id);
-CREATE INDEX idx_ambient_weather_source ON ambient_weather(source_stream_id);
-CREATE TRIGGER ambient_weather_updated_at BEFORE UPDATE ON ambient_weather FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ambient_air_quality (signal)
 CREATE TABLE IF NOT EXISTS ambient_air_quality (
@@ -1098,7 +1040,6 @@ CREATE TABLE IF NOT EXISTS ambient_air_quality (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_ambient_air_quality_timestamp ON ambient_air_quality(timestamp DESC);
 CREATE INDEX idx_ambient_air_quality_place ON ambient_air_quality(place_id);
 CREATE INDEX idx_ambient_air_quality_source ON ambient_air_quality(source_stream_id);
 CREATE TRIGGER ambient_air_quality_updated_at BEFORE UPDATE ON ambient_air_quality FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -1124,7 +1065,6 @@ CREATE TABLE IF NOT EXISTS ambient_noise_level (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_ambient_noise_level_timestamp ON ambient_noise_level(timestamp DESC);
 CREATE INDEX idx_ambient_noise_level_place ON ambient_noise_level(place_id);
 CREATE INDEX idx_ambient_noise_level_source ON ambient_noise_level(source_stream_id);
 CREATE TRIGGER ambient_noise_level_updated_at BEFORE UPDATE ON ambient_noise_level FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -1150,7 +1090,6 @@ CREATE TABLE IF NOT EXISTS ambient_light_level (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_ambient_light_level_timestamp ON ambient_light_level(timestamp DESC);
 CREATE INDEX idx_ambient_light_level_place ON ambient_light_level(place_id);
 CREATE INDEX idx_ambient_light_level_source ON ambient_light_level(source_stream_id);
 CREATE TRIGGER ambient_light_level_updated_at BEFORE UPDATE ON ambient_light_level FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -1223,7 +1162,6 @@ CREATE TABLE IF NOT EXISTS knowledge_document (
 CREATE INDEX idx_knowledge_document_title ON knowledge_document(title);
 CREATE INDEX idx_knowledge_document_topic ON knowledge_document(topic_id);
 CREATE INDEX idx_knowledge_document_tags ON knowledge_document USING GIN(tags);
-CREATE INDEX idx_knowledge_document_modified ON knowledge_document(last_modified_time DESC);
 CREATE INDEX idx_knowledge_document_source ON knowledge_document(source_stream_id);
 CREATE INDEX idx_knowledge_document_search ON knowledge_document USING GIN(to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, '')));
 CREATE TRIGGER knowledge_document_updated_at BEFORE UPDATE ON knowledge_document FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -1264,7 +1202,6 @@ CREATE TABLE IF NOT EXISTS knowledge_playlist (
 
 CREATE INDEX idx_knowledge_playlist_name ON knowledge_playlist(name);
 CREATE INDEX idx_knowledge_playlist_type ON knowledge_playlist(playlist_type);
-CREATE INDEX idx_knowledge_playlist_modified ON knowledge_playlist(last_modified_time DESC);
 CREATE INDEX idx_knowledge_playlist_source ON knowledge_playlist(source_stream_id);
 CREATE TRIGGER knowledge_playlist_updated_at BEFORE UPDATE ON knowledge_playlist FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
@@ -1295,7 +1232,6 @@ CREATE TABLE IF NOT EXISTS knowledge_bookmark (
 CREATE INDEX idx_knowledge_bookmark_url ON knowledge_bookmark(url);
 CREATE INDEX idx_knowledge_bookmark_topic ON knowledge_bookmark(topic_id);
 CREATE INDEX idx_knowledge_bookmark_tags ON knowledge_bookmark USING GIN(tags);
-CREATE INDEX idx_knowledge_bookmark_saved ON knowledge_bookmark(saved_at DESC);
 CREATE INDEX idx_knowledge_bookmark_source ON knowledge_bookmark(source_stream_id);
 CREATE TRIGGER knowledge_bookmark_updated_at BEFORE UPDATE ON knowledge_bookmark FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
@@ -1327,12 +1263,62 @@ CREATE TABLE IF NOT EXISTS knowledge_search (
         CHECK (search_engine IN ('google', 'chatgpt', 'perplexity', 'notion', 'github', 'other'))
 );
 
-CREATE INDEX idx_knowledge_search_timestamp ON knowledge_search(timestamp DESC);
 CREATE INDEX idx_knowledge_search_query ON knowledge_search(query);
 CREATE INDEX idx_knowledge_search_engine ON knowledge_search(search_engine);
 CREATE INDEX idx_knowledge_search_topic ON knowledge_search(topic_id);
 CREATE INDEX idx_knowledge_search_source ON knowledge_search(source_stream_id);
 CREATE TRIGGER knowledge_search_updated_at BEFORE UPDATE ON knowledge_search FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- knowledge_ai_conversation (temporal)
+CREATE TABLE IF NOT EXISTS knowledge_ai_conversation (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Conversation/Message identification
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+
+    -- Message content
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content TEXT NOT NULL,
+
+    -- Model information
+    model TEXT,
+    provider TEXT NOT NULL,
+
+    -- Entity relationships (for future linking)
+    topic_id UUID REFERENCES entities_topic(id),
+    tags TEXT[] DEFAULT '{}',
+
+    -- Timing
+    timestamp TIMESTAMPTZ NOT NULL,
+
+    -- Source tracking (standard ontology pattern)
+    source_stream_id UUID NOT NULL,
+    source_table TEXT NOT NULL DEFAULT 'stream_ariata_ai_chat',
+    source_provider TEXT NOT NULL DEFAULT 'ariata',
+
+    -- Additional metadata
+    metadata JSONB DEFAULT '{}',
+
+    -- Standard audit fields
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_knowledge_ai_conversation_conversation
+    ON knowledge_ai_conversation(conversation_id, timestamp);
+CREATE INDEX idx_knowledge_ai_conversation_timestamp
+    ON knowledge_ai_conversation(timestamp DESC);
+CREATE INDEX idx_knowledge_ai_conversation_topic
+    ON knowledge_ai_conversation(topic_id) WHERE topic_id IS NOT NULL;
+CREATE INDEX idx_knowledge_ai_conversation_provider
+    ON knowledge_ai_conversation(provider, timestamp DESC);
+CREATE TRIGGER knowledge_ai_conversation_updated_at BEFORE UPDATE ON knowledge_ai_conversation FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+COMMENT ON TABLE knowledge_ai_conversation IS
+'Normalized AI conversations in the knowledge domain. Transformed from stream_ariata_ai_chat.';
+COMMENT ON COLUMN knowledge_ai_conversation.source_stream_id IS
+'UUID linking back to the stream table record (stream_ariata_ai_chat.id).';
 
 -- ============================================================================
 -- SPEECH DOMAIN PRIMITIVES
@@ -1365,7 +1351,6 @@ CREATE TABLE IF NOT EXISTS speech_transcription (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_speech_transcription_recorded ON speech_transcription(recorded_at DESC);
 CREATE INDEX idx_speech_transcription_source ON speech_transcription(source_stream_id);
 CREATE INDEX idx_speech_transcription_search ON speech_transcription USING GIN(to_tsvector('english', transcript_text));
 CREATE TRIGGER speech_transcription_updated_at BEFORE UPDATE ON speech_transcription FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -1558,13 +1543,3 @@ CREATE TRIGGER introspection_dream_updated_at BEFORE UPDATE ON introspection_dre
 -- ============================================================================
 
 COMMENT ON SCHEMA elt IS 'Ariata ELT system: streams (raw) + ontologies (normalized)';
-COMMENT ON TABLE health_heart_rate IS 'Heart rate measurements (signal)';
-COMMENT ON TABLE health_sleep IS 'Sleep sessions (temporal)';
-COMMENT ON TABLE location_point IS 'GPS coordinates (signal)';
-COMMENT ON TABLE location_visit IS 'Place visits (temporal)';
-COMMENT ON TABLE social_message IS 'Messages across channels (temporal)';
-COMMENT ON TABLE activity_calendar_entry IS 'Calendar events (temporal)';
-COMMENT ON TABLE finance_transaction IS 'Financial transactions (temporal)';
-COMMENT ON TABLE knowledge_document IS 'Synced documents (temporal)';
-COMMENT ON TABLE speech_transcription IS 'Transcribed audio (intermediate primitive)';
-COMMENT ON TABLE introspection_journal IS 'Journal entries (temporal)';

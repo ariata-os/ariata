@@ -1,19 +1,112 @@
 @import 'tailwindcss';
-/* @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400;1,600;1,700&display=swap'); */
 
 @font-face {
-  font-family: 'PP Writer';
-  src: url('/fonts/PPWriter-Book.ttf') format('truetype');
-  font-weight: 400;
+  font-family: 'Lora';
+  src: url('/fonts/Lora-VariableFont_wght.ttf') format('truetype');
+  font-weight: 300;
   font-style: normal;
   font-display: swap;
 }
+
 
 @theme {
 	--color-canvas: #1c1917;
 
 	--font-mono: 'IBM Plex Mono', monospace;
 	--font-sans: 'Avenir', sans-serif;
-	--font-serif: 'PP Writer', serif;
+	--font-serif: 'Lora', serif;
+}
+
+/* Markdown Styles */
+.markdown {
+	@apply text-neutral-900;
+}
+
+.markdown h1 {
+	@apply text-3xl font-bold font-serif mt-6 mb-4 text-neutral-900;
+}
+
+.markdown h2 {
+	@apply text-2xl font-bold font-serif mt-5 mb-3 text-neutral-900;
+}
+
+.markdown h3 {
+	@apply text-xl font-bold font-serif mt-4 mb-2 text-neutral-900;
+}
+
+.markdown h4 {
+	@apply text-lg font-bold font-serif mt-3 mb-2 text-neutral-800;
+}
+
+.markdown h5 {
+	@apply text-base font-bold font-serif mt-2 mb-1 text-neutral-800;
+}
+
+.markdown h6 {
+	@apply text-sm font-bold font-serif mt-2 mb-1 text-neutral-700;
+}
+
+.markdown p {
+	@apply mb-4 leading-relaxed;
+}
+
+.markdown strong {
+	@apply font-bold text-neutral-950;
+}
+
+.markdown em {
+	@apply italic;
+}
+
+.markdown code {
+	@apply bg-neutral-100 text-neutral-900 px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.markdown pre {
+	@apply bg-neutral-100 text-neutral-900 p-4 rounded-lg overflow-x-auto mb-4 border border-neutral-200;
+}
+
+.markdown pre code {
+	@apply bg-transparent p-0 text-sm;
+}
+
+.markdown ul {
+	@apply list-disc list-inside mb-4 space-y-1;
+}
+
+.markdown ol {
+	@apply list-decimal list-inside mb-4 space-y-1;
+}
+
+.markdown li {
+	@apply leading-relaxed;
+}
+
+.markdown blockquote {
+	@apply border-l-4 border-neutral-300 pl-4 italic text-neutral-700 my-4;
+}
+
+.markdown a {
+	@apply text-blue-600 hover:text-blue-800 underline;
+}
+
+.markdown hr {
+	@apply border-neutral-300 my-6;
+}
+
+.markdown table {
+	@apply w-full border-collapse mb-4;
+}
+
+.markdown th {
+	@apply bg-neutral-100 border border-neutral-300 px-4 py-2 text-left font-bold;
+}
+
+.markdown td {
+	@apply border border-neutral-300 px-4 py-2;
+}
+
+.markdown img {
+	@apply max-w-full h-auto rounded-lg my-4;
 }
 

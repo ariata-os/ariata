@@ -3,20 +3,35 @@
 //! Handles execution of transformation jobs that convert raw stream data
 //! into normalized ontology tables.
 
+use std::sync::Arc;
 use serde_json::json;
 use sqlx::PgPool;
 
 use crate::error::Result;
 use crate::jobs::models::Job;
+use crate::jobs::transform_context::TransformContext;
+use crate::sources::ariata::transform::ChatConversationTransform;
 use crate::sources::base::OntologyTransform;
+use crate::sources::google::calendar::transform::GoogleCalendarTransform;
 use crate::sources::google::gmail::transform::GmailEmailTransform;
+use crate::sources::ios::microphone::MicrophoneTranscriptionTransform;
+use crate::sources::notion::pages::transform::NotionPageTransform;
 
 /// Execute a transform job
 ///
 /// This function is called by the job executor to perform the actual transformation work.
 /// It routes to the appropriate transformer based on metadata and updates job status.
-#[tracing::instrument(skip(db, job), fields(job_id = %job.id, job_type = "transform"))]
-pub async fn execute_transform_job(db: &PgPool, job: &Job) -> Result<()> {
+///
+/// # Arguments
+/// * `db` - Database connection pool
+/// * `context` - Transform context with storage and API keys
+/// * `job` - The job to execute
+#[tracing::instrument(skip(db, context, job), fields(job_id = %job.id, job_type = "transform"))]
+pub async fn execute_transform_job(
+    db: &PgPool,
+    context: &Arc<TransformContext>,
+    job: &Job
+) -> Result<()> {
     // Extract required metadata
     let source_table = job
         .metadata
@@ -47,7 +62,32 @@ pub async fn execute_transform_job(db: &PgPool, job: &Job) -> Result<()> {
 
     // Route to appropriate transformer based on source/target pair
     let transformer: Box<dyn OntologyTransform> = match (source_table, target_table) {
-        ("stream_google_gmail", "social_email") => Box::new(GmailEmailTransform),
+        ("stream_ariata_ai_chat", "knowledge_ai_conversation") => {
+            Box::new(ChatConversationTransform)
+        }
+
+        ("stream_google_gmail", "social_email") => {
+            Box::new(GmailEmailTransform)
+        }
+
+        ("stream_google_calendar", "activity_calendar_entry") => {
+            Box::new(GoogleCalendarTransform)
+        }
+
+        ("stream_notion_pages", "knowledge_document") => {
+            Box::new(NotionPageTransform)
+        }
+
+        ("stream_ios_microphone", "speech_transcription") => {
+            // Get AssemblyAI API key (will error if not configured)
+            let api_key = context.api_keys.assemblyai_required()?.to_string();
+
+            // Clone storage from context
+            let storage = (*context.storage).clone();
+
+            Box::new(MicrophoneTranscriptionTransform::new(api_key, storage))
+        }
+
         _ => {
             return Err(crate::Error::InvalidInput(format!(
                 "Unknown transform mapping: {} -> {}",

@@ -124,7 +124,7 @@ export const mockStreams: Stream[] = [
 		description: "Google Calendar events and meetings",
 		tableName: "stream_google_calendar",
 		isEnabled: true,
-		cronSchedule: "0 */6 * * *", // Every 6 hours
+		cronSchedule: "0 0 */6 * * *", // Every 6 hours
 		lastSyncAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
 		lastSyncStatus: "success",
 	},
@@ -136,7 +136,7 @@ export const mockStreams: Stream[] = [
 		description: "Gmail messages and threads",
 		tableName: "stream_google_gmail",
 		isEnabled: true,
-		cronSchedule: "*/15 * * * *", // Every 15 minutes
+		cronSchedule: "0 */15 * * * *", // Every 15 minutes
 		lastSyncAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
 		lastSyncStatus: "success",
 	},
@@ -150,7 +150,7 @@ export const mockStreams: Stream[] = [
 		description: "Health and fitness data from Apple Health",
 		tableName: "stream_ios_healthkit",
 		isEnabled: true,
-		cronSchedule: "0 */1 * * *", // Every hour
+		cronSchedule: "0 0 */1 * * *", // Every hour
 		lastSyncAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
 		lastSyncStatus: "success",
 	},
@@ -162,7 +162,7 @@ export const mockStreams: Stream[] = [
 		description: "Location history and significant places",
 		tableName: "stream_ios_location",
 		isEnabled: true,
-		cronSchedule: "*/30 * * * *", // Every 30 minutes
+		cronSchedule: "0 */30 * * * *", // Every 30 minutes
 		lastSyncAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
 		lastSyncStatus: "success",
 	},
@@ -188,7 +188,7 @@ export const mockStreams: Stream[] = [
 		description: "Notion pages and databases",
 		tableName: "stream_notion_pages",
 		isEnabled: true,
-		cronSchedule: "0 0 * * *", // Daily at midnight
+		cronSchedule: "0 0 0 * * *", // Daily at midnight
 		lastSyncAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
 		lastSyncStatus: "success",
 	},
@@ -349,12 +349,12 @@ export function formatCronSchedule(cron: string | null): string {
 	if (!cron) return "Manual";
 
 	const scheduleMap: Record<string, string> = {
-		"*/15 * * * *": "Every 15 minutes",
-		"*/30 * * * *": "Every 30 minutes",
-		"0 */1 * * *": "Every hour",
-		"0 */6 * * *": "Every 6 hours",
-		"0 0 * * *": "Daily at midnight",
-		"0 9 * * 1": "Weekly on Monday at 9 AM",
+		"0 */15 * * * *": "Every 15 minutes",
+		"0 */30 * * * *": "Every 30 minutes",
+		"0 0 */1 * * *": "Every hour",
+		"0 0 */6 * * *": "Every 6 hours",
+		"0 0 0 * * *": "Daily at midnight",
+		"0 0 9 * * 1": "Weekly on Monday at 9 AM",
 	};
 
 	return scheduleMap[cron] || cron;

@@ -1,9 +1,6 @@
 //! Database module for PostgreSQL operations
 
-use std::collections::HashMap;
-
-use serde_json::Value;
-use sqlx::{postgres::PgPoolOptions, Column, PgPool, Row};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 
 use crate::error::{Error, Result};
 
@@ -64,55 +61,6 @@ impl Database {
             .map_err(|e| Error::Database(format!("Failed to run migrations: {e}")))?;
 
         Ok(())
-    }
-
-    /// Execute a query and return results
-    ///
-    /// # Warning
-    /// This method is deprecated and removed from public API.
-    /// Use sqlx::query_as!() macros for type-safe queries instead.
-    ///
-    /// # Security
-    /// This method does not provide SQL injection protection. Only use with trusted input.
-    #[deprecated(
-        since = "0.1.0",
-        note = "Use sqlx::query_as!() macros for type-safe queries instead"
-    )]
-    #[allow(dead_code)]
-    async fn query(&self, sql: &str) -> Result<Vec<HashMap<String, Value>>> {
-        let rows = sqlx::query(sql).fetch_all(&self.pool).await?;
-
-        let mut results = Vec::new();
-
-        for row in rows {
-            let mut map = HashMap::new();
-
-            // Get column names from the row
-            for (i, column) in row.columns().iter().enumerate() {
-                let name = column.name();
-
-                // Try to get value as JSON
-                let value = if let Ok(v) = row.try_get::<Value, _>(i) {
-                    v
-                } else if let Ok(v) = row.try_get::<String, _>(i) {
-                    Value::String(v)
-                } else if let Ok(v) = row.try_get::<i32, _>(i) {
-                    Value::Number(v.into())
-                } else if let Ok(v) = row.try_get::<i64, _>(i) {
-                    Value::Number(v.into())
-                } else if let Ok(v) = row.try_get::<bool, _>(i) {
-                    Value::Bool(v)
-                } else {
-                    Value::Null
-                };
-
-                map.insert(name.to_string(), value);
-            }
-
-            results.push(map);
-        }
-
-        Ok(results)
     }
 
     /// Execute a query with parameters

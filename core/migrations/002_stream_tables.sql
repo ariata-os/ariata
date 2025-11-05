@@ -58,12 +58,6 @@ CREATE TABLE IF NOT EXISTS stream_google_calendar (
     UNIQUE(source_id, event_id)
 );
 
-CREATE INDEX idx_gcal_source ON stream_google_calendar(source_id);
-CREATE INDEX idx_gcal_event ON stream_google_calendar(event_id);
-CREATE INDEX idx_gcal_start ON stream_google_calendar(start_time);
-CREATE INDEX idx_gcal_end ON stream_google_calendar(end_time);
-CREATE INDEX idx_gcal_calendar ON stream_google_calendar(calendar_id);
-CREATE INDEX idx_gcal_organizer ON stream_google_calendar(organizer_email);
 CREATE INDEX idx_gcal_time_range ON stream_google_calendar(source_id, start_time, end_time);
 
 CREATE TRIGGER stream_google_calendar_updated_at
@@ -142,17 +136,7 @@ CREATE TABLE IF NOT EXISTS stream_google_gmail (
     UNIQUE(source_id, message_id)
 );
 
-CREATE INDEX idx_gmail_source ON stream_google_gmail(source_id);
-CREATE INDEX idx_gmail_message ON stream_google_gmail(message_id);
-CREATE INDEX idx_gmail_thread ON stream_google_gmail(thread_id);
-CREATE INDEX idx_gmail_date ON stream_google_gmail(date);
-CREATE INDEX idx_gmail_from ON stream_google_gmail(from_email);
-CREATE INDEX idx_gmail_subject ON stream_google_gmail(subject);
-CREATE INDEX idx_gmail_labels ON stream_google_gmail USING GIN(labels);
-CREATE INDEX idx_gmail_unread ON stream_google_gmail(is_unread) WHERE is_unread = true;
 CREATE INDEX idx_gmail_time_range ON stream_google_gmail(source_id, date DESC);
-CREATE INDEX idx_gmail_thread_position ON stream_google_gmail(thread_id, thread_position);
-CREATE INDEX idx_gmail_search ON stream_google_gmail USING GIN(to_tsvector('english', coalesce(subject, '') || ' ' || coalesce(snippet, '')));
 
 CREATE TRIGGER stream_google_gmail_updated_at
     BEFORE UPDATE ON stream_google_gmail
@@ -210,12 +194,7 @@ CREATE TABLE IF NOT EXISTS stream_ios_healthkit (
     UNIQUE(source_id, timestamp)
 );
 
-CREATE INDEX idx_ios_healthkit_timestamp ON stream_ios_healthkit(timestamp DESC);
 CREATE INDEX idx_ios_healthkit_source_time ON stream_ios_healthkit(source_id, timestamp DESC);
-CREATE INDEX idx_ios_healthkit_heart_rate ON stream_ios_healthkit(timestamp) WHERE heart_rate IS NOT NULL;
-CREATE INDEX idx_ios_healthkit_steps ON stream_ios_healthkit(timestamp) WHERE steps IS NOT NULL;
-CREATE INDEX idx_ios_healthkit_sleep ON stream_ios_healthkit(timestamp) WHERE sleep_stage IS NOT NULL;
-CREATE INDEX idx_ios_healthkit_workout ON stream_ios_healthkit(timestamp) WHERE workout_type IS NOT NULL;
 
 COMMENT ON TABLE stream_ios_healthkit IS 'iOS HealthKit data including heart rate, HRV, steps, sleep, and workouts';
 
@@ -257,7 +236,6 @@ CREATE TABLE IF NOT EXISTS stream_ios_location (
     UNIQUE(source_id, timestamp)
 );
 
-CREATE INDEX idx_ios_location_timestamp ON stream_ios_location(timestamp DESC);
 CREATE INDEX idx_ios_location_source_time ON stream_ios_location(source_id, timestamp DESC);
 
 COMMENT ON TABLE stream_ios_location IS 'iOS location data including GPS coordinates, speed, and activity type';
@@ -299,10 +277,7 @@ CREATE TABLE IF NOT EXISTS stream_ios_microphone (
     UNIQUE(source_id, timestamp)
 );
 
-CREATE INDEX idx_ios_microphone_timestamp ON stream_ios_microphone(timestamp DESC);
 CREATE INDEX idx_ios_microphone_source_time ON stream_ios_microphone(source_id, timestamp DESC);
-CREATE INDEX idx_ios_microphone_transcription ON stream_ios_microphone USING GIN (to_tsvector('english', transcription))
-    WHERE transcription IS NOT NULL;
 
 COMMENT ON TABLE stream_ios_microphone IS 'iOS microphone data including audio levels and transcriptions';
 
@@ -338,10 +313,7 @@ CREATE TABLE IF NOT EXISTS stream_mac_apps (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_mac_apps_timestamp ON stream_mac_apps(timestamp DESC);
 CREATE INDEX idx_mac_apps_source_time ON stream_mac_apps(source_id, timestamp DESC);
-CREATE INDEX idx_mac_apps_bundle ON stream_mac_apps(bundle_id, timestamp DESC);
-CREATE INDEX idx_mac_apps_name ON stream_mac_apps(app_name);
 CREATE UNIQUE INDEX unique_mac_apps_usage ON stream_mac_apps(source_id, timestamp, app_name);
 
 COMMENT ON TABLE stream_mac_apps IS 'macOS application usage tracking including active apps and window titles';
@@ -374,10 +346,7 @@ CREATE TABLE IF NOT EXISTS stream_mac_browser (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_mac_browser_timestamp ON stream_mac_browser(timestamp DESC);
 CREATE INDEX idx_mac_browser_source_time ON stream_mac_browser(source_id, timestamp DESC);
-CREATE INDEX idx_mac_browser_domain ON stream_mac_browser(domain, timestamp DESC);
-CREATE INDEX idx_mac_browser_url ON stream_mac_browser USING hash(url);
 CREATE UNIQUE INDEX unique_mac_browser_visit ON stream_mac_browser(source_id, url, timestamp);
 
 COMMENT ON TABLE stream_mac_browser IS 'macOS browser history from Safari, Chrome, Firefox, etc.';
@@ -419,11 +388,7 @@ CREATE TABLE IF NOT EXISTS stream_mac_imessage (
     UNIQUE(source_id, timestamp, contact_id, is_from_me)
 );
 
-CREATE INDEX idx_mac_imessage_timestamp ON stream_mac_imessage(timestamp DESC);
 CREATE INDEX idx_mac_imessage_source_time ON stream_mac_imessage(source_id, timestamp DESC);
-CREATE INDEX idx_mac_imessage_contact ON stream_mac_imessage(contact_id, timestamp DESC);
-CREATE INDEX idx_mac_imessage_search ON stream_mac_imessage USING GIN (to_tsvector('english', message_text))
-    WHERE message_text IS NOT NULL;
 
 COMMENT ON TABLE stream_mac_imessage IS 'macOS iMessage and SMS history';
 
@@ -460,9 +425,7 @@ CREATE TABLE IF NOT EXISTS stream_mac_screentime (
     UNIQUE(source_id, period_start, period_end)
 );
 
-CREATE INDEX idx_mac_screentime_timestamp ON stream_mac_screentime(timestamp DESC);
 CREATE INDEX idx_mac_screentime_source_time ON stream_mac_screentime(source_id, timestamp DESC);
-CREATE INDEX idx_mac_screentime_period ON stream_mac_screentime(period_start, period_end);
 
 COMMENT ON TABLE stream_mac_screentime IS 'macOS screen time summaries aggregated by time period';
 
@@ -499,6 +462,10 @@ CREATE TABLE IF NOT EXISTS stream_notion_pages (
     -- Properties and metadata
     properties JSONB NOT NULL DEFAULT '{}'::jsonb,
 
+    -- Page content
+    content_markdown TEXT,
+    content_blocks JSONB,
+
     -- Full data backup
     raw_json JSONB,
 
@@ -510,14 +477,7 @@ CREATE TABLE IF NOT EXISTS stream_notion_pages (
     UNIQUE(source_id, page_id)
 );
 
-CREATE INDEX idx_notion_pages_source ON stream_notion_pages(source_id);
-CREATE INDEX idx_notion_pages_page_id ON stream_notion_pages(page_id);
-CREATE INDEX idx_notion_pages_last_edited ON stream_notion_pages(last_edited_time DESC);
-CREATE INDEX idx_notion_pages_created ON stream_notion_pages(created_time DESC);
-CREATE INDEX idx_notion_pages_archived ON stream_notion_pages(archived) WHERE archived = false;
-CREATE INDEX idx_notion_pages_parent ON stream_notion_pages(parent_type, parent_id);
 CREATE INDEX idx_notion_pages_sync_time ON stream_notion_pages(source_id, synced_at DESC);
-CREATE INDEX idx_notion_pages_properties_search ON stream_notion_pages USING GIN (properties jsonb_path_ops);
 
 CREATE TRIGGER stream_notion_pages_updated_at
     BEFORE UPDATE ON stream_notion_pages
@@ -525,3 +485,51 @@ CREATE TRIGGER stream_notion_pages_updated_at
     EXECUTE FUNCTION update_updated_at();
 
 COMMENT ON TABLE stream_notion_pages IS 'Notion pages with metadata, properties, and relationships';
+
+-- ============================================================================
+-- ARIATA AI CHAT
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS stream_ariata_ai_chat (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+
+    -- Conversation/Thread identification
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+
+    -- Message content
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content TEXT NOT NULL,
+
+    -- Model information
+    model TEXT,
+    provider TEXT DEFAULT 'anthropic',
+
+    -- Timing
+    timestamp TIMESTAMPTZ NOT NULL,
+
+    -- Additional data
+    metadata JSONB DEFAULT '{}',
+
+    -- Standard audit fields
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    UNIQUE(source_id, message_id)
+);
+
+CREATE INDEX idx_stream_ariata_ai_chat_source_time
+    ON stream_ariata_ai_chat(source_id, timestamp DESC);
+
+CREATE TRIGGER stream_ariata_ai_chat_updated_at
+    BEFORE UPDATE ON stream_ariata_ai_chat
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at();
+
+COMMENT ON TABLE stream_ariata_ai_chat IS
+'Raw AI chat messages from Ariata application. Source for AI conversation analytics.';
+COMMENT ON COLUMN stream_ariata_ai_chat.conversation_id IS
+'Unique identifier for a conversation thread. Multiple messages share the same conversation_id.';
+COMMENT ON COLUMN stream_ariata_ai_chat.message_id IS
+'Unique identifier for this specific message within the conversation.';

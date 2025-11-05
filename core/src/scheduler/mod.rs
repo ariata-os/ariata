@@ -2,6 +2,20 @@
 //!
 //! This scheduler reads enabled streams from the `streams` table and
 //! schedules them based on their `cron_schedule` field.
+//!
+//! ## Cron Expression Format
+//!
+//! The scheduler uses tokio-cron-scheduler which requires 6-field cron expressions:
+//! ```text
+//! sec   min   hour   day   month   day_of_week
+//! *     *     *      *     *       *
+//! ```
+//!
+//! ### Examples:
+//! - `0 0 */6 * * *` - Every 6 hours
+//! - `0 */15 * * * *` - Every 15 minutes
+//! - `0 0 0 * * *` - Daily at midnight
+//! - `0 0 9 * * 1` - Every Monday at 9:00 AM
 
 use tokio_cron_scheduler::{Job, JobScheduler};
 use sqlx::PgPool;
@@ -9,27 +23,27 @@ use uuid::Uuid;
 
 use crate::{
     error::{Error, Result},
-    sources::StreamFactory,
+    storage::Storage,
 };
 
 /// Simplified scheduler using StreamFactory
 pub struct Scheduler {
     db: PgPool,
-    factory: StreamFactory,
+    storage: Storage,
     scheduler: JobScheduler,
 }
 
 impl Scheduler {
     /// Create a new scheduler
-    pub async fn new(db: PgPool) -> Result<Self> {
+    pub async fn new(db: PgPool, storage: Storage) -> Result<Self> {
         let scheduler = JobScheduler::new()
             .await
             .map_err(|e| Error::Other(format!("Failed to create scheduler: {e}")))?;
 
         Ok(Self {
-            factory: StreamFactory::new(db.clone()),
-            scheduler,
             db,
+            storage,
+            scheduler,
         })
     }
 
@@ -64,6 +78,7 @@ impl Scheduler {
             let cron = cron_schedule.expect("cron_schedule is NOT NULL per WHERE clause");
 
             let db = self.db.clone();
+            let storage = self.storage.clone();
 
             tracing::info!(
                 "Scheduling {}/{} ({}) with cron: {}",
@@ -73,8 +88,14 @@ impl Scheduler {
                 cron
             );
 
+            // Clone values for error message before they're moved into closure
+            let provider_for_error = provider.clone();
+            let stream_name_for_error = stream_name.clone();
+            let source_name_for_error = source_name.clone();
+
             let job = Job::new_async(cron.as_str(), move |_uuid, _lock| {
                 let db = db.clone();
+                let storage = storage.clone();
                 let source_id = source_id;
                 let stream_name = stream_name.clone();
                 let source_name = source_name.clone();
@@ -84,7 +105,7 @@ impl Scheduler {
                     tracing::info!("Running scheduled sync: {} ({})", stream_name_str, source_name);
 
                     // Use the job-based API
-                    match crate::api::jobs::trigger_stream_sync(&db, source_id, &stream_name, None).await {
+                    match crate::api::jobs::trigger_stream_sync(&db, &storage, source_id, &stream_name, None).await {
                         Ok(response) => {
                             tracing::info!(
                                 "Scheduled sync job created: {} - job_id={}, status={}",
@@ -99,7 +120,14 @@ impl Scheduler {
                     }
                 })
             })
-            .map_err(|e| Error::Other(format!("Failed to create job: {e}")))?;
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create job for {}/{} ({}): {}. \
+                    Note: Cron expressions must be in 6-field format (sec min hour day month dow). \
+                    Example: '0 0 */6 * * *' for every 6 hours.",
+                    provider_for_error, stream_name_for_error, source_name_for_error, e
+                ))
+            })?;
 
             self.scheduler
                 .add(job)
@@ -179,7 +207,8 @@ mod tests {
     #[tokio::test]
     async fn test_scheduler_creation() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let result = Scheduler::new(pool).await;
+        let storage = Storage::local("./test_data").unwrap();
+        let result = Scheduler::new(pool, storage).await;
         assert!(result.is_ok());
     }
 }

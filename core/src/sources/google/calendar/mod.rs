@@ -1,5 +1,7 @@
 //! Google Calendar stream implementation
 
+pub mod transform;
+
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::PgPool;
@@ -254,168 +256,6 @@ impl GoogleCalendarStream {
         })
     }
 
-    /// Insert or update an event
-    async fn upsert_event(&self, calendar_id: &str, event: &Event) -> Result<bool> {
-        // Extract key fields - handle both datetime and date formats
-        let start_time = if let Some(start) = event.start.as_ref() {
-            if let Some(dt_str) = &start.date_time {
-                DateTime::parse_from_rfc3339(dt_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            } else if let Some(date_str) = &start.date {
-                NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                    .ok()
-                    .and_then(|d| d.and_hms_opt(0, 0, 0))
-                    .map(|dt| dt.and_utc())
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let end_time = if let Some(end) = event.end.as_ref() {
-            if let Some(dt_str) = &end.date_time {
-                DateTime::parse_from_rfc3339(dt_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            } else if let Some(date_str) = &end.date {
-                NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                    .ok()
-                    .and_then(|d| d.and_hms_opt(0, 0, 0))
-                    .map(|dt| dt.and_utc())
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // Destructure times - both must be present
-        let (start_time, end_time) = match (start_time, end_time) {
-            (Some(start), Some(end)) => (start, end),
-            _ => return Ok(false), // Skip events without proper times
-        };
-
-        let all_day = event.start.as_ref().and_then(|s| s.date.as_ref()).is_some();
-
-        // Check if event is cancelled (we still store it but mark status)
-        let status = event
-            .status
-            .clone()
-            .unwrap_or_else(|| "confirmed".to_string());
-
-        // Extract organizer and creator
-        let organizer_email = event.organizer.as_ref().and_then(|o| o.email.clone());
-        let organizer_name = event
-            .organizer
-            .as_ref()
-            .and_then(|o| o.display_name.clone());
-        let creator_email = event.creator.as_ref().and_then(|c| c.email.clone());
-        let creator_name = event.creator.as_ref().and_then(|c| c.display_name.clone());
-
-        // Count attendees
-        let attendee_count = event.attendees.as_ref().map(|a| a.len()).unwrap_or(0) as i32;
-
-        // Check for conferencing
-        let has_conferencing = event.conference_data.is_some();
-        let conference_type = event
-            .conference_data
-            .as_ref()
-            .and_then(|c| c.conference_solution.as_ref())
-            .and_then(|s| s.name.clone());
-        let conference_link = event
-            .conference_data
-            .as_ref()
-            .and_then(|c| c.entry_points.as_ref())
-            .and_then(|eps| eps.first())
-            .and_then(|ep| ep.uri.clone());
-
-        // Serialize full event as JSON
-        let raw_json = serde_json::to_value(event)?;
-
-        // Upsert into database
-        sqlx::query(
-            r#"
-            INSERT INTO stream_google_calendar (
-                source_id, event_id, calendar_id, etag,
-                summary, description, location, status,
-                start_time, end_time, all_day, timezone,
-                organizer_email, organizer_name, creator_email, creator_name,
-                attendee_count, has_conferencing, conference_type, conference_link,
-                created_by_google, updated_by_google,
-                is_recurring, recurring_event_id,
-                raw_json, synced_at
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
-            )
-            ON CONFLICT (source_id, event_id)
-            DO UPDATE SET
-                etag = EXCLUDED.etag,
-                summary = EXCLUDED.summary,
-                description = EXCLUDED.description,
-                location = EXCLUDED.location,
-                status = EXCLUDED.status,
-                start_time = EXCLUDED.start_time,
-                end_time = EXCLUDED.end_time,
-                all_day = EXCLUDED.all_day,
-                organizer_email = EXCLUDED.organizer_email,
-                organizer_name = EXCLUDED.organizer_name,
-                attendee_count = EXCLUDED.attendee_count,
-                has_conferencing = EXCLUDED.has_conferencing,
-                conference_type = EXCLUDED.conference_type,
-                conference_link = EXCLUDED.conference_link,
-                updated_by_google = EXCLUDED.updated_by_google,
-                raw_json = EXCLUDED.raw_json,
-                synced_at = EXCLUDED.synced_at,
-                updated_at = NOW()
-            "#,
-        )
-        .bind(self.source_id)
-        .bind(&event.id)
-        .bind(calendar_id)
-        .bind(&event.etag)
-        .bind(event.summary.as_deref())
-        .bind(event.description.as_deref())
-        .bind(event.location.as_deref())
-        .bind(&status)
-        .bind(start_time)
-        .bind(end_time)
-        .bind(all_day)
-        .bind(event.start.as_ref().and_then(|s| s.time_zone.as_deref()))
-        .bind(organizer_email.as_deref())
-        .bind(organizer_name.as_deref())
-        .bind(creator_email.as_deref())
-        .bind(creator_name.as_deref())
-        .bind(attendee_count)
-        .bind(has_conferencing)
-        .bind(conference_type.as_deref())
-        .bind(conference_link.as_deref())
-        .bind(
-            event
-                .created
-                .as_ref()
-                .and_then(|c| DateTime::parse_from_rfc3339(c).ok())
-                .map(|dt| dt.with_timezone(&Utc)),
-        )
-        .bind(
-            event
-                .updated
-                .as_ref()
-                .and_then(|u| DateTime::parse_from_rfc3339(u).ok())
-                .map(|dt| dt.with_timezone(&Utc)),
-        )
-        .bind(event.recurring_event_id.is_some())
-        .bind(event.recurring_event_id.as_deref())
-        .bind(raw_json)
-        .bind(Utc::now())
-        .execute(&self.db)
-        .await?;
-
-        Ok(true)
-    }
-
     /// Insert or update an event within a transaction
     async fn upsert_event_with_tx(
         &self,
@@ -593,20 +433,6 @@ impl GoogleCalendarStream {
         .await?;
 
         Ok(row.and_then(|(token,)| token))
-    }
-
-    /// Save the sync token to the database (streams table only)
-    async fn save_sync_token(&self, token: &str) -> Result<()> {
-        sqlx::query(
-            "UPDATE streams SET last_sync_token = $1, last_sync_at = $2 WHERE source_id = $3 AND stream_name = 'calendar'"
-        )
-        .bind(token)
-        .bind(Utc::now())
-        .bind(self.source_id)
-        .execute(&self.db)
-        .await?;
-
-        Ok(())
     }
 
     /// Save the sync token to the database within a transaction

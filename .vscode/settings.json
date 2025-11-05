@@ -1,6 +1,6 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/notebooks/.venv/bin/python",
-    "jupyter.kernels.excludePythonEnvironments": [
-        "${workspaceFolder}/notebooks/.venv/bin/python"
-    ]
+	"css.lint.unknownAtRules": "ignore",
+	"css.customData": [
+		".vscode/css-custom-data.json"
+	]
 }

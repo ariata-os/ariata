@@ -14,6 +14,8 @@ pub mod server;
 pub mod setup;
 pub mod sources;
 pub mod storage;
+pub mod transcription;
+pub mod transforms;
 
 // Re-export main types
 pub use client::{Ariata, AriataBuilder};

@@ -1,0 +1,18 @@
+{
+	"version": 1.1,
+	"atDirectives": [
+		{
+			"name": "@apply",
+			"description": "Tailwind CSS @apply directive for applying utility classes"
+		},
+		{
+			"name": "@theme",
+			"description": "Tailwind CSS v4 @theme directive for custom theme configuration"
+		},
+		{
+			"name": "@import",
+			"description": "CSS @import directive"
+		}
+	]
+}
+

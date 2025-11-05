@@ -10,7 +10,7 @@
         const path = page.url.pathname;
         const segments = path.split("/").filter(Boolean);
 
-        const items: BreadcrumbItem[] = [{ label: "Home", href: "/" }];
+        const items: BreadcrumbItem[] = [{ label: "Chat", href: "/" }];
 
         // Build breadcrumb path
         let currentPath = "";

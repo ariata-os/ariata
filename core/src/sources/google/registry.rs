@@ -32,7 +32,7 @@ impl SourceRegistry for GoogleSource {
                     .config_example(calendar_config_example())
                     .supports_incremental(true)
                     .supports_full_refresh(true)
-                    .default_cron_schedule("0 */6 * * *")  // Every 6 hours
+                    .default_cron_schedule("0 0 */6 * * *")  // Every 6 hours (6-field: sec min hour day month dow)
                     .build(),
 
                 // Gmail stream
@@ -44,7 +44,7 @@ impl SourceRegistry for GoogleSource {
                     .config_example(gmail_config_example())
                     .supports_incremental(true)
                     .supports_full_refresh(true)
-                    .default_cron_schedule("*/15 * * * *")  // Every 15 minutes
+                    .default_cron_schedule("0 */15 * * * *")  // Every 15 minutes (6-field: sec min hour day month dow)
                     .build(),
             ],
         }

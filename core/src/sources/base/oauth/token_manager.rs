@@ -295,9 +295,9 @@ impl TokenManager {
         let source_id: Uuid = sqlx::query_scalar(
             r#"
             INSERT INTO sources (
-                provider, name, access_token, refresh_token, token_expires_at, is_active
+                provider, name, access_token, refresh_token, token_expires_at, is_active, is_internal
             ) VALUES (
-                $1, $2, $3, $4, $5, true
+                $1, $2, $3, $4, $5, true, false
             )
             ON CONFLICT (name)
             DO UPDATE SET

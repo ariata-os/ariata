@@ -168,7 +168,7 @@ pub enum StreamCommands {
         /// Stream name (e.g., calendar, gmail)
         stream_name: String,
 
-        /// Cron expression (e.g., "0 */6 * * *")
+        /// Cron expression in 6-field format: sec min hour day month dow (e.g., "0 0 */6 * * *")
         #[arg(long)]
         cron: Option<String>,
     },
@@ -192,6 +192,15 @@ pub enum StreamCommands {
         source_id: String,
 
         /// Stream name (e.g., calendar, gmail)
+        stream_name: String,
+    },
+
+    /// Trigger a transform job for a specific stream
+    Transform {
+        /// Source ID (UUID)
+        source_id: String,
+
+        /// Stream name (e.g., stream_ios_microphone, stream_google_gmail)
         stream_name: String,
     },
 }

@@ -33,23 +33,34 @@ impl Ariata {
         let db_status = self.database.health_check().await?;
         let storage_status = self.storage.health_check().await?;
 
+        // Count active sources
+        let active_sources = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM sources WHERE is_active = true"
+        )
+        .fetch_one(self.database.pool())
+        .await
+        .unwrap_or(Some(0))
+        .unwrap_or(0) as usize;
+
         Ok(Status {
             is_healthy: db_status.is_healthy && storage_status.is_healthy,
             database_status: format!("{db_status:?}"),
             storage_status: format!("{storage_status:?}"),
-            active_sources: 0, // TODO: Implement
+            active_sources,
         })
     }
 
     /// Ingest data from a source
+    ///
+    /// Currently stores raw data to storage. Processing is handled by:
+    /// - Device-specific processors (see `sources/*/mod.rs`)
+    /// - Transform jobs (see `jobs/transform_job.rs`)
+    /// - Sync jobs (see `jobs/sync_job.rs`)
     pub async fn ingest(&self, source: &str, data: Value) -> Result<IngestResult> {
         // Store raw data
         let key = format!("raw/{}/{}.json", source, chrono::Utc::now().timestamp());
         let bytes = serde_json::to_vec(&data)?;
         self.storage.upload(&key, bytes).await?;
-
-        // Process and store in database
-        // TODO: Implement processing pipeline
 
         Ok(IngestResult {
             records_ingested: 1,
