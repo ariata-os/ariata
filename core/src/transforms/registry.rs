@@ -49,6 +49,24 @@ pub fn get_transform_route(stream_name: &str) -> Result<TransformRoute> {
             domain: "knowledge",
             transform_stage: "conversation_structuring",
         }),
+        "stream_ios_healthkit" => Ok(TransformRoute {
+            source_table: "stream_ios_healthkit",
+            target_tables: vec![
+                "health_heart_rate",
+                "health_hrv",
+                "health_steps",
+                "health_sleep",
+                "health_workout",
+            ],
+            domain: "health",
+            transform_stage: "health_metrics_normalization",
+        }),
+        "stream_ios_location" => Ok(TransformRoute {
+            source_table: "stream_ios_location",
+            target_tables: vec!["location_point"],
+            domain: "location",
+            transform_stage: "location_normalization",
+        }),
         "speech_transcription" => Ok(TransformRoute {
             source_table: "speech_transcription",
             target_tables: vec!["semantic_inferences"],
@@ -56,7 +74,7 @@ pub fn get_transform_route(stream_name: &str) -> Result<TransformRoute> {
             transform_stage: "semantic_parsing",
         }),
         _ => Err(Error::InvalidInput(format!(
-            "Unknown stream for transform: '{}'. Valid streams: stream_ios_microphone, stream_google_gmail, stream_google_calendar, stream_notion_pages, stream_ariata_ai_chat, speech_transcription",
+            "Unknown stream for transform: '{}'. Valid streams: stream_ios_microphone, stream_google_gmail, stream_google_calendar, stream_notion_pages, stream_ariata_ai_chat, stream_ios_healthkit, stream_ios_location, speech_transcription",
             stream_name
         ))),
     }
@@ -66,6 +84,8 @@ pub fn get_transform_route(stream_name: &str) -> Result<TransformRoute> {
 pub fn list_transform_streams() -> Vec<&'static str> {
     vec![
         "stream_ios_microphone",
+        "stream_ios_healthkit",
+        "stream_ios_location",
         "stream_google_gmail",
         "stream_google_calendar",
         "stream_notion_pages",
@@ -90,6 +110,8 @@ pub fn normalize_stream_name(name: &str) -> String {
             "calendar" => "stream_google_calendar",
             "pages" => "stream_notion_pages",
             "microphone" => "stream_ios_microphone",
+            "healthkit" => "stream_ios_healthkit",
+            "location" => "stream_ios_location",
             _ => name, // Return as-is if unknown
         }
         .to_string()

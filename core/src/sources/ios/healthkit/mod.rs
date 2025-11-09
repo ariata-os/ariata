@@ -1,4 +1,6 @@
-//! iOS HealthKit data processor
+//! iOS HealthKit data processor and transforms
+
+pub mod transform;
 
 use serde_json::Value;
 use std::sync::Arc;
@@ -8,6 +10,14 @@ use crate::{
     error::{Error, Result},
     sources::base::{get_or_create_device_source, validate_heart_rate, validate_positive, validate_percentage, validate_timestamp_reasonable},
     storage::Storage,
+};
+
+pub use transform::{
+    HealthKitHeartRateTransform,
+    HealthKitHRVTransform,
+    HealthKitStepsTransform,
+    HealthKitSleepTransform,
+    HealthKitWorkoutTransform,
 };
 
 /// Process iOS HealthKit data
@@ -62,30 +72,28 @@ pub async fn process(db: &Database, _storage: &Arc<Storage>, record: &Value) -> 
         .with_timezone(&chrono::Utc);
     validate_timestamp_reasonable(timestamp_dt)?;
 
-    // Validate health metrics (if present)
+    // Validate health metrics if present
     if let Some(hr) = heart_rate {
         validate_heart_rate(hr)?;
     }
     if let Some(rhr) = resting_heart_rate {
         validate_heart_rate(rhr)?;
     }
+    if let Some(hrv_val) = hrv {
+        validate_positive("HRV", hrv_val)?;
+    }
+    if let Some(s) = steps {
+        if s < 0 {
+            return Err(Error::InvalidInput("Steps cannot be negative".into()));
+        }
+    }
     if let Some(d) = distance {
-        validate_positive("distance", d)?;
-    }
-    if let Some(ae) = active_energy {
-        validate_positive("active_energy", ae)?;
-    }
-    if let Some(be) = basal_energy {
-        validate_positive("basal_energy", be)?;
-    }
-    if let Some(w) = weight {
-        validate_positive("weight", w)?;
+        validate_positive("Distance", d)?;
     }
     if let Some(bf) = body_fat_percentage {
-        validate_percentage("body_fat_percentage", bf)?;
+        validate_percentage("Body fat percentage", bf)?;
     }
 
-    // Insert or update into stream_ios_healthkit table (idempotent)
     sqlx::query(
         "INSERT INTO stream_ios_healthkit
          (source_id, timestamp, heart_rate, hrv, resting_heart_rate, steps, distance,
@@ -133,11 +141,11 @@ pub async fn process(db: &Database, _storage: &Arc<Storage>, record: &Value) -> 
     .bind(mindful_minutes)
     .bind(device_name)
     .bind(device_model)
-    .bind(record) // Store full JSON in raw_data
+    .bind(record)
     .execute(db.pool())
     .await
-    .map_err(|e| Error::Database(format!("Failed to insert HealthKit data: {e}")))?;
+    .map_err(|e| Error::Database(format!("Failed to insert healthkit data: {e}")))?;
 
-    tracing::debug!("Inserted HealthKit record for device {}", device_id);
+    tracing::debug!("Inserted healthkit record for device {}", device_id);
     Ok(())
 }

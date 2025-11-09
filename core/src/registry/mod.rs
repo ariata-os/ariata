@@ -217,9 +217,7 @@ impl Registry {
     pub fn get_stream(&self, source_name: &str, stream_name: &str) -> Option<&StreamDescriptor> {
         self.sources
             .get(source_name)
-            .and_then(|source| {
-                source.streams.iter().find(|s| s.name == stream_name)
-            })
+            .and_then(|source| source.streams.iter().find(|s| s.name == stream_name))
     }
 
     /// List all streams across all sources
@@ -227,7 +225,10 @@ impl Registry {
         self.sources
             .values()
             .flat_map(|source| {
-                source.streams.iter().map(move |stream| (source.name, stream))
+                source
+                    .streams
+                    .iter()
+                    .map(move |stream| (source.name, stream))
             })
             .collect()
     }

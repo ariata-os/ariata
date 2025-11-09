@@ -3,6 +3,7 @@
 	import ChatInput from "$lib/components/ChatInput.svelte";
 	import ModelPicker, { type ModelOption } from "$lib/components/ModelPicker.svelte";
 	import Markdown from "$lib/components/Markdown.svelte";
+	import ToolCall from "$lib/components/ToolCall.svelte";
 	import { onMount } from "svelte";
 	import { goto } from "$app/navigation";
 	import type { PageData } from "./$types";
@@ -11,7 +12,17 @@
 	let { data }: { data: PageData } = $props();
 
 	// Chat state - initialize from loaded data
-	let messages: Array<{ role: string; content: string; id: string }> = $state(
+	let messages: Array<{
+		role: string;
+		content: string;
+		id: string;
+		tool_calls?: Array<{
+			tool_name: string;
+			arguments: Record<string, unknown>;
+			result?: unknown;
+			timestamp: string;
+		}>;
+	}> = $state(
 		data.messages || [],
 	);
 	let input = $state("");
@@ -157,13 +168,22 @@
 						role: m.role,
 						content: m.content,
 					})),
-					conversationId,
+					sessionId: conversationId, // API expects 'sessionId' parameter
 					model: selectedModel.id,
 				}),
 			});
 
 			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
+				// Try to get detailed error message from response
+				let errorDetail = `HTTP error! status: ${response.status}`;
+				try {
+					const errorData = await response.json();
+					errorDetail = errorData.error || errorData.details || errorDetail;
+					console.error('[handleChatSubmit] API error:', errorData);
+				} catch (e) {
+					console.error('[handleChatSubmit] Failed to parse error response');
+				}
+				throw new Error(errorDetail);
 			}
 
 			// Create assistant message placeholder
@@ -187,6 +207,23 @@
 					// Append text directly to the last message (assistant)
 					messages[messages.length - 1].content += chunk;
 				}
+			}
+
+			// After streaming completes, reload messages from DB to get tool_calls
+			try {
+				const sessionResponse = await fetch(`/api/sessions/${conversationId}`);
+				if (sessionResponse.ok) {
+					const sessionData = await sessionResponse.json();
+					if (sessionData.messages) {
+						// Update messages with full data including tool_calls
+						messages = sessionData.messages.map((msg: typeof messages[0], idx: number) => ({
+							...msg,
+							id: msg.id || `msg_${idx}`
+						}));
+					}
+				}
+			} catch (err) {
+				console.error('Failed to reload session data:', err);
 			}
 
 			// Generate title after first exchange (user + assistant)
@@ -229,6 +266,16 @@
 					<div class="flex justify-start">
 						<div class="w-full py-3">
 							{#if message.role === "assistant"}
+								<!-- Show tool calls first if they exist -->
+								{#if message.tool_calls && message.tool_calls.length > 0}
+									<div class="tool-calls-container mb-3">
+										{#each message.tool_calls as toolCall}
+											<ToolCall {...toolCall} />
+										{/each}
+									</div>
+								{/if}
+
+								<!-- Then show the assistant response -->
 								<div class="text-base text-neutral-900">
 									{#if message.content}
 										<Markdown content={message.content} />

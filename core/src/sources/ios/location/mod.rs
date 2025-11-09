@@ -1,4 +1,6 @@
-//! iOS Location data processor
+//! iOS Location data processor and transforms
+
+pub mod transform;
 
 use serde_json::Value;
 use std::sync::Arc;
@@ -9,6 +11,8 @@ use crate::{
     sources::base::{get_or_create_device_source, validate_latitude, validate_longitude, validate_timestamp_reasonable},
     storage::Storage,
 };
+
+pub use transform::IosLocationTransform;
 
 /// Process iOS Location data
 ///

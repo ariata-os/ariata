@@ -6,7 +6,7 @@ export const load: PageLoad = async ({ params, fetch }) => {
 	// If conversation ID is "new", return empty state
 	if (conversationId === 'new') {
 		return {
-			conversationId: `conv_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+			conversationId: crypto.randomUUID(),
 			messages: [],
 			isNew: true
 		};
@@ -25,7 +25,24 @@ export const load: PageLoad = async ({ params, fetch }) => {
 					isNew: true
 				};
 			}
-			throw new Error(`Failed to load conversation: ${response.statusText}`);
+
+			// Try to get error details from response
+			let errorMessage = response.statusText;
+			try {
+				const errorData = await response.json();
+				errorMessage = errorData.error || errorData.details || errorMessage;
+			} catch {
+				// If JSON parsing fails, use statusText
+			}
+
+			throw new Error(`Failed to load conversation: ${errorMessage}`);
+		}
+
+		// Check if response has content before parsing
+		const contentType = response.headers.get('content-type');
+		if (!contentType || !contentType.includes('application/json')) {
+			console.error('Invalid content-type:', contentType);
+			throw new Error('Invalid response format from server');
 		}
 
 		const data = await response.json();

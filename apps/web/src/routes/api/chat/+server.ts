@@ -155,6 +155,17 @@ async function saveMessagesToSession(
 	// Wait for assistant response to complete
 	const assistantContent = await result.text;
 
+	// Extract tool calls from the result
+	const toolCalls = await result.toolCalls;
+	const toolResults = await result.toolResults;
+
+	console.log('[saveMessages] Tool calls:', toolCalls?.length || 0);
+	console.log('[saveMessages] Tool results:', toolResults?.length || 0);
+	if (toolCalls && toolCalls.length > 0) {
+		console.log('[saveMessages] First tool call:', JSON.stringify(toolCalls[0], null, 2));
+		console.log('[saveMessages] First tool result:', JSON.stringify(toolResults?.[0], null, 2));
+	}
+
 	// Build new messages array with accurate timestamps
 	const now = new Date();
 	const newMessages: ChatMessage[] = [
@@ -167,13 +178,22 @@ async function saveMessagesToSession(
 				timestamp: new Date(now.getTime() + idx).toISOString(), // Offset by 1ms per message
 				model: null
 			})),
-		// Add assistant message
+		// Add assistant message with tool calls
 		{
 			role: 'assistant' as const,
 			content: assistantContent,
 			timestamp: new Date(now.getTime() + userMessages.length).toISOString(),
 			model,
-			provider: 'anthropic'
+			provider: 'anthropic',
+			tool_calls:
+				toolCalls && toolCalls.length > 0
+					? toolCalls.map((call, idx) => ({
+							tool_name: call.toolName,
+							arguments: call.args,
+							result: toolResults?.[idx]?.result,
+							timestamp: new Date().toISOString()
+						}))
+					: undefined
 		}
 	];
 

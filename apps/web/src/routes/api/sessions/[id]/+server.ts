@@ -36,6 +36,7 @@ export const GET: RequestHandler = async ({ params }) => {
 		});
 
 		if (!session) {
+			console.log('[/api/sessions/[id]] Session not found:', sessionId);
 			return json(
 				{
 					error: 'Session not found'
@@ -43,6 +44,8 @@ export const GET: RequestHandler = async ({ params }) => {
 				{ status: 404 }
 			);
 		}
+
+		console.log('[/api/sessions/[id]] Session found with', session.messages.length, 'messages');
 
 		// Extract metadata from messages (handle empty array)
 		const lastMessage = session.messages.length > 0 ? session.messages[session.messages.length - 1] : null;
@@ -62,7 +65,8 @@ export const GET: RequestHandler = async ({ params }) => {
 			role: msg.role,
 			content: msg.content,
 			timestamp: msg.timestamp,
-			model: msg.model || undefined
+			model: msg.model || undefined,
+			tool_calls: msg.tool_calls || undefined
 		}));
 
 		return json({
