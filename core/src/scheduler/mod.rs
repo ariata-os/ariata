@@ -19,23 +19,26 @@
 
 use tokio_cron_scheduler::{Job, JobScheduler};
 use sqlx::PgPool;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{
     error::{Error, Result},
-    storage::Storage,
+    storage::{Storage, stream_writer::StreamWriter},
 };
 
 /// Simplified scheduler using StreamFactory
 pub struct Scheduler {
     db: PgPool,
     storage: Storage,
+    stream_writer: Arc<Mutex<StreamWriter>>,
     scheduler: JobScheduler,
 }
 
 impl Scheduler {
     /// Create a new scheduler
-    pub async fn new(db: PgPool, storage: Storage) -> Result<Self> {
+    pub async fn new(db: PgPool, storage: Storage, stream_writer: Arc<Mutex<StreamWriter>>) -> Result<Self> {
         let scheduler = JobScheduler::new()
             .await
             .map_err(|e| Error::Other(format!("Failed to create scheduler: {e}")))?;
@@ -43,6 +46,7 @@ impl Scheduler {
         Ok(Self {
             db,
             storage,
+            stream_writer,
             scheduler,
         })
     }
@@ -79,6 +83,7 @@ impl Scheduler {
 
             let db = self.db.clone();
             let storage = self.storage.clone();
+            let stream_writer = self.stream_writer.clone();
 
             tracing::info!(
                 "Scheduling {}/{} ({}) with cron: {}",
@@ -96,6 +101,7 @@ impl Scheduler {
             let job = Job::new_async(cron.as_str(), move |_uuid, _lock| {
                 let db = db.clone();
                 let storage = storage.clone();
+                let stream_writer = stream_writer.clone();
                 let source_id = source_id;
                 let stream_name = stream_name.clone();
                 let source_name = source_name.clone();
@@ -105,7 +111,7 @@ impl Scheduler {
                     tracing::info!("Running scheduled sync: {} ({})", stream_name_str, source_name);
 
                     // Use the job-based API
-                    match crate::api::jobs::trigger_stream_sync(&db, &storage, source_id, &stream_name, None).await {
+                    match crate::api::jobs::trigger_stream_sync(&db, &storage, stream_writer, source_id, &stream_name, None).await {
                         Ok(response) => {
                             tracing::info!(
                                 "Scheduled sync job created: {} - job_id={}, status={}",

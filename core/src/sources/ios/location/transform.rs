@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::database::Database;
@@ -29,8 +28,8 @@ impl OntologyTransform for IosLocationTransform {
         "location"
     }
 
-    #[tracing::instrument(skip(self, db), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, source_id: Uuid) -> Result<TransformResult> {
+    #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
+    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -41,110 +40,116 @@ impl OntologyTransform for IosLocationTransform {
             "Starting iOS Location to location_point transformation"
         );
 
-        // Query stream_ios_location for records not yet transformed
-        // Use left join to find records that don't exist in location_point
-        let rows = sqlx::query(
-            r#"
-            SELECT
-                l.id, l.timestamp,
-                l.latitude, l.longitude, l.altitude,
-                l.speed, l.course,
-                l.horizontal_accuracy, l.vertical_accuracy,
-                l.activity_type, l.activity_confidence,
-                l.floor_level,
-                l.raw_data
-            FROM elt.stream_ios_location l
-            LEFT JOIN elt.location_point p ON (p.source_stream_id = l.id)
-            WHERE l.source_id = $1
-              AND p.id IS NULL
-            ORDER BY l.timestamp ASC
-            LIMIT 1000
-            "#,
-        )
-        .bind(source_id)
-        .fetch_all(db.pool())
-        .await?;
+        // Read stream data from S3 using checkpoint
+        let checkpoint_key = "location_to_location_point";
+        let batches = context.stream_reader
+            .read_with_checkpoint(source_id, "location", checkpoint_key)
+            .await?;
 
         tracing::debug!(
-            records_to_transform = rows.len(),
-            "Fetched untransformed iOS location records"
+            batch_count = batches.len(),
+            "Fetched iOS location batches from S3"
         );
 
-        for row in rows {
-            records_read += 1;
+        for batch in batches {
+            for record in &batch.records {
+                records_read += 1;
 
-            // Extract fields from row
-            let stream_id: Uuid = row.try_get("id")?;
-            let timestamp: DateTime<Utc> = row.try_get("timestamp")?;
-            let latitude: f64 = row.try_get("latitude")?;
-            let longitude: f64 = row.try_get("longitude")?;
-            let altitude: Option<f64> = row.try_get("altitude")?;
-            let speed: Option<f64> = row.try_get("speed")?;
-            let course: Option<f64> = row.try_get("course")?;
-            let horizontal_accuracy: Option<f64> = row.try_get("horizontal_accuracy")?;
-            let _vertical_accuracy: Option<f64> = row.try_get("vertical_accuracy")?;
-            let activity_type: Option<String> = row.try_get("activity_type")?;
-            let activity_confidence: Option<String> = row.try_get("activity_confidence")?;
-            let floor_level: Option<i32> = row.try_get("floor_level")?;
-            let raw_data: Option<serde_json::Value> = row.try_get("raw_data")?;
+                // Extract required fields from JSONL record
+                let Some(latitude) = record.get("latitude").and_then(|v| v.as_f64()) else {
+                    continue; // Skip records without latitude
+                };
+                let Some(longitude) = record.get("longitude").and_then(|v| v.as_f64()) else {
+                    continue; // Skip records without longitude
+                };
 
-            // Build metadata with iOS-specific fields
-            let metadata = serde_json::json!({
-                "activity_type": activity_type,
-                "activity_confidence": activity_confidence,
-                "floor_level": floor_level,
-                "ios_raw": raw_data,
-            });
+                let timestamp = record.get("timestamp")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+                    .unwrap_or_else(|| Utc::now());
 
-            // Create PostGIS POINT geography from lat/lon
-            // Format: POINT(longitude latitude)
-            let point_wkt = format!("POINT({} {})", longitude, latitude);
+                let stream_id = record.get("id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(|| Uuid::new_v4());
 
-            // Insert into location_point
-            let result = sqlx::query(
-                r#"
-                INSERT INTO elt.location_point (
-                    coordinates, latitude, longitude, altitude_meters,
-                    accuracy_meters, speed_meters_per_second, course_degrees,
-                    timestamp,
-                    source_stream_id, source_table, source_provider,
-                    metadata
-                ) VALUES (
-                    ST_GeogFromText($1), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+                let altitude = record.get("altitude").and_then(|v| v.as_f64());
+                let speed = record.get("speed").and_then(|v| v.as_f64());
+                let course = record.get("course").and_then(|v| v.as_f64());
+                let horizontal_accuracy = record.get("horizontal_accuracy").and_then(|v| v.as_f64());
+                let activity_type = record.get("activity_type").and_then(|v| v.as_str()).map(String::from);
+                let activity_confidence = record.get("activity_confidence").and_then(|v| v.as_str()).map(String::from);
+                let floor_level = record.get("floor_level").and_then(|v| v.as_i64()).map(|v| v as i32);
+                let raw_data = record.get("raw_data").cloned();
+
+                // Build metadata with iOS-specific fields
+                let metadata = serde_json::json!({
+                    "activity_type": activity_type,
+                    "activity_confidence": activity_confidence,
+                    "floor_level": floor_level,
+                    "ios_raw": raw_data,
+                });
+
+                // Create PostGIS POINT geography from lat/lon
+                // Format: POINT(longitude latitude)
+                let point_wkt = format!("POINT({} {})", longitude, latitude);
+
+                // Insert into location_point
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO elt.location_point (
+                        coordinates, latitude, longitude, altitude_meters,
+                        accuracy_meters, speed_meters_per_second, course_degrees,
+                        timestamp,
+                        source_stream_id, source_table, source_provider,
+                        metadata
+                    ) VALUES (
+                        ST_GeogFromText($1), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+                    )
+                    ON CONFLICT (source_stream_id) DO NOTHING
+                    "#,
                 )
-                ON CONFLICT (source_stream_id) DO NOTHING
-                "#,
-            )
-            .bind(&point_wkt)
-            .bind(latitude)
-            .bind(longitude)
-            .bind(altitude)
-            .bind(horizontal_accuracy)
-            .bind(speed)
-            .bind(course)
-            .bind(timestamp)
-            .bind(stream_id)
-            .bind("stream_ios_location")
-            .bind("ios")
-            .bind(&metadata)
-            .execute(db.pool())
-            .await;
+                .bind(&point_wkt)
+                .bind(latitude)
+                .bind(longitude)
+                .bind(altitude)
+                .bind(horizontal_accuracy)
+                .bind(speed)
+                .bind(course)
+                .bind(timestamp)
+                .bind(stream_id)
+                .bind("stream_ios_location")
+                .bind("ios")
+                .bind(&metadata)
+                .execute(db.pool())
+                .await;
 
-            match result {
-                Ok(_) => {
-                    records_written += 1;
-                    last_processed_id = Some(stream_id);
+                match result {
+                    Ok(_) => {
+                        records_written += 1;
+                        last_processed_id = Some(stream_id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            stream_id = %stream_id,
+                            latitude = %latitude,
+                            longitude = %longitude,
+                            error = %e,
+                            "Failed to transform location record"
+                        );
+                        records_failed += 1;
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        stream_id = %stream_id,
-                        latitude = %latitude,
-                        longitude = %longitude,
-                        error = %e,
-                        "Failed to transform location record"
-                    );
-                    records_failed += 1;
-                }
+            }
+
+            // Update checkpoint after processing batch
+            if let Some(max_ts) = batch.max_timestamp {
+                context.stream_reader.update_checkpoint(
+                    source_id,
+                    "location",
+                    checkpoint_key,
+                    max_ts
+                ).await?;
             }
         }
 

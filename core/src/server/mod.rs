@@ -10,17 +10,46 @@ use axum::{
     Json, Router,
 };
 
+use std::sync::Arc;
+use std::env;
+use tokio::sync::Mutex;
+
 use self::ingest::AppState;
-use crate::error::Result;
+use crate::error::{Result, Error};
 use crate::Ariata;
+use crate::storage::stream_writer::{StreamWriter, StreamWriterConfig};
+use crate::storage::encryption;
 
 /// Run the HTTP ingestion server with integrated scheduler
 pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
+    // Initialize StreamWriter with encryption key from environment
+    // (Must be created BEFORE scheduler since scheduler needs it)
+    let master_key_hex = env::var("STREAM_ENCRYPTION_MASTER_KEY")
+        .map_err(|_| Error::Other(
+            "STREAM_ENCRYPTION_MASTER_KEY environment variable is required. Generate with: openssl rand -hex 32".into()
+        ))?;
+
+    let master_key = encryption::parse_master_key_hex(&master_key_hex)?;
+
+    let stream_writer_config = StreamWriterConfig {
+        max_buffer_records: 1000,
+        max_buffer_bytes: 10 * 1024 * 1024, // 10 MB
+        master_key,
+    };
+
+    let stream_writer = StreamWriter::new(
+        (*client.storage).clone(),
+        (*client.database).clone(),
+        stream_writer_config,
+    );
+    let stream_writer_arc = Arc::new(Mutex::new(stream_writer));
+
     // Start the scheduler in the background
     let db_pool = client.database.pool().clone();
     let storage = (*client.storage).clone();
+    let scheduler_stream_writer = stream_writer_arc.clone();
     let _scheduler_handle = tokio::spawn(async move {
-        match crate::Scheduler::new(db_pool, storage).await {
+        match crate::Scheduler::new(db_pool, storage, scheduler_stream_writer).await {
             Ok(sched) => {
                 if let Err(e) = sched.start().await {
                     tracing::warn!("Failed to start scheduler: {}", e);
@@ -34,10 +63,11 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
         }
     });
 
-    // Create app state with database and storage
+    // Create app state with database, storage, and stream writer
     let state = AppState {
         db: client.database.clone(),
         storage: client.storage.clone(),
+        stream_writer: stream_writer_arc.clone(),
     };
 
     let app = Router::new()
@@ -132,7 +162,7 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
         .route("/api/jobs/:id", get(api::get_job_handler))
         .route("/api/jobs", get(api::query_jobs_handler))
         .route("/api/jobs/:id/cancel", post(api::cancel_job_handler))
-        .with_state(state)
+        .with_state(state.clone())
         .layer(DefaultBodyLimit::disable())  // Disable default 2MB limit
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024));  // Set 20MB limit for audio files
 
@@ -143,6 +173,14 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
 
     // Run the server (this blocks forever until shutdown)
     axum::serve(listener, app).await?;
+
+    // Flush any remaining buffered stream data before shutdown
+    let mut writer = state.stream_writer.lock().await;
+    if let Err(e) = writer.flush_all().await {
+        tracing::error!("Failed to flush stream buffers on shutdown: {}", e);
+    } else {
+        tracing::info!("Flushed all stream buffers on shutdown");
+    }
 
     // Note: scheduler runs in background and will stop when the process exits
     // The handle is dropped here, but the task continues running

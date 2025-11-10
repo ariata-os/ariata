@@ -100,7 +100,7 @@ pub async fn execute_transform_job(
     let db_wrapper = crate::database::Database::from_pool(db.clone());
 
     // Execute transformation
-    let result = transformer.transform(&db_wrapper, source_id).await;
+    let result = transformer.transform(&db_wrapper, context, source_id).await;
 
     match result {
         Ok(transform_result) => {

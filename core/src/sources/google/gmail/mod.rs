@@ -7,6 +7,8 @@ use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use super::{
@@ -23,21 +25,23 @@ use crate::{
         base::{SyncMode, SyncResult},
         stream::Stream,
     },
+    storage::stream_writer::StreamWriter,
 };
 
 /// Google Gmail stream
 ///
-/// Syncs email messages from Gmail API to the stream_google_gmail table.
+/// Syncs email messages from Gmail API to object storage via StreamWriter.
 pub struct GoogleGmailStream {
     source_id: Uuid,
     client: GoogleClient,
     db: PgPool,
+    stream_writer: Arc<Mutex<StreamWriter>>,
     config: GoogleGmailConfig,
 }
 
 impl GoogleGmailStream {
-    /// Create a new Gmail stream with SourceAuth
-    pub fn new(source_id: Uuid, db: PgPool, auth: SourceAuth) -> Self {
+    /// Create a new Gmail stream with SourceAuth and StreamWriter
+    pub fn new(source_id: Uuid, db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>, auth: SourceAuth) -> Self {
         // Extract token manager from auth
         let token_manager = auth
             .token_manager()
@@ -50,6 +54,7 @@ impl GoogleGmailStream {
             source_id,
             client,
             db,
+            stream_writer,
             config: GoogleGmailConfig::default(),
         }
     }
@@ -472,97 +477,59 @@ impl GoogleGmailStream {
         let is_trash = labels.contains(&"TRASH".to_string());
         let is_spam = labels.contains(&"SPAM".to_string());
 
-        // Serialize full message as JSON
-        let raw_json = serde_json::to_value(&message)?;
-        let headers_json = serde_json::to_value(&headers_map)?;
+        // Build complete record with all parsed fields for storage
+        let record = serde_json::json!({
+            "message_id": message.id,
+            "thread_id": message.thread_id,
+            "history_id": message.history_id,
+            "subject": subject,
+            "snippet": message.snippet,
+            "date": date,
+            "from_email": from_email,
+            "from_name": from_name,
+            "to_emails": to_emails,
+            "to_names": to_names,
+            "cc_emails": cc_emails,
+            "cc_names": cc_names,
+            "bcc_emails": bcc_emails,
+            "bcc_names": bcc_names,
+            "reply_to": reply_to,
+            "body_plain": body_plain,
+            "body_html": body_html,
+            "has_attachments": has_attachments,
+            "attachment_count": attachment_count,
+            "attachment_types": attachment_types,
+            "attachment_names": attachment_names,
+            "attachment_sizes_bytes": attachment_sizes,
+            "labels": labels,
+            "is_unread": is_unread,
+            "is_important": is_important,
+            "is_starred": is_starred,
+            "is_draft": is_draft,
+            "is_sent": is_sent,
+            "is_trash": is_trash,
+            "is_spam": is_spam,
+            "thread_position": thread_position,
+            "thread_message_count": thread_message_count,
+            "size_bytes": message.size_estimate,
+            "internal_date": internal_date,
+            "raw_message": message,
+            "headers": headers_map,
+            "synced_at": Utc::now(),
+        });
 
-        // Insert into database
-        sqlx::query(
-            r#"
-            INSERT INTO stream_google_gmail (
-                source_id, message_id, thread_id, history_id,
-                subject, snippet, date,
-                from_email, from_name, to_emails, to_names,
-                cc_emails, cc_names, bcc_emails, bcc_names, reply_to,
-                body_plain, body_html,
-                has_attachments, attachment_count, attachment_types, attachment_names, attachment_sizes_bytes,
-                labels, is_unread, is_important, is_starred, is_draft, is_sent, is_trash, is_spam,
-                thread_position, thread_message_count,
-                size_bytes, internal_date,
-                raw_json, headers, synced_at
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31,
-                $32, $33, $34, $35, $36, $37, $38
-            )
-            ON CONFLICT (source_id, message_id)
-            DO UPDATE SET
-                thread_id = EXCLUDED.thread_id,
-                history_id = EXCLUDED.history_id,
-                subject = EXCLUDED.subject,
-                snippet = EXCLUDED.snippet,
-                body_plain = EXCLUDED.body_plain,
-                body_html = EXCLUDED.body_html,
-                has_attachments = EXCLUDED.has_attachments,
-                attachment_count = EXCLUDED.attachment_count,
-                attachment_types = EXCLUDED.attachment_types,
-                attachment_names = EXCLUDED.attachment_names,
-                attachment_sizes_bytes = EXCLUDED.attachment_sizes_bytes,
-                labels = EXCLUDED.labels,
-                is_unread = EXCLUDED.is_unread,
-                is_important = EXCLUDED.is_important,
-                is_starred = EXCLUDED.is_starred,
-                is_draft = EXCLUDED.is_draft,
-                is_sent = EXCLUDED.is_sent,
-                is_trash = EXCLUDED.is_trash,
-                is_spam = EXCLUDED.is_spam,
-                raw_json = EXCLUDED.raw_json,
-                headers = EXCLUDED.headers,
-                synced_at = EXCLUDED.synced_at,
-                updated_at = NOW()
-            "#
-        )
-        .bind(self.source_id)
-        .bind(&message.id)
-        .bind(&message.thread_id)
-        .bind(message.history_id.as_deref())
-        .bind(subject.as_deref())
-        .bind(message.snippet.as_deref())
-        .bind(date)
-        .bind(from_email.as_deref())
-        .bind(from_name.as_deref())
-        .bind(&to_emails)
-        .bind(&to_names)
-        .bind(&cc_emails)
-        .bind(&cc_names)
-        .bind(&bcc_emails)
-        .bind(&bcc_names)
-        .bind(reply_to.as_deref())
-        .bind(body_plain.as_deref())
-        .bind(body_html.as_deref())
-        .bind(has_attachments)
-        .bind(attachment_count)
-        .bind(&attachment_types)
-        .bind(&attachment_names)
-        .bind(&attachment_sizes)
-        .bind(&labels)
-        .bind(is_unread)
-        .bind(is_important)
-        .bind(is_starred)
-        .bind(is_draft)
-        .bind(is_sent)
-        .bind(is_trash)
-        .bind(is_spam)
-        .bind(thread_position)
-        .bind(thread_message_count)
-        .bind(message.size_estimate)
-        .bind(internal_date)
-        .bind(raw_json)
-        .bind(headers_json)
-        .bind(Utc::now())
-        .execute(&self.db)
-        .await?;
+        // Write to S3/object storage via StreamWriter
+        {
+            let mut writer = self.stream_writer.lock().await;
+            writer.write_record(
+                self.source_id,
+                "gmail",
+                record,
+                Some(date),
+            ).await?;
+        }
 
+        tracing::debug!(message_id = %message.id, "Wrote Gmail message to object storage");
         Ok(true)
     }
 

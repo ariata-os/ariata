@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::database::Database;
@@ -29,8 +28,8 @@ impl OntologyTransform for NotionPageTransform {
         "knowledge"
     }
 
-    #[tracing::instrument(skip(self, db), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, source_id: Uuid) -> Result<TransformResult> {
+    #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
+    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -41,118 +40,147 @@ impl OntologyTransform for NotionPageTransform {
             "Starting Notion pages to knowledge_document transformation"
         );
 
-        // Query stream_notion_pages for records not yet transformed
-        // Use left join to find records that don't exist in knowledge_document
-        let rows = sqlx::query(
-            r#"
-            SELECT
-                p.id, p.page_id, p.url,
-                p.created_time, p.last_edited_time,
-                p.parent_type, p.parent_id,
-                p.archived,
-                p.properties,
-                p.content_markdown,
-                p.content_blocks
-            FROM elt.stream_notion_pages p
-            LEFT JOIN elt.knowledge_document d ON (d.source_stream_id = p.id)
-            WHERE p.source_id = $1
-              AND d.id IS NULL
-              AND p.archived = false
-            ORDER BY p.last_edited_time DESC
-            LIMIT 1000
-            "#,
-        )
-        .bind(source_id)
-        .fetch_all(db.pool())
-        .await?;
+        // Read stream data from S3 using checkpoint
+        let checkpoint_key = "notion_to_knowledge_note";
+        let batches = context.stream_reader
+            .read_with_checkpoint(source_id, "notion", checkpoint_key)
+            .await?;
 
         tracing::debug!(
-            records_to_transform = rows.len(),
-            "Fetched untransformed Notion pages"
+            batch_count = batches.len(),
+            "Fetched Notion batches from S3"
         );
 
-        for row in rows {
-            records_read += 1;
+        for batch in batches {
+            for record in &batch.records {
+                records_read += 1;
 
-            // Extract fields from row
-            let stream_id: Uuid = row.try_get("id")?;
-            let page_id: String = row.try_get("page_id")?;
-            let url: String = row.try_get("url")?;
-            let created_time: DateTime<Utc> = row.try_get("created_time")?;
-            let last_edited_time: DateTime<Utc> = row.try_get("last_edited_time")?;
-            let parent_type: String = row.try_get("parent_type")?;
-            let parent_id: Option<String> = row.try_get("parent_id")?;
-            let properties: serde_json::Value = row.try_get("properties")?;
-            let content_markdown: Option<String> = row.try_get("content_markdown")?;
+                // Extract fields from JSONL record
+                let Some(page_id) = record.get("page_id").and_then(|v| v.as_str()) else {
+                    continue; // Skip records without page_id
+                };
 
-            // Extract title from properties (check common title property names)
-            let title = extract_title_from_properties(&properties)
-                .or_else(|| {
-                    // Fallback: extract first heading from content
-                    content_markdown.as_ref().and_then(|c| extract_first_heading(c))
-                })
-                .unwrap_or_else(|| "Untitled".to_string());
+                let stream_id = record.get("id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(|| Uuid::new_v4());
 
-            // Determine document type based on parent
-            let document_type = match parent_type.as_str() {
-                "database" => "notion_database_page",
-                "page" => "notion_subpage",
-                "workspace" => "notion_page",
-                _ => "notion_page",
-            };
+                // Skip archived pages
+                let archived = record.get("archived")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if archived {
+                    continue;
+                }
 
-            // Build metadata with Notion-specific fields
-            let metadata = serde_json::json!({
-                "notion_page_id": page_id,
-                "notion_url": url,
-                "parent_type": parent_type,
-                "parent_id": parent_id,
-                "properties": properties,
-            });
+                let url = record.get("url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
 
-            // Insert into knowledge_document
-            let result = sqlx::query(
-                r#"
-                INSERT INTO elt.knowledge_document (
-                    title, content, document_type,
-                    external_id, external_url,
-                    created_time, last_modified_time,
-                    source_stream_id, source_table, source_provider,
-                    metadata
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+                let created_time = record.get("created_time")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+                    .unwrap_or_else(|| Utc::now());
+
+                let last_edited_time = record.get("last_edited_time")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+                    .unwrap_or_else(|| Utc::now());
+
+                let parent_type = record.get("parent_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("workspace");
+
+                let parent_id = record.get("parent_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                let properties = record.get("properties").cloned()
+                    .unwrap_or(serde_json::Value::Null);
+
+                let content_markdown = record.get("content_markdown")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                // Extract title from properties (check common title property names)
+                let title = extract_title_from_properties(&properties)
+                    .or_else(|| {
+                        // Fallback: extract first heading from content
+                        content_markdown.as_ref().and_then(|c| extract_first_heading(c))
+                    })
+                    .unwrap_or_else(|| "Untitled".to_string());
+
+                // Determine document type based on parent
+                let document_type = match parent_type {
+                    "database" => "notion_database_page",
+                    "page" => "notion_subpage",
+                    "workspace" => "notion_page",
+                    _ => "notion_page",
+                };
+
+                // Build metadata with Notion-specific fields
+                let metadata = serde_json::json!({
+                    "notion_page_id": page_id,
+                    "notion_url": url,
+                    "parent_type": parent_type,
+                    "parent_id": parent_id,
+                    "properties": properties,
+                });
+
+                // Insert into knowledge_document
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO elt.knowledge_document (
+                        title, content, document_type,
+                        external_id, external_url,
+                        created_time, last_modified_time,
+                        source_stream_id, source_table, source_provider,
+                        metadata
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+                    )
+                    ON CONFLICT (source_stream_id) DO NOTHING
+                    "#,
                 )
-                ON CONFLICT (source_stream_id) DO NOTHING
-                "#,
-            )
-            .bind(&title) // title
-            .bind(&content_markdown) // content
-            .bind(document_type) // document_type
-            .bind(&page_id) // external_id
-            .bind(&url) // external_url
-            .bind(created_time) // created_time
-            .bind(last_edited_time) // last_modified_time
-            .bind(stream_id) // source_stream_id
-            .bind("stream_notion_pages") // source_table
-            .bind("notion") // source_provider
-            .bind(&metadata) // metadata
-            .execute(db.pool())
-            .await;
+                .bind(&title) // title
+                .bind(&content_markdown) // content
+                .bind(document_type) // document_type
+                .bind(page_id) // external_id
+                .bind(url) // external_url
+                .bind(created_time) // created_time
+                .bind(last_edited_time) // last_modified_time
+                .bind(stream_id) // source_stream_id
+                .bind("stream_notion_pages") // source_table
+                .bind("notion") // source_provider
+                .bind(&metadata) // metadata
+                .execute(db.pool())
+                .await;
 
-            match result {
-                Ok(_) => {
-                    records_written += 1;
-                    last_processed_id = Some(stream_id);
+                match result {
+                    Ok(_) => {
+                        records_written += 1;
+                        last_processed_id = Some(stream_id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            page_id = %page_id,
+                            stream_id = %stream_id,
+                            error = %e,
+                            "Failed to transform Notion page"
+                        );
+                        records_failed += 1;
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        page_id = %page_id,
-                        stream_id = %stream_id,
-                        error = %e,
-                        "Failed to transform Notion page"
-                    );
-                    records_failed += 1;
-                }
+            }
+
+            // Update checkpoint after processing batch
+            if let Some(max_ts) = batch.max_timestamp {
+                context.stream_reader.update_checkpoint(
+                    source_id,
+                    "notion",
+                    checkpoint_key,
+                    max_ts
+                ).await?;
             }
         }
 

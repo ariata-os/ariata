@@ -4,12 +4,13 @@ pub mod transform;
 
 use serde_json::Value;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::{
     database::Database,
     error::{Error, Result},
     sources::base::{get_or_create_device_source, validation::validate_timestamp_reasonable},
-    storage::Storage,
+    storage::{Storage, stream_writer::StreamWriter},
 };
 
 pub use transform::MicrophoneTranscriptionTransform;
@@ -17,14 +18,20 @@ pub use transform::MicrophoneTranscriptionTransform;
 /// Process iOS Microphone data
 ///
 /// Parses and stores audio level measurements, transcriptions, and audio files from iOS devices.
-/// Audio files are stored in MinIO/S3 with metadata in PostgreSQL.
+/// Audio files are stored in MinIO/S3 with metadata written to object storage via StreamWriter.
 ///
 /// # Arguments
 /// * `db` - Database connection
 /// * `storage` - Storage layer for audio file uploads
+/// * `stream_writer` - StreamWriter for writing to S3/object storage
 /// * `record` - JSON record from the device
-#[tracing::instrument(skip(db, storage, record), fields(source = "ios", stream = "microphone"))]
-pub async fn process(db: &Database, storage: &Arc<Storage>, record: &Value) -> Result<()> {
+#[tracing::instrument(skip(db, storage, stream_writer, record), fields(source = "ios", stream = "microphone"))]
+pub async fn process(
+    db: &Database,
+    storage: &Arc<Storage>,
+    stream_writer: &Arc<Mutex<StreamWriter>>,
+    record: &Value,
+) -> Result<()> {
     let device_id = record.get("device_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing device_id".into()))?;
@@ -41,16 +48,7 @@ pub async fn process(db: &Database, storage: &Arc<Storage>, record: &Value) -> R
         .with_timezone(&chrono::Utc);
     validate_timestamp_reasonable(timestamp_dt)?;
 
-    let decibels = record.get("decibels").and_then(|v| v.as_f64());
-    let average_power = record.get("average_power").and_then(|v| v.as_f64());
-    let peak_power = record.get("peak_power").and_then(|v| v.as_f64());
-    let transcription = record.get("transcription").and_then(|v| v.as_str());
-    let transcription_confidence = record.get("transcription_confidence").and_then(|v| v.as_f64());
-    let language = record.get("language").and_then(|v| v.as_str());
-    let duration_seconds = record.get("duration_seconds").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let sample_rate = record.get("sample_rate").and_then(|v| v.as_i64()).map(|v| v as i32);
-
-    // Handle audio file upload if present
+    // Handle audio file upload if present (audio files still go to separate S3 location)
     let mut audio_file_key: Option<String> = None;
     let mut audio_file_size: Option<i32> = None;
     let audio_format = record.get("audio_format").and_then(|v| v.as_str());
@@ -66,51 +64,34 @@ pub async fn process(db: &Database, storage: &Arc<Storage>, record: &Value) -> R
             );
 
             if storage.upload(&key, audio_bytes.clone()).await.is_ok() {
-                audio_file_key = Some(key);
+                audio_file_key = Some(key.clone());
                 audio_file_size = Some(audio_bytes.len() as i32);
             }
         }
     }
 
-    sqlx::query(
-        "INSERT INTO stream_ios_microphone
-         (source_id, timestamp, decibels, average_power, peak_power, transcription,
-          transcription_confidence, language, duration_seconds, sample_rate,
-          audio_file_key, audio_file_size, audio_format, raw_data)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-         ON CONFLICT (source_id, timestamp)
-         DO UPDATE SET
-            decibels = EXCLUDED.decibels,
-            average_power = EXCLUDED.average_power,
-            peak_power = EXCLUDED.peak_power,
-            transcription = EXCLUDED.transcription,
-            transcription_confidence = EXCLUDED.transcription_confidence,
-            language = EXCLUDED.language,
-            duration_seconds = EXCLUDED.duration_seconds,
-            sample_rate = EXCLUDED.sample_rate,
-            audio_file_key = EXCLUDED.audio_file_key,
-            audio_file_size = EXCLUDED.audio_file_size,
-            audio_format = EXCLUDED.audio_format,
-            raw_data = EXCLUDED.raw_data"
-    )
-    .bind(source_id)
-    .bind(timestamp)
-    .bind(decibels)
-    .bind(average_power)
-    .bind(peak_power)
-    .bind(transcription)
-    .bind(transcription_confidence)
-    .bind(language)
-    .bind(duration_seconds)
-    .bind(sample_rate)
-    .bind(audio_file_key)
-    .bind(audio_file_size)
-    .bind(audio_format)
-    .bind(record)
-    .execute(db.pool())
-    .await
-    .map_err(|e| Error::Database(format!("Failed to insert microphone data: {e}")))?;
+    // Build complete record including audio file metadata
+    let mut record_with_audio = record.clone();
+    if let Some(ref key) = audio_file_key {
+        if let Some(obj) = record_with_audio.as_object_mut() {
+            obj.insert("uploaded_audio_file_key".to_string(), serde_json::json!(key));
+            obj.insert("uploaded_audio_file_size".to_string(), serde_json::json!(audio_file_size));
+        }
+    }
 
-    tracing::debug!("Inserted microphone record for device {}", device_id);
+    // Write to S3/object storage via StreamWriter
+    // This replaces the previous SQL INSERT INTO stream_ios_microphone
+    {
+        let mut writer = stream_writer.lock().await;
+
+        writer.write_record(
+            source_id,
+            "microphone",
+            record_with_audio,
+            Some(timestamp_dt),
+        ).await?;
+    }
+
+    tracing::debug!("Wrote microphone record to object storage for device {}", device_id);
     Ok(())
 }

@@ -4,9 +4,12 @@ use crate::error::{Error, Result};
 use crate::jobs::{
     self, CreateJobRequest, Job, JobExecutor, JobStatus, SyncJobMetadata, TransformContext, ApiKeys,
 };
-use crate::storage::Storage;
+use crate::storage::{Storage, stream_writer::StreamWriter, stream_reader::{StreamReader, StreamReaderConfig}, encryption};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::sync::Arc;
+use std::env;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 /// Response when a job is created
@@ -23,6 +26,7 @@ pub struct CreateJobResponse {
 pub async fn trigger_stream_sync(
     db: &PgPool,
     storage: &Storage,
+    stream_writer: Arc<Mutex<StreamWriter>>,
     source_id: Uuid,
     stream_name: &str,
     sync_mode: Option<crate::sources::base::SyncMode>,
@@ -56,9 +60,28 @@ pub async fn trigger_stream_sync(
     // Create job in database
     let job = jobs::create_job(db, request).await?;
 
-    // Create transform context with storage and API keys
+    // Load master encryption key from environment
+    let master_key_hex = env::var("STREAM_ENCRYPTION_MASTER_KEY")
+        .map_err(|_| Error::Other(
+            "STREAM_ENCRYPTION_MASTER_KEY environment variable is required".into()
+        ))?;
+    let master_key = encryption::parse_master_key_hex(&master_key_hex)?;
+
+    // Create StreamReader for transforms
+    let stream_reader_config = StreamReaderConfig {
+        batch_size: 1000,
+        max_parallel_objects: 4,
+        master_key,
+    };
+    let stream_reader = StreamReader::new(
+        Arc::new(storage.clone()),
+        db.clone(),
+        stream_reader_config,
+    );
+
+    // Create transform context with storage, stream writer, stream reader, and API keys
     let api_keys = ApiKeys::from_env();
-    let context = TransformContext::new(storage.clone(), api_keys);
+    let context = TransformContext::new(storage.clone(), stream_writer, stream_reader, api_keys);
 
     // Start job execution in background
     let executor = JobExecutor::new(db.clone(), context);
@@ -79,6 +102,7 @@ pub async fn trigger_stream_sync(
 /// # Arguments
 /// * `db` - Database connection pool
 /// * `storage` - Storage backend
+/// * `stream_writer` - StreamWriter for writing stream data to object storage
 /// * `source_id` - UUID of the source
 /// * `source_table` - Source stream table name (e.g., "stream_ios_microphone")
 /// * `target_tables` - Target ontology tables (e.g., ["speech_transcription"])
@@ -88,6 +112,7 @@ pub async fn trigger_stream_sync(
 pub async fn trigger_transform_job(
     db: &PgPool,
     storage: &Storage,
+    stream_writer: Arc<Mutex<StreamWriter>>,
     source_id: Uuid,
     source_table: &str,
     target_tables: Vec<&str>,
@@ -130,9 +155,28 @@ pub async fn trigger_transform_job(
 
     let job = jobs::create_job(db, request).await?;
 
-    // Create transform context with storage and API keys
+    // Load master encryption key from environment
+    let master_key_hex = env::var("STREAM_ENCRYPTION_MASTER_KEY")
+        .map_err(|_| Error::Other(
+            "STREAM_ENCRYPTION_MASTER_KEY environment variable is required".into()
+        ))?;
+    let master_key = encryption::parse_master_key_hex(&master_key_hex)?;
+
+    // Create StreamReader for transforms
+    let stream_reader_config = StreamReaderConfig {
+        batch_size: 1000,
+        max_parallel_objects: 4,
+        master_key,
+    };
+    let stream_reader = StreamReader::new(
+        Arc::new(storage.clone()),
+        db.clone(),
+        stream_reader_config,
+    );
+
+    // Create transform context with storage, stream writer, stream reader, and API keys
     let api_keys = ApiKeys::from_env();
-    let context = TransformContext::new(storage.clone(), api_keys);
+    let context = TransformContext::new(storage.clone(), stream_writer, stream_reader, api_keys);
 
     // Start job execution in background
     let executor = JobExecutor::new(db.clone(), context);

@@ -2,17 +2,18 @@
 
 use crate::error::Result;
 use crate::jobs::models::{CreateJobRequest, Job, JobStatus, JobType};
-use crate::jobs::JobExecutor;
+use crate::jobs::{JobExecutor, TransformContext};
 use crate::sources::{base::SyncMode, StreamFactory};
 use serde_json::json;
 use sqlx::PgPool;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// Execute a sync job
 ///
 /// This function is called by the job executor to perform the actual sync work.
 /// It updates the job status in the database as it progresses.
-pub async fn execute_sync_job(db: &PgPool, executor: &JobExecutor, job: &Job) -> Result<()> {
+pub async fn execute_sync_job(db: &PgPool, executor: &JobExecutor, context: &Arc<TransformContext>, job: &Job) -> Result<()> {
     let source_id = job
         .source_id
         .ok_or_else(|| crate::Error::InvalidInput("Sync job missing source_id".to_string()))?;
@@ -44,7 +45,7 @@ pub async fn execute_sync_job(db: &PgPool, executor: &JobExecutor, job: &Job) ->
         .map(|s| s.to_string());
 
     // Create factory and stream instance
-    let factory = StreamFactory::new(db.clone());
+    let factory = StreamFactory::new(db.clone(), context.stream_writer.clone());
     let mut stream = factory.create_stream(source_id, stream_name).await?;
 
     // Load configuration

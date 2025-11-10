@@ -5,6 +5,8 @@ pub mod transform;
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::PgPool;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use super::{
@@ -19,21 +21,23 @@ use crate::{
         base::{SyncMode, SyncResult},
         stream::Stream,
     },
+    storage::stream_writer::StreamWriter,
 };
 
 /// Google Calendar stream
 ///
-/// Syncs calendar events from Google Calendar API to the stream_google_calendar table.
+/// Syncs calendar events from Google Calendar API to object storage via StreamWriter.
 pub struct GoogleCalendarStream {
     source_id: Uuid,
     client: GoogleClient,
     db: PgPool,
+    stream_writer: Arc<Mutex<StreamWriter>>,
     config: GoogleCalendarConfig,
 }
 
 impl GoogleCalendarStream {
-    /// Create a new calendar stream with SourceAuth
-    pub fn new(source_id: Uuid, db: PgPool, auth: SourceAuth) -> Self {
+    /// Create a new calendar stream with SourceAuth and StreamWriter
+    pub fn new(source_id: Uuid, db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>, auth: SourceAuth) -> Self {
         // Extract token manager from auth
         let token_manager = auth
             .token_manager()
@@ -46,6 +50,7 @@ impl GoogleCalendarStream {
             source_id,
             client,
             db,
+            stream_writer,
             config: GoogleCalendarConfig::default(),
         }
     }
@@ -261,7 +266,7 @@ impl GoogleCalendarStream {
         &self,
         calendar_id: &str,
         event: &Event,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<bool> {
         // Extract key fields - handle both datetime and date formats
         let start_time = if let Some(start) = event.start.as_ref() {
@@ -338,88 +343,59 @@ impl GoogleCalendarStream {
             .and_then(|eps| eps.first())
             .and_then(|ep| ep.uri.clone());
 
-        // Serialize full event as JSON
-        let raw_json = serde_json::to_value(event)?;
+        // Build complete record with all parsed fields for storage
+        let created_by_google = event
+            .created
+            .as_ref()
+            .and_then(|c| DateTime::parse_from_rfc3339(c).ok())
+            .map(|dt| dt.with_timezone(&Utc));
 
-        // Upsert into database within transaction
-        sqlx::query(
-            r#"
-            INSERT INTO stream_google_calendar (
-                source_id, event_id, calendar_id, etag,
-                summary, description, location, status,
-                start_time, end_time, all_day, timezone,
-                organizer_email, organizer_name, creator_email, creator_name,
-                attendee_count, has_conferencing, conference_type, conference_link,
-                created_by_google, updated_by_google,
-                is_recurring, recurring_event_id,
-                raw_json, synced_at
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
-            )
-            ON CONFLICT (source_id, event_id)
-            DO UPDATE SET
-                etag = EXCLUDED.etag,
-                summary = EXCLUDED.summary,
-                description = EXCLUDED.description,
-                location = EXCLUDED.location,
-                status = EXCLUDED.status,
-                start_time = EXCLUDED.start_time,
-                end_time = EXCLUDED.end_time,
-                all_day = EXCLUDED.all_day,
-                organizer_email = EXCLUDED.organizer_email,
-                organizer_name = EXCLUDED.organizer_name,
-                attendee_count = EXCLUDED.attendee_count,
-                has_conferencing = EXCLUDED.has_conferencing,
-                conference_type = EXCLUDED.conference_type,
-                conference_link = EXCLUDED.conference_link,
-                updated_by_google = EXCLUDED.updated_by_google,
-                raw_json = EXCLUDED.raw_json,
-                synced_at = EXCLUDED.synced_at,
-                updated_at = NOW()
-            "#,
-        )
-        .bind(self.source_id)
-        .bind(&event.id)
-        .bind(calendar_id)
-        .bind(&event.etag)
-        .bind(event.summary.as_deref())
-        .bind(event.description.as_deref())
-        .bind(event.location.as_deref())
-        .bind(&status)
-        .bind(start_time)
-        .bind(end_time)
-        .bind(all_day)
-        .bind(event.start.as_ref().and_then(|s| s.time_zone.as_deref()))
-        .bind(organizer_email.as_deref())
-        .bind(organizer_name.as_deref())
-        .bind(creator_email.as_deref())
-        .bind(creator_name.as_deref())
-        .bind(attendee_count)
-        .bind(has_conferencing)
-        .bind(conference_type.as_deref())
-        .bind(conference_link.as_deref())
-        .bind(
-            event
-                .created
-                .as_ref()
-                .and_then(|c| DateTime::parse_from_rfc3339(c).ok())
-                .map(|dt| dt.with_timezone(&Utc)),
-        )
-        .bind(
-            event
-                .updated
-                .as_ref()
-                .and_then(|u| DateTime::parse_from_rfc3339(u).ok())
-                .map(|dt| dt.with_timezone(&Utc)),
-        )
-        .bind(event.recurring_event_id.is_some())
-        .bind(event.recurring_event_id.as_deref())
-        .bind(raw_json)
-        .bind(Utc::now())
-        .execute(&mut **tx)
-        .await?;
+        let updated_by_google = event
+            .updated
+            .as_ref()
+            .and_then(|u| DateTime::parse_from_rfc3339(u).ok())
+            .map(|dt| dt.with_timezone(&Utc));
 
+        let record = serde_json::json!({
+            "event_id": event.id,
+            "calendar_id": calendar_id,
+            "etag": event.etag,
+            "summary": event.summary,
+            "description": event.description,
+            "location": event.location,
+            "status": status,
+            "start_time": start_time,
+            "end_time": end_time,
+            "all_day": all_day,
+            "timezone": event.start.as_ref().and_then(|s| s.time_zone.as_ref()),
+            "organizer_email": organizer_email,
+            "organizer_name": organizer_name,
+            "creator_email": creator_email,
+            "creator_name": creator_name,
+            "attendee_count": attendee_count,
+            "has_conferencing": has_conferencing,
+            "conference_type": conference_type,
+            "conference_link": conference_link,
+            "created_by_google": created_by_google,
+            "updated_by_google": updated_by_google,
+            "is_recurring": event.recurring_event_id.is_some(),
+            "recurring_event_id": event.recurring_event_id,
+            "raw_event": event,
+            "synced_at": Utc::now(),
+        });
+
+        // Write to S3/object storage via StreamWriter
+        {
+            let mut writer = self.stream_writer.lock().await;
+            writer.write_record(
+                self.source_id,
+                "calendar",
+                record,
+                Some(start_time),
+            ).await?;
+        }
+
+        tracing::debug!(event_id = %event.id, "Wrote calendar event to object storage");
         Ok(true)
     }
 

@@ -80,7 +80,7 @@ impl JobExecutor {
 
         // Execute the job based on type
         let result = match job.job_type {
-            JobType::Sync => execute_sync_job(db, &executor, &job).await,
+            JobType::Sync => execute_sync_job(db, &executor, context, &job).await,
             JobType::Transform => execute_transform_job(db, context, &job).await,
         };
 

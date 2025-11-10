@@ -6,6 +6,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::json;
 use sqlx::PgPool;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{
@@ -15,6 +17,7 @@ use crate::{
         base::{SyncMode, SyncResult},
         stream::Stream,
     },
+    storage::stream_writer::StreamWriter,
 };
 
 use super::{client::NotionApiClient, types::{SearchResponse, Page, Parent, BlockChildrenResponse, Block}};
@@ -23,12 +26,12 @@ use super::{client::NotionApiClient, types::{SearchResponse, Page, Parent, Block
 pub struct NotionPagesStream {
     source_id: Uuid,
     client: NotionApiClient,
-    db: PgPool,
+    stream_writer: Arc<Mutex<StreamWriter>>,
 }
 
 impl NotionPagesStream {
-    /// Create a new Notion pages stream with SourceAuth
-    pub fn new(source_id: Uuid, db: PgPool, auth: SourceAuth) -> Self {
+    /// Create a new Notion pages stream with SourceAuth and StreamWriter
+    pub fn new(source_id: Uuid, _db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>, auth: SourceAuth) -> Self {
         // Extract token manager from auth
         let token_manager = auth
             .token_manager()
@@ -40,7 +43,7 @@ impl NotionPagesStream {
         Self {
             source_id,
             client,
-            db,
+            stream_writer,
         }
     }
 
@@ -342,74 +345,45 @@ impl NotionPagesStream {
             None
         };
 
-        // Serialize properties, blocks, and full page as JSONB
+        // Build complete record with all parsed fields for storage
         let properties_json = serde_json::to_value(&page.properties)?;
         let content_blocks_json = if !blocks.is_empty() {
             Some(serde_json::to_value(&blocks)?)
         } else {
             None
         };
-        let raw_json = serde_json::to_value(&page)?;
 
-        sqlx::query!(
-            r#"
-            INSERT INTO stream_notion_pages (
-                source_id,
-                page_id,
-                url,
-                created_time,
-                last_edited_time,
-                created_by_id,
-                created_by_name,
-                last_edited_by_id,
-                last_edited_by_name,
-                parent_type,
-                parent_id,
-                archived,
-                properties,
-                content_markdown,
-                content_blocks,
-                raw_json,
-                synced_at
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW()
-            )
-            ON CONFLICT (source_id, page_id)
-            DO UPDATE SET
-                url = EXCLUDED.url,
-                last_edited_time = EXCLUDED.last_edited_time,
-                last_edited_by_id = EXCLUDED.last_edited_by_id,
-                last_edited_by_name = EXCLUDED.last_edited_by_name,
-                parent_type = EXCLUDED.parent_type,
-                parent_id = EXCLUDED.parent_id,
-                archived = EXCLUDED.archived,
-                properties = EXCLUDED.properties,
-                content_markdown = EXCLUDED.content_markdown,
-                content_blocks = EXCLUDED.content_blocks,
-                raw_json = EXCLUDED.raw_json,
-                synced_at = NOW(),
-                updated_at = NOW()
-            "#,
-            self.source_id,
-            page.id,
-            page.url,
-            page.created_time,
-            page.last_edited_time,
-            page.created_by.id,
-            page.created_by.name,
-            page.last_edited_by.id,
-            page.last_edited_by.name,
-            parent_type,
-            parent_id,
-            page.archived,
-            properties_json,
-            content_markdown.as_deref(),
-            content_blocks_json,
-            raw_json,
-        )
-        .execute(&self.db)
-        .await?;
+        let record = serde_json::json!({
+            "page_id": page.id,
+            "url": page.url,
+            "created_time": page.created_time,
+            "last_edited_time": page.last_edited_time,
+            "created_by_id": page.created_by.id,
+            "created_by_name": page.created_by.name,
+            "last_edited_by_id": page.last_edited_by.id,
+            "last_edited_by_name": page.last_edited_by.name,
+            "parent_type": parent_type,
+            "parent_id": parent_id,
+            "archived": page.archived,
+            "properties": properties_json,
+            "content_markdown": content_markdown,
+            "content_blocks": content_blocks_json,
+            "raw_page": page,
+            "synced_at": Utc::now(),
+        });
 
+        // Write to S3/object storage via StreamWriter
+        {
+            let mut writer = self.stream_writer.lock().await;
+            writer.write_record(
+                self.source_id,
+                "pages",
+                record,
+                Some(page.last_edited_time),
+            ).await?;
+        }
+
+        tracing::debug!(page_id = %page.id, "Wrote Notion page to object storage");
         Ok(())
     }
 }

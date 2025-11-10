@@ -1,21 +1,27 @@
 //! Transform context providing dependencies for transform jobs
 //!
 //! This module defines the TransformContext which bundles all external dependencies
-//! (storage, API keys) needed by transform jobs that interact with external services.
+//! (storage, API keys, stream reader) needed by transform jobs.
 
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use crate::error::{Error, Result};
-use crate::storage::Storage;
+use crate::storage::{Storage, stream_writer::StreamWriter, stream_reader::StreamReader};
 
 /// Context providing dependencies for transform jobs
 ///
 /// This context is passed to transform job executors and makes external
-/// dependencies available to transforms that need them. Transforms that
-/// only need database access can ignore this context.
+/// dependencies available to transforms that need them.
 #[derive(Clone)]
 pub struct TransformContext {
     /// Object storage (S3/MinIO) for file access and presigned URLs
     pub storage: Arc<Storage>,
+
+    /// Stream writer for writing stream data to object storage
+    pub stream_writer: Arc<Mutex<StreamWriter>>,
+
+    /// Stream reader for reading stream data from object storage with checkpoints
+    pub stream_reader: Arc<StreamReader>,
 
     /// API keys for external services
     pub api_keys: ApiKeys,
@@ -23,9 +29,16 @@ pub struct TransformContext {
 
 impl TransformContext {
     /// Create a new transform context
-    pub fn new(storage: Storage, api_keys: ApiKeys) -> Self {
+    pub fn new(
+        storage: Storage,
+        stream_writer: Arc<Mutex<StreamWriter>>,
+        stream_reader: StreamReader,
+        api_keys: ApiKeys,
+    ) -> Self {
         Self {
             storage: Arc::new(storage),
+            stream_writer,
+            stream_reader: Arc::new(stream_reader),
             api_keys,
         }
     }

@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::database::Database;
@@ -29,8 +28,8 @@ impl OntologyTransform for GoogleCalendarTransform {
         "activity"
     }
 
-    #[tracing::instrument(skip(self, db), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, source_id: Uuid) -> Result<TransformResult> {
+    #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
+    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -41,140 +40,181 @@ impl OntologyTransform for GoogleCalendarTransform {
             "Starting Google Calendar to activity_calendar_entry transformation"
         );
 
-        // Query stream_google_calendar for records not yet transformed
-        // Use left join to find records that don't exist in activity_calendar_entry
-        let rows = sqlx::query(
-            r#"
-            SELECT
-                c.id, c.event_id, c.calendar_id,
-                c.summary, c.description, c.location, c.status,
-                c.start_time, c.end_time, c.all_day, c.timezone,
-                c.organizer_email, c.organizer_name, c.attendee_count,
-                c.has_conferencing, c.conference_type, c.conference_link,
-                c.raw_json
-            FROM elt.stream_google_calendar c
-            LEFT JOIN elt.activity_calendar_entry a ON (a.source_stream_id = c.id)
-            WHERE c.source_id = $1
-              AND a.id IS NULL
-            ORDER BY c.start_time ASC
-            LIMIT 1000
-            "#,
-        )
-        .bind(source_id)
-        .fetch_all(db.pool())
-        .await?;
+        // Read stream data from S3 using checkpoint
+        let checkpoint_key = "calendar_to_activity_calendar_entry";
+        let batches = context.stream_reader
+            .read_with_checkpoint(source_id, "calendar", checkpoint_key)
+            .await?;
 
         tracing::debug!(
-            records_to_transform = rows.len(),
-            "Fetched untransformed calendar records"
+            batch_count = batches.len(),
+            "Fetched Google Calendar batches from S3"
         );
 
-        for row in rows {
-            records_read += 1;
+        for batch in batches {
+            for record in &batch.records {
+                records_read += 1;
 
-            // Extract fields from row
-            let stream_id: Uuid = row.try_get("id")?;
-            let event_id: String = row.try_get("event_id")?;
-            let calendar_id: String = row.try_get("calendar_id")?;
-            let summary: Option<String> = row.try_get("summary")?;
-            let description: Option<String> = row.try_get("description")?;
-            let location: Option<String> = row.try_get("location")?;
-            let status: Option<String> = row.try_get("status")?;
-            let start_time: DateTime<Utc> = row.try_get("start_time")?;
-            let end_time: DateTime<Utc> = row.try_get("end_time")?;
-            let all_day: Option<bool> = row.try_get("all_day")?;
-            let organizer_email: Option<String> = row.try_get("organizer_email")?;
-            let _organizer_name: Option<String> = row.try_get("organizer_name")?;
-            let attendee_count: Option<i32> = row.try_get("attendee_count")?;
-            let has_conferencing: Option<bool> = row.try_get("has_conferencing")?;
-            let conference_type: Option<String> = row.try_get("conference_type")?;
-            let conference_link: Option<String> = row.try_get("conference_link")?;
-            let raw_json: serde_json::Value = row.try_get("raw_json")?;
+                // Extract fields from JSONL record
+                let Some(event_id) = record.get("event_id").and_then(|v| v.as_str()) else {
+                    continue; // Skip records without event_id
+                };
 
-            // Extract attendee emails from raw_json if available
-            let attendee_identifiers: Vec<String> = raw_json
-                .get("attendees")
-                .and_then(|a| a.as_array())
-                .map(|attendees| {
-                    attendees
-                        .iter()
-                        .filter_map(|att| att.get("email").and_then(|e| e.as_str()))
-                        .map(String::from)
-                        .collect()
-                })
-                .unwrap_or_default();
+                let stream_id = record.get("id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(|| Uuid::new_v4());
 
-            // Determine event type based on data
-            let event_type = if has_conferencing.unwrap_or(false) {
-                Some("meeting")
-            } else if attendee_count.unwrap_or(0) > 1 {
-                Some("meeting")
-            } else if all_day.unwrap_or(false) {
-                Some("reminder")
-            } else {
-                Some("appointment")
-            };
+                let calendar_id = record.get("calendar_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
 
-            // Build metadata with Google-specific fields
-            let metadata = serde_json::json!({
-                "google_event_id": event_id,
-                "google_calendar_id": calendar_id,
-                "is_recurring": raw_json.get("recurringEventId").is_some(),
-                "google_raw": raw_json,
-            });
+                let summary = record.get("summary")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
 
-            // Insert into activity_calendar_entry
-            let result = sqlx::query(
-                r#"
-                INSERT INTO elt.activity_calendar_entry (
-                    title, description, calendar_name, event_type,
-                    organizer_identifier, attendee_identifiers,
-                    location_name, conference_url, conference_platform,
-                    start_time, end_time, is_all_day,
-                    status, response_status,
-                    source_stream_id, source_table, source_provider,
-                    metadata
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+                let description = record.get("description")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                let location = record.get("location")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                let status = record.get("status")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                let start_time = record.get("start_time")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+                    .unwrap_or_else(|| Utc::now());
+
+                let end_time = record.get("end_time")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+                    .unwrap_or_else(|| Utc::now());
+
+                let all_day = record.get("all_day")
+                    .and_then(|v| v.as_bool());
+
+                let organizer_email = record.get("organizer_email")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                let attendee_count = record.get("attendee_count")
+                    .and_then(|v| v.as_i64())
+                    .map(|c| c as i32);
+
+                let has_conferencing = record.get("has_conferencing")
+                    .and_then(|v| v.as_bool());
+
+                let conference_type = record.get("conference_type")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                let conference_link = record.get("conference_link")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                let raw_json = record.get("raw_json").cloned()
+                    .unwrap_or(serde_json::Value::Null);
+
+                // Extract attendee emails from raw_json if available
+                let attendee_identifiers: Vec<String> = raw_json
+                    .get("attendees")
+                    .and_then(|a| a.as_array())
+                    .map(|attendees| {
+                        attendees
+                            .iter()
+                            .filter_map(|att| att.get("email").and_then(|e| e.as_str()))
+                            .map(String::from)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // Determine event type based on data
+                let event_type = if has_conferencing.unwrap_or(false) {
+                    Some("meeting")
+                } else if attendee_count.unwrap_or(0) > 1 {
+                    Some("meeting")
+                } else if all_day.unwrap_or(false) {
+                    Some("reminder")
+                } else {
+                    Some("appointment")
+                };
+
+                // Build metadata with Google-specific fields
+                let metadata = serde_json::json!({
+                    "google_event_id": event_id,
+                    "google_calendar_id": calendar_id,
+                    "is_recurring": raw_json.get("recurringEventId").is_some(),
+                    "google_raw": raw_json,
+                });
+
+                // Insert into activity_calendar_entry
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO elt.activity_calendar_entry (
+                        title, description, calendar_name, event_type,
+                        organizer_identifier, attendee_identifiers,
+                        location_name, conference_url, conference_platform,
+                        start_time, end_time, is_all_day,
+                        status, response_status,
+                        source_stream_id, source_table, source_provider,
+                        metadata
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+                    )
+                    ON CONFLICT (source_stream_id) DO NOTHING
+                    "#,
                 )
-                ON CONFLICT (source_stream_id) DO NOTHING
-                "#,
-            )
-            .bind(&summary) // title
-            .bind(&description) // description
-            .bind(&calendar_id) // calendar_name
-            .bind(event_type) // event_type
-            .bind(&organizer_email) // organizer_identifier
-            .bind(&attendee_identifiers) // attendee_identifiers
-            .bind(&location) // location_name
-            .bind(&conference_link) // conference_url
-            .bind(&conference_type) // conference_platform
-            .bind(start_time) // start_time
-            .bind(end_time) // end_time
-            .bind(all_day.unwrap_or(false)) // is_all_day
-            .bind(&status) // status
-            .bind(None::<String>) // response_status (not available in stream table)
-            .bind(stream_id) // source_stream_id
-            .bind("stream_google_calendar") // source_table
-            .bind("google") // source_provider
-            .bind(&metadata) // metadata
-            .execute(db.pool())
-            .await;
+                .bind(&summary) // title
+                .bind(&description) // description
+                .bind(calendar_id) // calendar_name
+                .bind(event_type) // event_type
+                .bind(&organizer_email) // organizer_identifier
+                .bind(&attendee_identifiers) // attendee_identifiers
+                .bind(&location) // location_name
+                .bind(&conference_link) // conference_url
+                .bind(&conference_type) // conference_platform
+                .bind(start_time) // start_time
+                .bind(end_time) // end_time
+                .bind(all_day.unwrap_or(false)) // is_all_day
+                .bind(&status) // status
+                .bind(None::<String>) // response_status (not available in stream table)
+                .bind(stream_id) // source_stream_id
+                .bind("stream_google_calendar") // source_table
+                .bind("google") // source_provider
+                .bind(&metadata) // metadata
+                .execute(db.pool())
+                .await;
 
-            match result {
-                Ok(_) => {
-                    records_written += 1;
-                    last_processed_id = Some(stream_id);
+                match result {
+                    Ok(_) => {
+                        records_written += 1;
+                        last_processed_id = Some(stream_id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            event_id = %event_id,
+                            stream_id = %stream_id,
+                            error = %e,
+                            "Failed to transform calendar record"
+                        );
+                        records_failed += 1;
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        event_id = %event_id,
-                        stream_id = %stream_id,
-                        error = %e,
-                        "Failed to transform calendar record"
-                    );
-                    records_failed += 1;
-                }
+            }
+
+            // Update checkpoint after processing batch
+            if let Some(max_ts) = batch.max_timestamp {
+                context.stream_reader.update_checkpoint(
+                    source_id,
+                    "calendar",
+                    checkpoint_key,
+                    max_ts
+                ).await?;
             }
         }
 

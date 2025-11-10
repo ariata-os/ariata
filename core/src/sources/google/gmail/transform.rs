@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::database::Database;
@@ -29,8 +28,8 @@ impl OntologyTransform for GmailEmailTransform {
         "social"
     }
 
-    #[tracing::instrument(skip(self, db), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, source_id: Uuid) -> Result<TransformResult> {
+    #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
+    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -41,128 +40,151 @@ impl OntologyTransform for GmailEmailTransform {
             "Starting Gmail to social_email transformation"
         );
 
-        // Query stream_google_gmail for records not yet transformed
-        // Use left join to find records that don't exist in social_email
-        let rows = sqlx::query(
-            r#"
-            SELECT
-                g.id, g.message_id, g.thread_id, g.subject, g.snippet,
-                g.body_plain, g.body_html, g.date,
-                g.from_email, g.from_name, g.to_emails, g.to_names,
-                g.cc_emails, g.cc_names,
-                g.labels, g.is_unread, g.is_starred,
-                g.has_attachments, g.attachment_count,
-                g.thread_position, g.thread_message_count,
-                g.is_sent
-            FROM elt.stream_google_gmail g
-            LEFT JOIN elt.social_email e ON (e.source_stream_id = g.id)
-            WHERE g.source_id = $1
-              AND e.id IS NULL
-            ORDER BY g.date ASC
-            LIMIT 1000
-            "#,
-        )
-        .bind(source_id)
-        .fetch_all(db.pool())
-        .await?;
+        // Read stream data from S3 using checkpoint
+        let checkpoint_key = "gmail_to_social_email";
+        let batches = context.stream_reader
+            .read_with_checkpoint(source_id, "gmail", checkpoint_key)
+            .await?;
 
         tracing::debug!(
-            records_to_transform = rows.len(),
-            "Fetched untransformed Gmail records"
+            batch_count = batches.len(),
+            "Fetched Gmail batches from S3"
         );
 
-        for row in rows {
-            records_read += 1;
+        for batch in batches {
+            for record in &batch.records {
+                records_read += 1;
 
-            // Extract fields from row
-            let stream_id: Uuid = row.try_get("id")?;
-            let message_id: String = row.try_get("message_id")?;
-            let thread_id: String = row.try_get("thread_id")?;
-            let subject: Option<String> = row.try_get("subject")?;
-            let snippet: Option<String> = row.try_get("snippet")?;
-            let body_plain: Option<String> = row.try_get("body_plain")?;
-            let body_html: Option<String> = row.try_get("body_html")?;
-            let timestamp: DateTime<Utc> = row.try_get("date")?;
+                // Extract required fields from JSONL record
+                let Some(message_id) = record.get("message_id").and_then(|v| v.as_str()) else {
+                    continue; // Skip records without message_id
+                };
+                let Some(thread_id) = record.get("thread_id").and_then(|v| v.as_str()) else {
+                    continue; // Skip records without thread_id
+                };
 
-            let from_email: Option<String> = row.try_get("from_email")?;
-            let from_name: Option<String> = row.try_get("from_name")?;
-            let to_emails: Vec<String> = row.try_get("to_emails")?;
-            let to_names: Vec<String> = row.try_get("to_names")?;
-            let cc_emails: Vec<String> = row.try_get("cc_emails")?;
-            let cc_names: Vec<String> = row.try_get("cc_names")?;
+                let timestamp = record.get("date")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+                    .unwrap_or_else(|| Utc::now());
 
-            let labels: Vec<String> = row.try_get("labels")?;
-            let is_unread: bool = row.try_get("is_unread")?;
-            let is_starred: bool = row.try_get("is_starred")?;
-            let has_attachments: bool = row.try_get("has_attachments")?;
-            let attachment_count: i32 = row.try_get("attachment_count")?;
-            let thread_position: Option<i32> = row.try_get("thread_position")?;
-            let thread_message_count: Option<i32> = row.try_get("thread_message_count")?;
-            let is_sent: bool = row.try_get("is_sent")?;
+                let stream_id = record.get("id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(|| Uuid::new_v4());
 
-            // Determine direction
-            let direction = if is_sent { "sent" } else { "received" };
+                let subject = record.get("subject").and_then(|v| v.as_str()).map(String::from);
+                let snippet = record.get("snippet").and_then(|v| v.as_str()).map(String::from);
+                let body_plain = record.get("body_plain").and_then(|v| v.as_str()).map(String::from);
+                let body_html = record.get("body_html").and_then(|v| v.as_str()).map(String::from);
 
-            // Insert into social_email
-            let result = sqlx::query(
-                r#"
-                INSERT INTO elt.social_email (
-                    message_id, thread_id, subject, snippet,
-                    body_plain, body_html, timestamp,
-                    from_address, from_name, to_addresses, to_names,
-                    cc_addresses, cc_names,
-                    direction, labels, is_read, is_starred,
-                    has_attachments, attachment_count,
-                    thread_position, thread_message_count,
-                    source_stream_id, source_table, source_provider
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                    $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+                let from_email = record.get("from_email").and_then(|v| v.as_str()).map(String::from);
+                let from_name = record.get("from_name").and_then(|v| v.as_str()).map(String::from);
+
+                let to_emails: Vec<String> = record.get("to_emails")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let to_names: Vec<String> = record.get("to_names")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let cc_emails: Vec<String> = record.get("cc_emails")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let cc_names: Vec<String> = record.get("cc_names")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+
+                let labels: Vec<String> = record.get("labels")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+
+                let is_unread = record.get("is_unread").and_then(|v| v.as_bool()).unwrap_or(false);
+                let is_starred = record.get("is_starred").and_then(|v| v.as_bool()).unwrap_or(false);
+                let has_attachments = record.get("has_attachments").and_then(|v| v.as_bool()).unwrap_or(false);
+                let attachment_count = record.get("attachment_count").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let thread_position = record.get("thread_position").and_then(|v| v.as_i64()).map(|v| v as i32);
+                let thread_message_count = record.get("thread_message_count").and_then(|v| v.as_i64()).map(|v| v as i32);
+                let is_sent = record.get("is_sent").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                // Determine direction
+                let direction = if is_sent { "sent" } else { "received" };
+
+                // Insert into social_email
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO elt.social_email (
+                        message_id, thread_id, subject, snippet,
+                        body_plain, body_html, timestamp,
+                        from_address, from_name, to_addresses, to_names,
+                        cc_addresses, cc_names,
+                        direction, labels, is_read, is_starred,
+                        has_attachments, attachment_count,
+                        thread_position, thread_message_count,
+                        source_stream_id, source_table, source_provider
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                        $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+                    )
+                    ON CONFLICT (source_table, message_id) DO NOTHING
+                    "#,
                 )
-                ON CONFLICT (source_table, message_id) DO NOTHING
-                "#,
-            )
-            .bind(&message_id)
-            .bind(&thread_id)
-            .bind(&subject)
-            .bind(&snippet)
-            .bind(&body_plain)
-            .bind(&body_html)
-            .bind(timestamp)
-            .bind(&from_email)
-            .bind(&from_name)
-            .bind(&to_emails)
-            .bind(&to_names)
-            .bind(&cc_emails)
-            .bind(&cc_names)
-            .bind(direction)
-            .bind(&labels)
-            .bind(!is_unread) // is_read = !is_unread
-            .bind(is_starred)
-            .bind(has_attachments)
-            .bind(attachment_count)
-            .bind(thread_position)
-            .bind(thread_message_count)
-            .bind(stream_id)
-            .bind("stream_google_gmail")
-            .bind("google")
-            .execute(db.pool())
-            .await;
+                .bind(message_id)
+                .bind(thread_id)
+                .bind(&subject)
+                .bind(&snippet)
+                .bind(&body_plain)
+                .bind(&body_html)
+                .bind(timestamp)
+                .bind(&from_email)
+                .bind(&from_name)
+                .bind(&to_emails)
+                .bind(&to_names)
+                .bind(&cc_emails)
+                .bind(&cc_names)
+                .bind(direction)
+                .bind(&labels)
+                .bind(!is_unread) // is_read = !is_unread
+                .bind(is_starred)
+                .bind(has_attachments)
+                .bind(attachment_count)
+                .bind(thread_position)
+                .bind(thread_message_count)
+                .bind(stream_id)
+                .bind("stream_google_gmail")
+                .bind("google")
+                .execute(db.pool())
+                .await;
 
-            match result {
-                Ok(_) => {
-                    records_written += 1;
-                    last_processed_id = Some(stream_id);
+                match result {
+                    Ok(_) => {
+                        records_written += 1;
+                        last_processed_id = Some(stream_id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            message_id = %message_id,
+                            stream_id = %stream_id,
+                            error = %e,
+                            "Failed to transform email record"
+                        );
+                        records_failed += 1;
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        message_id = %message_id,
-                        stream_id = %stream_id,
-                        error = %e,
-                        "Failed to transform email record"
-                    );
-                    records_failed += 1;
-                }
+            }
+
+            // Update checkpoint after processing batch
+            if let Some(max_ts) = batch.max_timestamp {
+                context.stream_reader.update_checkpoint(
+                    source_id,
+                    "gmail",
+                    checkpoint_key,
+                    max_ts
+                ).await?;
             }
         }
 

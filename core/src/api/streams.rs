@@ -1,10 +1,13 @@
 //! Stream management and configuration API
 
 use sqlx::PgPool;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
+use crate::storage::stream_writer::StreamWriter;
 use super::sources::get_source;
 
 /// Information about a stream, including enablement status and configuration
@@ -156,6 +159,7 @@ pub async fn get_stream_info(
 pub async fn enable_stream(
     db: &PgPool,
     storage: &crate::storage::Storage,
+    stream_writer: Arc<Mutex<StreamWriter>>,
     source_id: Uuid,
     stream_name: &str,
     config: Option<serde_json::Value>,
@@ -201,9 +205,10 @@ pub async fn enable_stream(
     if source.auth_type == "oauth2" {
         let db_clone = db.clone();
         let storage_clone = storage.clone();
+        let stream_writer_clone = stream_writer.clone();
         let stream_name_clone = stream_name.to_string();
         tokio::spawn(async move {
-            match crate::api::jobs::trigger_stream_sync(&db_clone, &storage_clone, source_id, &stream_name_clone, None).await {
+            match crate::api::jobs::trigger_stream_sync(&db_clone, &storage_clone, stream_writer_clone, source_id, &stream_name_clone, None).await {
                 Ok(response) => {
                     tracing::info!(
                         "Initial sync job created for {}: job_id={}, status={}",

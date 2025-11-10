@@ -9,11 +9,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::{
     error::{Error, Result},
     database::Database,
-    storage::Storage,
+    storage::{Storage, stream_writer::StreamWriter},
 };
 
 /// Ingestion request from any source
@@ -60,6 +61,7 @@ pub struct IngestResponse {
 pub struct AppState {
     pub db: Arc<Database>,
     pub storage: Arc<Storage>,
+    pub stream_writer: Arc<Mutex<StreamWriter>>,
 }
 
 /// Main ingestion handler
@@ -270,24 +272,25 @@ async fn process_single_record(
     record: &Value,
 ) -> Result<()> {
     // Route to appropriate processor based on source and stream type
+    // All device processors now use StreamWriter (writes to S3/object storage)
     match (source, stream) {
         ("ios", "healthkit") => {
-            crate::sources::ios::healthkit::process(&state.db, &state.storage, record).await?;
+            crate::sources::ios::healthkit::process(&state.db, &state.storage, &state.stream_writer, record).await?;
         }
         ("ios", "location") => {
-            crate::sources::ios::location::process(&state.db, &state.storage, record).await?;
+            crate::sources::ios::location::process(&state.db, &state.storage, &state.stream_writer, record).await?;
         }
         ("ios", "microphone") | ("ios", "mic") => {
-            crate::sources::ios::microphone::process(&state.db, &state.storage, record).await?;
+            crate::sources::ios::microphone::process(&state.db, &state.storage, &state.stream_writer, record).await?;
         }
         ("mac", "apps") => {
-            crate::sources::mac::apps::process(&state.db, &state.storage, record).await?;
+            crate::sources::mac::apps::process(&state.db, &state.storage, &state.stream_writer, record).await?;
         }
         ("mac", "browser") => {
-            crate::sources::mac::browser::process(&state.db, &state.storage, record).await?;
+            crate::sources::mac::browser::process(&state.db, &state.storage, &state.stream_writer, record).await?;
         }
         ("mac", "imessage") => {
-            crate::sources::mac::imessage::process(&state.db, &state.storage, record).await?;
+            crate::sources::mac::imessage::process(&state.db, &state.storage, &state.stream_writer, record).await?;
         }
         _ => {
             tracing::warn!("Unknown source/stream: {}/{}", source, stream);

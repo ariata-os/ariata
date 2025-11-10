@@ -205,7 +205,7 @@ pub async fn enable_stream_handler(
     Path((source_id, stream_name)): Path<(Uuid, String)>,
     Json(request): Json<crate::api::EnableStreamRequest>,
 ) -> Response {
-    match crate::api::enable_stream(state.db.pool(), &*state.storage, source_id, &stream_name, request.config).await
+    match crate::api::enable_stream(state.db.pool(), &*state.storage, state.stream_writer.clone(), source_id, &stream_name, request.config).await
     {
         Ok(stream) => (StatusCode::OK, Json(stream)).into_response(),
         Err(e) => (
@@ -299,7 +299,7 @@ pub async fn sync_stream_handler(
     }));
 
     // Use the new async job-based sync
-    match crate::api::trigger_stream_sync(state.db.pool(), &*state.storage, source_id, &stream_name, sync_mode).await {
+    match crate::api::trigger_stream_sync(state.db.pool(), &*state.storage, state.stream_writer.clone(), source_id, &stream_name, sync_mode).await {
         Ok(response) => (StatusCode::CREATED, Json(response)).into_response(),
         Err(e) => {
             let status = if e.to_string().contains("already has an active sync") {
@@ -340,6 +340,7 @@ pub async fn trigger_transform_handler(
     match crate::api::jobs::trigger_transform_job(
         state.db.pool(),
         &*state.storage,
+        state.stream_writer.clone(),
         source_id,
         route.source_table,
         route.target_tables,

@@ -2,12 +2,13 @@
 
 use serde_json::Value;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::{
     database::Database,
     error::{Error, Result},
     sources::base::{get_or_create_device_source, validation::validate_timestamp_reasonable},
-    storage::Storage,
+    storage::{Storage, stream_writer::StreamWriter},
 };
 
 /// Process Mac application usage data
@@ -17,9 +18,15 @@ use crate::{
 /// # Arguments
 /// * `db` - Database connection
 /// * `_storage` - Storage layer (unused for apps, but kept for API consistency)
+/// * `stream_writer` - StreamWriter for writing to S3/object storage
 /// * `record` - JSON record from the device
-#[tracing::instrument(skip(db, _storage, record), fields(source = "mac", stream = "apps"))]
-pub async fn process(db: &Database, _storage: &Arc<Storage>, record: &Value) -> Result<()> {
+#[tracing::instrument(skip(db, _storage, stream_writer, record), fields(source = "mac", stream = "apps"))]
+pub async fn process(
+    db: &Database,
+    _storage: &Arc<Storage>,
+    stream_writer: &Arc<Mutex<StreamWriter>>,
+    record: &Value,
+) -> Result<()> {
     let device_id = record.get("device_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing device_id".into()))?;
@@ -36,49 +43,19 @@ pub async fn process(db: &Database, _storage: &Arc<Storage>, record: &Value) -> 
         .with_timezone(&chrono::Utc);
     validate_timestamp_reasonable(timestamp_dt)?;
 
-    let app_name = record.get("app_name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::Other("Missing app_name".into()))?;
+    // Write to S3/object storage via StreamWriter
+    // This replaces the previous SQL INSERT INTO stream_mac_apps
+    {
+        let mut writer = stream_writer.lock().await;
 
-    let bundle_id = record.get("bundle_id").and_then(|v| v.as_str());
-    let app_version = record.get("app_version").and_then(|v| v.as_str());
-    let window_title = record.get("window_title").and_then(|v| v.as_str());
-    let window_index = record.get("window_index").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let duration_seconds = record.get("duration_seconds").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let is_frontmost = record.get("is_frontmost").and_then(|v| v.as_bool());
-    let category = record.get("category").and_then(|v| v.as_str());
+        writer.write_record(
+            source_id,
+            "apps",
+            record.clone(),
+            Some(timestamp_dt),
+        ).await?;
+    }
 
-    sqlx::query(
-        "INSERT INTO stream_mac_apps
-         (source_id, timestamp, app_name, bundle_id, app_version, window_title,
-          window_index, duration_seconds, is_frontmost, category, raw_data)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (source_id, timestamp, app_name)
-         DO UPDATE SET
-            bundle_id = EXCLUDED.bundle_id,
-            app_version = EXCLUDED.app_version,
-            window_title = EXCLUDED.window_title,
-            window_index = EXCLUDED.window_index,
-            duration_seconds = EXCLUDED.duration_seconds,
-            is_frontmost = EXCLUDED.is_frontmost,
-            category = EXCLUDED.category,
-            raw_data = EXCLUDED.raw_data"
-    )
-    .bind(source_id)
-    .bind(timestamp)
-    .bind(app_name)
-    .bind(bundle_id)
-    .bind(app_version)
-    .bind(window_title)
-    .bind(window_index)
-    .bind(duration_seconds)
-    .bind(is_frontmost)
-    .bind(category)
-    .bind(record)
-    .execute(db.pool())
-    .await
-    .map_err(|e| Error::Database(format!("Failed to insert app data: {e}")))?;
-
-    tracing::debug!("Inserted app usage record for device {}", device_id);
+    tracing::debug!("Wrote app usage record to object storage for device {}", device_id);
     Ok(())
 }

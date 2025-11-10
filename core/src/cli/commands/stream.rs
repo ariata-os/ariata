@@ -2,10 +2,14 @@
 
 use crate::cli::types::StreamCommands;
 use crate::Ariata;
+use crate::storage::stream_writer::StreamWriter;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Handle stream management commands
 pub async fn handle_stream_command(
     ariata: Ariata,
+    stream_writer: Arc<Mutex<StreamWriter>>,
     action: StreamCommands,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
@@ -90,12 +94,12 @@ pub async fn handle_stream_command(
             source_id,
             stream_name,
         } => {
-            let source_id = source_id.parse()?;
+            let source_id_uuid = source_id.parse()?;
 
-            println!("Enabling stream: {} / {}", source_id, stream_name);
+            println!("Enabling stream: {} / {}", source_id_uuid, stream_name);
 
             // Enable with default config (None = use defaults)
-            crate::enable_stream(ariata.database.pool(), &*ariata.storage, source_id, &stream_name, None).await?;
+            crate::enable_stream(ariata.database.pool(), &*ariata.storage, stream_writer.clone(), source_id_uuid, &stream_name, None).await?;
 
             println!("✅ Stream enabled successfully");
         }
@@ -150,16 +154,16 @@ pub async fn handle_stream_command(
             source_id,
             stream_name,
         } => {
-            let source_id = source_id.parse()?;
+            let source_id_uuid = source_id.parse()?;
 
-            println!("Creating sync job for: {} / {}...", source_id, stream_name);
+            println!("Creating sync job for: {} / {}...", source_id_uuid, stream_name);
 
             // Use full refresh mode for all syncs
             // This ensures compatibility with streams that don't support incremental sync
             let sync_mode = crate::SyncMode::full_refresh();
 
             let response =
-                crate::api::jobs::trigger_stream_sync(ariata.database.pool(), &*ariata.storage, source_id, &stream_name, Some(sync_mode)).await?;
+                crate::api::jobs::trigger_stream_sync(ariata.database.pool(), &*ariata.storage, stream_writer.clone(), source_id_uuid, &stream_name, Some(sync_mode)).await?;
 
             println!("\n✅ Sync job created!");
             println!("  Job ID: {}", response.job_id);
@@ -234,9 +238,9 @@ pub async fn handle_stream_command(
             source_id,
             stream_name,
         } => {
-            let source_id = source_id.parse()?;
+            let source_id_uuid = source_id.parse()?;
 
-            println!("Creating transform job for: {} / {}...", source_id, stream_name);
+            println!("Creating transform job for: {} / {}...", source_id_uuid, stream_name);
 
             // Get transform route from centralized registry
             let route = match crate::transforms::get_transform_route(&stream_name) {
@@ -251,7 +255,8 @@ pub async fn handle_stream_command(
             let response = crate::api::jobs::trigger_transform_job(
                 ariata.database.pool(),
                 &*ariata.storage,
-                source_id,
+                stream_writer.clone(),
+                source_id_uuid,
                 route.source_table,
                 route.target_tables,
             )

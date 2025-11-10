@@ -68,6 +68,7 @@ tokio-cron-scheduler = "0.13"
 # Encryption for credentials
 ring = "0.17"
 base64 = "0.22"
+hex = "0.4"
 
 # HMAC signing for OAuth state tokens
 hmac = "0.12"

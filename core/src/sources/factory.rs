@@ -4,10 +4,12 @@
 //! source type and stream name, handling authentication and configuration loading.
 
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
+use crate::storage::stream_writer::StreamWriter;
 use super::base::TokenManager;
 
 use super::{
@@ -25,7 +27,7 @@ use super::{
 /// # Example
 ///
 /// ```rust
-/// let factory = StreamFactory::new(db.clone());
+/// let factory = StreamFactory::new(db.clone(), stream_writer);
 ///
 /// // Create a Google Calendar stream
 /// let mut stream = factory.create_stream(source_id, "calendar").await?;
@@ -36,12 +38,13 @@ use super::{
 /// ```
 pub struct StreamFactory {
     db: PgPool,
+    stream_writer: Arc<Mutex<StreamWriter>>,
 }
 
 impl StreamFactory {
     /// Create a new stream factory
-    pub fn new(db: PgPool) -> Self {
-        Self { db }
+    pub fn new(db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>) -> Self {
+        Self { db, stream_writer }
     }
 
     /// Create a stream instance for syncing
@@ -139,17 +142,17 @@ impl StreamFactory {
             // Google streams
             ("google", "calendar") => {
                 use crate::sources::google::calendar::GoogleCalendarStream;
-                Ok(Box::new(GoogleCalendarStream::new(source_id, self.db.clone(), auth)))
+                Ok(Box::new(GoogleCalendarStream::new(source_id, self.db.clone(), self.stream_writer.clone(), auth)))
             }
             ("google", "gmail") => {
                 use crate::sources::google::gmail::GoogleGmailStream;
-                Ok(Box::new(GoogleGmailStream::new(source_id, self.db.clone(), auth)))
+                Ok(Box::new(GoogleGmailStream::new(source_id, self.db.clone(), self.stream_writer.clone(), auth)))
             }
 
             // Notion streams
             ("notion", "pages") => {
                 use crate::sources::notion::NotionPagesStream;
-                Ok(Box::new(NotionPagesStream::new(source_id, self.db.clone(), auth)))
+                Ok(Box::new(NotionPagesStream::new(source_id, self.db.clone(), self.stream_writer.clone(), auth)))
             }
 
             // iOS streams
@@ -181,6 +184,7 @@ impl Clone for StreamFactory {
     fn clone(&self) -> Self {
         Self {
             db: self.db.clone(),
+            stream_writer: self.stream_writer.clone(),
         }
     }
 }

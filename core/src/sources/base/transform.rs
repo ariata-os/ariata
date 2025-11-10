@@ -82,22 +82,29 @@ pub trait OntologyTransform: Send + Sync {
     /// Transform records from source stream to ontology table
     ///
     /// This method should:
-    /// 1. Query source table for untransformed records
+    /// 1. Read from S3 via StreamReader with checkpoint tracking
     /// 2. Map fields from source schema to ontology schema
-    /// 3. Insert into ontology table with source_stream_id reference
-    /// 4. Handle errors gracefully and continue processing
-    /// 5. Return statistics about the transformation
+    /// 3. Insert into ontology table
+    /// 4. Update checkpoint after successful processing
+    /// 5. Handle errors gracefully and continue processing
+    /// 6. Return statistics about the transformation
     ///
-    /// **Idempotency**: This should be safe to re-run. Use `ON CONFLICT DO NOTHING`
-    /// or left joins to avoid processing already-transformed records.
+    /// **Idempotency**: This uses checkpoint-based processing. StreamReader tracks
+    /// progress and only returns new records since last successful transform.
     ///
     /// # Arguments
     ///
     /// * `db` - Database connection
-    /// * `source_id` - UUID of the source (for filtering source table records)
+    /// * `context` - Transform context with StreamReader and other dependencies
+    /// * `source_id` - UUID of the source (for filtering stream data)
     ///
     /// # Returns
     ///
     /// Result containing transformation statistics
-    async fn transform(&self, db: &Database, source_id: Uuid) -> Result<TransformResult>;
+    async fn transform(
+        &self,
+        db: &Database,
+        context: &crate::jobs::transform_context::TransformContext,
+        source_id: Uuid,
+    ) -> Result<TransformResult>;
 }

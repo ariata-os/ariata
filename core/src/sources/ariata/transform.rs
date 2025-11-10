@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::database::Database;
@@ -29,8 +28,8 @@ impl OntologyTransform for ChatConversationTransform {
         "knowledge"
     }
 
-    #[tracing::instrument(skip(self, db), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, source_id: Uuid) -> Result<TransformResult> {
+    #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
+    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -41,86 +40,112 @@ impl OntologyTransform for ChatConversationTransform {
             "Starting chat to knowledge_ai_conversation transformation"
         );
 
-        // Query stream_ariata_ai_chat for records not yet transformed
-        // Use left join to find records that don't exist in knowledge_ai_conversation
-        let rows = sqlx::query(
-            r#"
-            SELECT
-                c.id, c.conversation_id, c.message_id, c.role, c.content,
-                c.model, c.provider, c.timestamp, c.metadata
-            FROM elt.stream_ariata_ai_chat c
-            LEFT JOIN elt.knowledge_ai_conversation k ON (k.source_stream_id = c.id)
-            WHERE c.source_id = $1
-              AND k.id IS NULL
-            ORDER BY c.timestamp ASC
-            LIMIT 1000
-            "#,
-        )
-        .bind(source_id)
-        .fetch_all(db.pool())
-        .await?;
+        // Read stream data from S3 using checkpoint
+        let checkpoint_key = "ariata_to_chat_conversation";
+        let batches = context.stream_reader
+            .read_with_checkpoint(source_id, "ariata", checkpoint_key)
+            .await?;
 
         tracing::debug!(
-            records_to_transform = rows.len(),
-            "Fetched untransformed chat records"
+            batch_count = batches.len(),
+            "Fetched Ariata AI Chat batches from S3"
         );
 
-        for row in rows {
-            records_read += 1;
+        for batch in batches {
+            for record in &batch.records {
+                records_read += 1;
 
-            // Extract fields from row
-            let stream_id: Uuid = row.try_get("id")?;
-            let conversation_id: String = row.try_get("conversation_id")?;
-            let message_id: String = row.try_get("message_id")?;
-            let role: String = row.try_get("role")?;
-            let content: String = row.try_get("content")?;
-            let model: Option<String> = row.try_get("model")?;
-            let provider: String = row.try_get("provider")?;
-            let timestamp: DateTime<Utc> = row.try_get("timestamp")?;
-            let metadata: serde_json::Value = row.try_get("metadata")?;
+                // Extract fields from JSONL record
+                let Some(message_id) = record.get("message_id").and_then(|v| v.as_str()) else {
+                    continue; // Skip records without message_id
+                };
 
-            // Insert into knowledge_ai_conversation
-            let result = sqlx::query(
-                r#"
-                INSERT INTO elt.knowledge_ai_conversation (
-                    conversation_id, message_id, role, content,
-                    model, provider, timestamp,
-                    source_stream_id, source_table, source_provider,
-                    metadata
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+                let stream_id = record.get("id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(|| Uuid::new_v4());
+
+                let conversation_id = record.get("conversation_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                let role = record.get("role")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("user");
+
+                let content = record.get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                let model = record.get("model")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                let provider = record.get("provider")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+
+                let timestamp = record.get("timestamp")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+                    .unwrap_or_else(|| Utc::now());
+
+                let metadata = record.get("metadata").cloned()
+                    .unwrap_or(serde_json::Value::Null);
+
+                // Insert into knowledge_ai_conversation
+                let result = sqlx::query(
+                    r#"
+                    INSERT INTO elt.knowledge_ai_conversation (
+                        conversation_id, message_id, role, content,
+                        model, provider, timestamp,
+                        source_stream_id, source_table, source_provider,
+                        metadata
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+                    )
+                    ON CONFLICT (source_stream_id) DO NOTHING
+                    "#,
                 )
-                ON CONFLICT (source_stream_id) DO NOTHING
-                "#,
-            )
-            .bind(&conversation_id)
-            .bind(&message_id)
-            .bind(&role)
-            .bind(&content)
-            .bind(&model)
-            .bind(&provider)
-            .bind(timestamp)
-            .bind(stream_id)
-            .bind("stream_ariata_ai_chat")
-            .bind("ariata")
-            .bind(&metadata)
-            .execute(db.pool())
-            .await;
+                .bind(conversation_id)
+                .bind(message_id)
+                .bind(role)
+                .bind(content)
+                .bind(&model)
+                .bind(provider)
+                .bind(timestamp)
+                .bind(stream_id)
+                .bind("stream_ariata_ai_chat")
+                .bind("ariata")
+                .bind(&metadata)
+                .execute(db.pool())
+                .await;
 
-            match result {
-                Ok(_) => {
-                    records_written += 1;
-                    last_processed_id = Some(stream_id);
+                match result {
+                    Ok(_) => {
+                        records_written += 1;
+                        last_processed_id = Some(stream_id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            message_id = %message_id,
+                            stream_id = %stream_id,
+                            error = %e,
+                            "Failed to transform chat record"
+                        );
+                        records_failed += 1;
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        message_id = %message_id,
-                        stream_id = %stream_id,
-                        error = %e,
-                        "Failed to transform chat record"
-                    );
-                    records_failed += 1;
-                }
+            }
+
+            // Update checkpoint after processing batch
+            if let Some(max_ts) = batch.max_timestamp {
+                context.stream_reader.update_checkpoint(
+                    source_id,
+                    "ariata",
+                    checkpoint_key,
+                    max_ts
+                ).await?;
             }
         }
 

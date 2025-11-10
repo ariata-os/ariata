@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::database::Database;
@@ -48,8 +47,8 @@ impl OntologyTransform for MicrophoneTranscriptionTransform {
         "speech"
     }
 
-    #[tracing::instrument(skip(self, db), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, source_id: Uuid) -> Result<TransformResult> {
+    #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
+    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let records_failed = 0;
@@ -61,41 +60,41 @@ impl OntologyTransform for MicrophoneTranscriptionTransform {
             "Starting microphone audio to speech_transcription transformation"
         );
 
-        tracing::debug!("TRANSFORM METHOD INVOKED - about to query database");
+        tracing::debug!("TRANSFORM METHOD INVOKED - reading from S3");
 
-        // Query stream_ios_microphone for records not yet transcribed
-        // Use left join to find records that don't exist in speech_transcription
-        let rows = sqlx::query(
-            r#"
-            SELECT
-                m.id, m.timestamp, m.audio_file_key, m.duration_seconds,
-                m.decibels, m.sample_rate
-            FROM elt.stream_ios_microphone m
-            LEFT JOIN elt.speech_transcription t ON (t.source_stream_id = m.id)
-            WHERE m.source_id = $1
-              AND m.audio_file_key IS NOT NULL
-              AND t.id IS NULL
-            ORDER BY m.timestamp ASC
-            LIMIT 100
-            "#,
-        )
-        .bind(source_id)
-        .fetch_all(db.pool())
-        .await?;
+        // Read stream data from S3 using checkpoint
+        let checkpoint_key = "microphone_to_transcription";
+        let batches = context.stream_reader
+            .read_with_checkpoint(source_id, "microphone", checkpoint_key)
+            .await?;
 
         tracing::debug!(
-            records_to_transform = rows.len(),
-            "Fetched untranscribed microphone records"
+            batch_count = batches.len(),
+            "Fetched microphone batches from S3"
         );
 
-        for row in rows {
-            records_read += 1;
+        for batch in batches {
+            for record in &batch.records {
+                records_read += 1;
 
-            // Extract fields from row
-            let stream_id: Uuid = row.try_get("id")?;
-            let timestamp: DateTime<Utc> = row.try_get("timestamp")?;
-            let audio_file_key: String = row.try_get("audio_file_key")?;
-            let duration_seconds: Option<i32> = row.try_get("duration_seconds")?;
+                // Extract fields from JSONL record
+                let Some(audio_file_key) = record.get("audio_file_key").and_then(|v| v.as_str()) else {
+                    continue; // Skip records without audio_file_key
+                };
+
+                let timestamp = record.get("timestamp")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+                    .unwrap_or_else(|| Utc::now());
+
+                let stream_id = record.get("id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(|| Uuid::new_v4());
+
+                let duration_seconds = record.get("duration_seconds")
+                    .and_then(|v| v.as_i64())
+                    .map(|d| d as i32);
 
             tracing::debug!(
                 stream_id = %stream_id,
@@ -263,6 +262,17 @@ impl OntologyTransform for MicrophoneTranscriptionTransform {
                 source_record_id: transcription_id,
                 transform_stage: "semantic_parsing".to_string(),
             });
+            }
+
+            // Update checkpoint after processing batch
+            if let Some(max_ts) = batch.max_timestamp {
+                context.stream_reader.update_checkpoint(
+                    source_id,
+                    "microphone",
+                    checkpoint_key,
+                    max_ts
+                ).await?;
+            }
         }
 
         tracing::info!(
