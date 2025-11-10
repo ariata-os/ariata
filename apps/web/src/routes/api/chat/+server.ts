@@ -1,8 +1,9 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { streamText, stepCountIs, type StreamTextResult } from 'ai';
+import { streamText, stepCountIs } from 'ai';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { createQueryOntologiesTool } from '$lib/tools/query-ontologies';
+import { createLocationMapTool } from '$lib/tools/query-location-map';
 import { getDb, getPool } from '$lib/server/db';
 import { chatSessions, type ChatMessage } from '$lib/server/schema';
 import { eq, sql } from 'drizzle-orm';
@@ -105,30 +106,42 @@ export const POST: RequestHandler = async ({ request }) => {
 			console.log('[API] Created new session:', sessionId, 'with title:', autoTitle);
 		}
 
-		// Create dynamic tool based on enabled streams/ontologies
+		// Create dynamic tools based on enabled streams/ontologies
 		const queryOntologiesTool = await createQueryOntologiesTool(pool);
+		const locationMapTool = await createLocationMapTool(pool);
 
 		// Call Claude API with streaming
 		const anthropic = getAnthropic();
 		const result = streamText({
 			model: anthropic(model),
+			system: `You are a helpful AI assistant with access to the user's personal life logging data.
+
+When using tools:
+- After getting tool results, ALWAYS provide a human-readable summary
+- Interpret the data and explain what it means in natural language
+- For location maps, briefly describe what the visualization shows
+- For query results, summarize the key findings
+- Make your responses conversational and helpful`,
 			messages: messages as CoreMessage[],
 			temperature: 0.7,
 			tools: {
-				queryOntologies: queryOntologiesTool
+				queryOntologies: queryOntologiesTool,
+				queryLocationMap: locationMapTool
 			},
-			maxSteps: 5 // Allow multi-step tool calls up to 5 steps
+			maxSteps: 10, // Allow multi-step tool calls - higher to ensure final text step
+			// Save messages asynchronously after streaming completes
+			// This allows the stream to start immediately while ensuring data persistence
+			onFinish: async (event) => {
+				try {
+					await saveMessagesToSession(sessionId, messages as CoreMessage[], event, model);
+				} catch (error) {
+					console.error('[API] Failed to save messages to session:', error);
+				}
+			}
 		});
 
-		// Convert to Response stream
-		const stream = result.toTextStreamResponse();
-
-		// CRITICAL: Save messages synchronously to prevent data loss
-		// We must wait for the AI response to complete and save before returning
-		// This ensures messages are persisted even if client disconnects
-		await saveMessagesToSession(sessionId, messages as CoreMessage[], result, model);
-
-		return stream;
+		// Convert to Response stream and return immediately
+		return result.toTextStreamResponse();
 	} catch (error) {
 		console.error('Chat API error:', error);
 		return new Response(JSON.stringify({ error: 'Internal server error' }), {
@@ -147,23 +160,22 @@ export const POST: RequestHandler = async ({ request }) => {
 async function saveMessagesToSession(
 	sessionId: string,
 	userMessages: CoreMessage[],
-	result: StreamTextResult<any, any>,
+	event: any, // onFinish event containing text, toolCalls, toolResults, etc.
 	model: string
 ) {
 	const db = getDb();
 
-	// Wait for assistant response to complete
-	const assistantContent = await result.text;
-
-	// Extract tool calls from the result
-	const toolCalls = await result.toolCalls;
-	const toolResults = await result.toolResults;
+	// Extract data from the onFinish event
+	const assistantContent = event.text;
+	const toolCalls = event.toolCalls;
+	const toolResults = event.toolResults;
 
 	console.log('[saveMessages] Tool calls:', toolCalls?.length || 0);
 	console.log('[saveMessages] Tool results:', toolResults?.length || 0);
 	if (toolCalls && toolCalls.length > 0) {
 		console.log('[saveMessages] First tool call:', JSON.stringify(toolCalls[0], null, 2));
 		console.log('[saveMessages] First tool result:', JSON.stringify(toolResults?.[0], null, 2));
+		console.log('[saveMessages] First tool result.result:', JSON.stringify(toolResults?.[0]?.result, null, 2));
 	}
 
 	// Build new messages array with accurate timestamps
@@ -190,7 +202,7 @@ async function saveMessagesToSession(
 					? toolCalls.map((call, idx) => ({
 							tool_name: call.toolName,
 							arguments: call.args,
-							result: toolResults?.[idx]?.result,
+							result: toolResults?.[idx]?.output,
 							timestamp: new Date().toISOString()
 						}))
 					: undefined

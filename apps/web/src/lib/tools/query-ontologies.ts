@@ -193,6 +193,8 @@ Available tables in elt schema (with key fields):
 	}
 
 	description += `All tables have: source_stream_id, source_table, source_provider, metadata (jsonb), created_at, updated_at
+
+IMPORTANT: Use exact table names as shown - they are SINGULAR (e.g., "location_point" NOT "location_points").
 Use proper field names exactly as shown above.`;
 
 	return description;
@@ -211,7 +213,7 @@ export async function createQueryOntologiesTool(pool: Pool) {
 			query: z
 				.string()
 				.describe(
-					'The PostgreSQL SELECT query to execute. Must be read-only (SELECT only). Use ILIKE for case-insensitive string matching. All tables are in the elt schema.'
+					'The PostgreSQL SELECT query to execute. Must be read-only (SELECT only). Use ILIKE for case-insensitive string matching. All tables are in the elt schema. CRITICAL: Use exact table names - they are SINGULAR (e.g., location_point NOT location_points).'
 				),
 			reasoning: z
 				.string()
@@ -226,16 +228,21 @@ export async function createQueryOntologiesTool(pool: Pool) {
 
 			// Security: Ensure query is read-only
 			const normalizedQuery = query.trim().toLowerCase();
-			if (
-				!normalizedQuery.startsWith('select') ||
-				normalizedQuery.includes('insert') ||
-				normalizedQuery.includes('update') ||
-				normalizedQuery.includes('delete') ||
-				normalizedQuery.includes('drop') ||
-				normalizedQuery.includes('truncate') ||
-				normalizedQuery.includes('alter') ||
-				normalizedQuery.includes('create')
-			) {
+
+			// Use word boundary regex to match SQL keywords only (not substrings in column names like 'created_at')
+			const forbiddenPatterns = [
+				/\binsert\b/i,
+				/\bupdate\b/i,
+				/\bdelete\b/i,
+				/\bdrop\b/i,
+				/\btruncate\b/i,
+				/\balter\b/i,
+				/\bcreate\b/i
+			];
+
+			const hasForbiddenKeyword = forbiddenPatterns.some(pattern => pattern.test(normalizedQuery));
+
+			if (!normalizedQuery.startsWith('select') || hasForbiddenKeyword) {
 				return {
 					success: false,
 					error: 'Only SELECT queries are allowed for safety'

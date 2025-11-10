@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { Page } from "$lib";
 	import ChatInput from "$lib/components/ChatInput.svelte";
-	import ModelPicker, { type ModelOption } from "$lib/components/ModelPicker.svelte";
+	import ModelPicker, {
+		type ModelOption,
+	} from "$lib/components/ModelPicker.svelte";
 	import Markdown from "$lib/components/Markdown.svelte";
+	import StreamingMarkdown from "$lib/components/StreamingMarkdown.svelte";
 	import ToolCall from "$lib/components/ToolCall.svelte";
 	import { onMount } from "svelte";
 	import { goto } from "$app/navigation";
 	import type { PageData } from "./$types";
+	import { chatSessions } from "$lib/stores/chatSessions.svelte";
 
 	// Get data from page loader
 	let { data }: { data: PageData } = $props();
@@ -22,14 +26,30 @@
 			result?: unknown;
 			timestamp: string;
 		}>;
-	}> = $state(
-		data.messages || [],
-	);
+	}> = $state(data.messages || []);
 	let input = $state("");
 	let isLoading = $state(false);
 	let conversationId = $state(data.conversationId);
 	let messagesContainer: HTMLDivElement | null = $state(null);
 	let scrollContainer: HTMLDivElement | null = $state(null);
+	let enableTransitions = $state(false);
+	let streamingMessageId = $state<string | null>(null);
+
+	// Update messages and conversationId when data changes (e.g., navigating to different conversation)
+	$effect(() => {
+		// Disable transitions temporarily during navigation
+		enableTransitions = false;
+		messages = data.messages || [];
+		conversationId = data.conversationId;
+
+		// Update modelLocked based on whether this is a new conversation
+		modelLocked = !data.isNew;
+
+		// Re-enable transitions after a brief moment
+		setTimeout(() => {
+			enableTransitions = true;
+		}, 50);
+	});
 
 	// Title generation state
 	let titleGenerated = $state(false);
@@ -38,12 +58,12 @@
 
 	// Model selection state
 	let selectedModel: ModelOption = $state({
-		id: "claude-sonnet-4-20250514",
+		id: data.conversation?.model || "claude-sonnet-4-20250514",
 		displayName: "Claude Sonnet 4",
 		provider: "Anthropic",
 		description: "Balanced performance and speed",
 	});
-	let modelLocked = $state(false);
+	let modelLocked = $state(!data.isNew);
 
 	// Derived state for layout mode
 	let isEmpty = $derived(messages.length === 0);
@@ -51,16 +71,19 @@
 	// Auto-scroll to bottom when new messages arrive
 	$effect(() => {
 		if (messages.length > 0 && scrollContainer) {
-			scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
+			scrollContainer.scrollTo({
+				top: scrollContainer.scrollHeight,
+				behavior: "smooth",
+			});
 		}
 	});
 
 	// Debug: Track selectedModel changes
 	$effect(() => {
-		console.log('[chat/[conversationId]] selectedModel changed:', {
+		console.log("[chat/[conversationId]] selectedModel changed:", {
 			id: selectedModel.id,
 			displayName: selectedModel.displayName,
-			timestamp: Date.now()
+			timestamp: Date.now(),
 		});
 	});
 
@@ -69,25 +92,28 @@
 		if (titleGenerated || messages.length < 2) return;
 
 		try {
-			const response = await fetch('/api/sessions/title', {
-				method: 'POST',
+			const response = await fetch("/api/sessions/title", {
+				method: "POST",
 				headers: {
-					'Content-Type': 'application/json',
+					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({
 					conversationId,
-					messages: messages.map(m => ({ role: m.role, content: m.content }))
-				})
+					messages: messages.map((m) => ({
+						role: m.role,
+						content: m.content,
+					})),
+				}),
 			});
 
 			if (response.ok) {
 				const { title } = await response.json();
-				console.log('Generated title:', title);
+				console.log("Generated title:", title);
 				titleGenerated = true;
 				// Optionally update UI or trigger sidebar refresh
 			}
 		} catch (error) {
-			console.error('Error generating title:', error);
+			console.error("Error generating title:", error);
 		}
 	}
 
@@ -100,27 +126,30 @@
 		// Only set timer if we already have a title and messages
 		if (titleGenerated && messages.length > 0) {
 			inactivityTimer = setTimeout(async () => {
-				console.log('15 minutes of inactivity - refining title');
+				console.log("15 minutes of inactivity - refining title");
 				// Regenerate title with full conversation context
 				try {
-					const response = await fetch('/api/sessions/title', {
-						method: 'POST',
+					const response = await fetch("/api/sessions/title", {
+						method: "POST",
 						headers: {
-							'Content-Type': 'application/json',
+							"Content-Type": "application/json",
 						},
 						body: JSON.stringify({
 							conversationId,
-							messages: messages.map(m => ({ role: m.role, content: m.content }))
-						})
+							messages: messages.map((m) => ({
+								role: m.role,
+								content: m.content,
+							})),
+						}),
 					});
 
 					if (response.ok) {
 						const { title } = await response.json();
-						console.log('Refined title after inactivity:', title);
+						console.log("Refined title after inactivity:", title);
 						// Optionally trigger sidebar refresh
 					}
 				} catch (error) {
-					console.error('Error refining title:', error);
+					console.error("Error refining title:", error);
 				}
 			}, INACTIVITY_TIMEOUT);
 		}
@@ -150,11 +179,11 @@
 
 		try {
 			// Debug: Log model being sent
-			console.log('[handleChatSubmit] Sending request with model:', {
+			console.log("[handleChatSubmit] Sending request with model:", {
 				id: selectedModel.id,
 				displayName: selectedModel.displayName,
 				modelLocked: modelLocked,
-				timestamp: Date.now()
+				timestamp: Date.now(),
 			});
 
 			// Send to API
@@ -178,10 +207,13 @@
 				let errorDetail = `HTTP error! status: ${response.status}`;
 				try {
 					const errorData = await response.json();
-					errorDetail = errorData.error || errorData.details || errorDetail;
-					console.error('[handleChatSubmit] API error:', errorData);
+					errorDetail =
+						errorData.error || errorData.details || errorDetail;
+					console.error("[handleChatSubmit] API error:", errorData);
 				} catch (e) {
-					console.error('[handleChatSubmit] Failed to parse error response');
+					console.error(
+						"[handleChatSubmit] Failed to parse error response",
+					);
 				}
 				throw new Error(errorDetail);
 			}
@@ -193,6 +225,7 @@
 				id: `msg_${Date.now()}_assistant`,
 			};
 			messages = [...messages, assistantMessage];
+			streamingMessageId = assistantMessage.id;
 
 			// Stream the response (simple text stream)
 			const reader = response.body?.getReader();
@@ -209,26 +242,40 @@
 				}
 			}
 
+			// Clear streaming state
+			streamingMessageId = null;
+
 			// After streaming completes, reload messages from DB to get tool_calls
 			try {
-				const sessionResponse = await fetch(`/api/sessions/${conversationId}`);
+				const sessionResponse = await fetch(
+					`/api/sessions/${conversationId}`,
+				);
 				if (sessionResponse.ok) {
 					const sessionData = await sessionResponse.json();
 					if (sessionData.messages) {
 						// Update messages with full data including tool_calls
-						messages = sessionData.messages.map((msg: typeof messages[0], idx: number) => ({
-							...msg,
-							id: msg.id || `msg_${idx}`
-						}));
+						messages = sessionData.messages.map(
+							(msg: (typeof messages)[0], idx: number) => ({
+								...msg,
+								id: msg.id || `msg_${idx}`,
+							}),
+						);
 					}
 				}
 			} catch (err) {
-				console.error('Failed to reload session data:', err);
+				console.error("Failed to reload session data:", err);
 			}
 
 			// Generate title after first exchange (user + assistant)
 			if (messages.length === 2) {
 				await generateTitle();
+				// Update URL with conversationId and refresh sidebar
+				goto(`/?conversationId=${conversationId}`, {
+					replaceState: true,
+					noScroll: true,
+				});
+				// Refresh sidebar to show new conversation
+				await chatSessions.refresh();
 			}
 		} catch (error) {
 			console.error("Error sending message:", error);
@@ -260,7 +307,11 @@
 <Page className="h-full p-0!">
 	<div class="page-container" class:is-empty={isEmpty}>
 		<!-- Messages area - scrollable, fades in when not empty -->
-		<div bind:this={scrollContainer} class="flex-1 overflow-y-auto chat-layout" class:visible={!isEmpty}>
+		<div
+			bind:this={scrollContainer}
+			class="flex-1 overflow-y-auto chat-layout"
+			class:visible={!isEmpty}
+		>
 			<div class="messages-container">
 				{#each messages as message (message.id)}
 					<div class="flex justify-start">
@@ -278,13 +329,22 @@
 								<!-- Then show the assistant response -->
 								<div class="text-base text-neutral-900">
 									{#if message.content}
-										<Markdown content={message.content} />
+										{#if streamingMessageId === message.id}
+											<StreamingMarkdown
+												content={message.content}
+											/>
+										{:else}
+											<Markdown content={message.content} />
+										{/if}
 									{:else}
-										<span class="text-neutral-400">...</span>
+										<span class="text-neutral-400">...</span
+										>
 									{/if}
 								</div>
 							{:else}
-								<div class="text-base whitespace-pre-wrap text-neutral-900">
+								<div
+									class="text-base whitespace-pre-wrap text-neutral-900"
+								>
 									{message.content}
 								</div>
 							{/if}
@@ -295,15 +355,22 @@
 		</div>
 
 		<!-- ChatInput - animates from center to bottom -->
-		<div class="chat-input-wrapper" class:is-empty={isEmpty}>
+		<div
+			class="chat-input-wrapper"
+			class:is-empty={isEmpty}
+			class:transitions-enabled={enableTransitions}
+		>
 			<!-- Hero section - fades out when chat starts -->
-			<div class="hero-section" class:visible={isEmpty}>
-				<h1 class="hero-title font-serif text-5xl text-neutral-900 mb-4">
-					Virtues
+			<div
+				class="hero-section"
+				class:visible={isEmpty}
+				class:transitions-enabled={enableTransitions}
+			>
+				<h1
+					class="hero-title font-serif text-4xl text-neutral-900 mb-6"
+				>
+					Good Morning, Adam
 				</h1>
-				<p class="hero-description text-neutral-600 text-lg mb-8">
-					Your personal AI that knows your facts, values, and patterns.
-				</p>
 			</div>
 
 			<ChatInput
@@ -363,7 +430,13 @@
 		padding: 0 3rem 3rem 3rem;
 		background: white;
 		box-sizing: border-box;
-		transition: bottom 0.6s cubic-bezier(0.4, 0, 0.2, 1), transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	/* Only apply transitions when explicitly enabled */
+	.chat-input-wrapper.transitions-enabled {
+		transition:
+			bottom 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+			transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	/* When empty, center the input vertically */
@@ -383,6 +456,10 @@
 		opacity: 0;
 		max-height: 0;
 		overflow: hidden;
+	}
+
+	/* Only apply transitions when explicitly enabled */
+	.hero-section.transitions-enabled {
 		transition:
 			opacity 0.3s ease-in-out,
 			max-height 0.3s ease-in-out;

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import MapVisualization from './MapVisualization.svelte';
+
 	interface ToolCallProps {
 		tool_name: string;
 		arguments: Record<string, unknown>;
@@ -15,14 +17,27 @@
 	// Type guard and parse result
 	const result = rawResult as {
 		success: boolean;
+		type?: string;
+		data?: unknown;
 		rowCount?: number;
 		rows?: unknown[];
 		columns?: string[];
 		error?: string;
 	} | undefined;
 
+	// Check if this is a map visualization
+	const isMapVisualization = result?.success && result?.type === 'map_visualization';
+
 	// Extract reasoning from arguments (with safety checks)
-	const reasoning = (args?.reasoning as string) || 'Query executed';
+	// For map tool, construct a description from the time range
+	let reasoning: string;
+	if (isMapVisualization) {
+		const start = args?.startTime ? new Date(args.startTime as string).toLocaleDateString() : '';
+		const end = args?.endTime ? new Date(args.endTime as string).toLocaleDateString() : '';
+		reasoning = start && end ? `Map: ${start} to ${end}` : 'Visualizing location data';
+	} else {
+		reasoning = (args?.reasoning as string) || 'Tool executed';
+	}
 	const query = (args?.query as string) || '';
 
 	// Format timestamp
@@ -43,7 +58,11 @@
 		<span class="tool-action">"{reasoning}"</span>
 		{#if result}
 			{#if result.success}
-				<span class="tool-status success">{result.rowCount || 0} rows</span>
+				{#if isMapVisualization}
+					<span class="tool-status success">Map ready</span>
+				{:else}
+					<span class="tool-status success">{result.rowCount || 0} rows</span>
+				{/if}
 			{:else}
 				<span class="tool-status error">Error</span>
 			{/if}
@@ -56,37 +75,45 @@
 
 	{#if isExpanded}
 		<div class="tool-call-details">
-			{#if query}
-				<div class="detail-section">
-					<div class="detail-label">Query:</div>
-					<pre class="detail-code">{query}</pre>
-				</div>
-			{/if}
-
 			{#if result}
 				{#if result.success}
-					<div class="detail-section">
-						<div class="detail-label">Results:</div>
-						<div class="detail-value">
-							{result.rowCount || 0} row{(result.rowCount || 0) !== 1 ? 's' : ''} returned
+					{#if isMapVisualization}
+						<!-- Render map visualization -->
+						<div class="detail-section">
+							<MapVisualization data={result.data} />
 						</div>
-
-						{#if result.columns && result.columns.length > 0}
-							<div class="detail-value text-neutral-600 text-xs mt-1">
-								Columns: {result.columns.join(', ')}
+					{:else}
+						<!-- Render standard query results -->
+						{#if query}
+							<div class="detail-section">
+								<div class="detail-label">Query:</div>
+								<pre class="detail-code">{query}</pre>
 							</div>
 						{/if}
 
-						{#if result.rows && result.rows.length > 0 && result.rows.length <= 3}
-							<div class="detail-value mt-2">
-								<pre class="detail-code">{JSON.stringify(result.rows, null, 2)}</pre>
+						<div class="detail-section">
+							<div class="detail-label">Results:</div>
+							<div class="detail-value">
+								{result.rowCount || 0} row{(result.rowCount || 0) !== 1 ? 's' : ''} returned
 							</div>
-						{:else if result.rows && result.rows.length > 3}
-							<div class="detail-value text-neutral-500 text-xs mt-1">
-								(Preview limited to first few rows)
-							</div>
-						{/if}
-					</div>
+
+							{#if result.columns && result.columns.length > 0}
+								<div class="detail-value text-neutral-600 text-xs mt-1">
+									Columns: {result.columns.join(', ')}
+								</div>
+							{/if}
+
+							{#if result.rows && result.rows.length > 0 && result.rows.length <= 3}
+								<div class="detail-value mt-2">
+									<pre class="detail-code">{JSON.stringify(result.rows, null, 2)}</pre>
+								</div>
+							{:else if result.rows && result.rows.length > 3}
+								<div class="detail-value text-neutral-500 text-xs mt-1">
+									(Preview limited to first few rows)
+								</div>
+							{/if}
+						</div>
+					{/if}
 				{:else}
 					<div class="detail-section">
 						<div class="detail-label error">Error:</div>
