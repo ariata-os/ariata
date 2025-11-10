@@ -1,0 +1,14 @@
+{
+  "name": "ariata-ios-test",
+  "version": "1.0.0",
+  "description": "Test endpoint for iOS device pairing",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run index.ts",
+    "start": "bun run index.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

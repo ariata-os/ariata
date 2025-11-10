@@ -1,0 +1,13 @@
+{
+  "buildCommand": "bun install",
+  "devCommand": "bun run dev",
+  "installCommand": "curl -fsSL https://bun.sh/install | bash && bun install",
+  "framework": null,
+  "outputDirectory": ".",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.ts"
+    }
+  ]
+}
