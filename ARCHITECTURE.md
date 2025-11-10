@@ -70,9 +70,7 @@ graph LR
 
 ---
 
-## 3-Week MVP Scope
-
-### What's Included (Weeks 1-3)
+## Current Focus
 
 **Data Pipeline:**
 
@@ -89,6 +87,7 @@ graph LR
 
 - ✅ SQL Agent (query ontologies for facts & time ranges)
 - ✅ RAG+Rerank Agent (semantic search on narrative)
+- ✅ Value Agent (should/telos queries)
 
 **UI/UX:**
 
@@ -101,13 +100,11 @@ graph LR
 
 - ❌ Neo4j / Life Primitives (hierarchical graph structure)
 - ❌ Patterns (causal inference engine)
-- ❌ Axiology (values & goals system)
 
 **Retrieval Agents:**
 
 - ❌ Graph Agent (Cypher queries on Neo4j)
 - ❌ Causal Agent (why/what-if queries)
-- ❌ Value Agent (should/telos queries)
 
 **Infrastructure:**
 
@@ -115,16 +112,3 @@ graph LR
 - ❌ Entity Resolution (fuzzy matching/deduplication)
 
 ---
-
-## Key Design Documents
-
-- **[CHANGEPOINT.md](CHANGEPOINT.md)**: Detailed specification for event boundary detection and narrative segmentation
-- **[ONTOLOGIES.md](ONTOLOGIES.md)**: Complete ontology schema (47 primitives across 9 domains)
-- **[ENTITY_RESOLUTION.md](ENTITY_RESOLUTION.md)**: Entity deduplication strategy (deferred for MVP)
-
----
-
-**Legend:**
-
-- **Layers without asterisk**: 3-week MVP implementation
-- **Layers with `**`**: Post-MVP future development
