@@ -103,6 +103,7 @@ export interface Job {
 	job_type: 'sync' | 'transform';
 	status: 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 	source_id?: string;
+	source_name?: string; // Enriched in page load, not from API
 	stream_name?: string;
 	sync_mode?: 'full_refresh' | 'incremental';
 	transform_id?: string;

@@ -10,8 +10,26 @@
 
 
 @theme {
-	--color-canvas: #1c1917;
+	/* Ariata Color Palette */
+	--color-navy: #14283D;
+	--color-navy-light: #1a3550;
+	--color-paper: #FAF9F5;
+	--color-paper-dark: #F3F2E9;
+	--color-white: #FFFFFF;
+	--color-blue: #2883DE;
+	--color-blue-light: #4a9ae5;
 
+	/* Stone palette for grays */
+	--color-stone-200: #e7e5e4;
+	--color-stone-300: #d6d3d1;
+	--color-stone-400: #a8a29e;
+	--color-stone-500: #78716c;
+	--color-stone-600: #57534e;
+	--color-stone-700: #44403c;
+	--color-stone-800: #292524;
+	--color-stone-900: #1c1917;
+
+	/* Font Families */
 	--font-mono: 'IBM Plex Mono', monospace;
 	--font-sans: 'Avenir', sans-serif;
 	--font-serif: 'Lora', serif;
@@ -19,31 +37,37 @@
 
 /* Markdown Styles */
 .markdown {
-	@apply text-neutral-900;
+	color: var(--color-stone-800);
 }
 
 .markdown h1 {
-	@apply text-3xl font-bold font-serif mt-6 mb-4 text-neutral-900;
+	@apply text-2xl font-serif mt-6 mb-4;
+	color: var(--color-navy);
 }
 
 .markdown h2 {
-	@apply text-2xl font-bold font-serif mt-5 mb-3 text-neutral-900;
+	@apply text-xl  font-serif mt-5 mb-3;
+	color: var(--color-navy);
 }
 
 .markdown h3 {
-	@apply text-xl font-bold font-serif mt-4 mb-2 text-neutral-900;
+	@apply text-xl font-serif mt-4 mb-2;
+	color: var(--color-navy);
 }
 
 .markdown h4 {
-	@apply text-lg font-bold font-serif mt-3 mb-2 text-neutral-800;
+	@apply text-lg  font-serif mt-3 mb-2;
+	color: var(--color-navy-light);
 }
 
 .markdown h5 {
-	@apply text-base font-bold font-serif mt-2 mb-1 text-neutral-800;
+	@apply text-base font-serif mt-2 mb-1;
+	color: var(--color-navy-light);
 }
 
 .markdown h6 {
-	@apply text-sm font-bold font-serif mt-2 mb-1 text-neutral-700;
+	@apply text-sm font-medium font-serif mt-2 mb-1;
+	color: var(--color-stone-700);
 }
 
 .markdown p {
@@ -51,7 +75,8 @@
 }
 
 .markdown strong {
-	@apply font-bold text-neutral-950;
+	@apply font-medium;
+	color: var(--color-navy);
 }
 
 .markdown em {
@@ -59,11 +84,16 @@
 }
 
 .markdown code {
-	@apply bg-neutral-100 text-neutral-900 px-1.5 py-0.5 rounded text-sm font-mono;
+	@apply px-1.5 py-0.5 rounded text-sm font-mono;
+	background-color: var(--color-paper);
+	color: var(--color-stone-800);
 }
 
 .markdown pre {
-	@apply bg-neutral-100 text-neutral-900 p-4 rounded-lg overflow-x-auto mb-4 border border-neutral-200;
+	@apply p-4 rounded-lg overflow-x-auto mb-4;
+	background-color: var(--color-paper);
+	color: var(--color-stone-800);
+	border: 1px solid var(--color-stone-300);
 }
 
 .markdown pre code {
@@ -71,27 +101,40 @@
 }
 
 .markdown ul {
-	@apply list-disc list-inside mb-4 space-y-1;
+	@apply list-disc mb-4 space-y-1;
+	padding-left: 2em;
+	list-style-position: outside;
 }
 
 .markdown ol {
-	@apply list-decimal list-inside mb-4 space-y-1;
+	@apply list-decimal mb-4 space-y-1;
+	padding-left: 2em;
+	list-style-position: outside;
 }
 
 .markdown li {
 	@apply leading-relaxed;
+	contain: layout;
 }
 
 .markdown blockquote {
-	@apply border-l-4 border-neutral-300 pl-4 italic text-neutral-700 my-4;
+	@apply border-l-4 pl-4 italic my-4;
+	border-color: var(--color-navy);
+	color: var(--color-stone-600);
 }
 
 .markdown a {
-	@apply text-blue-600 hover:text-blue-800 underline;
+	@apply underline;
+	color: var(--color-blue);
+}
+
+.markdown a:hover {
+	color: var(--color-navy);
 }
 
 .markdown hr {
-	@apply border-neutral-300 my-6;
+	@apply my-6;
+	border-color: var(--color-stone-300);
 }
 
 .markdown table {
@@ -99,14 +142,46 @@
 }
 
 .markdown th {
-	@apply bg-neutral-100 border border-neutral-300 px-4 py-2 text-left font-bold;
+	@apply px-4 py-2 text-left font-medium;
+	background-color: var(--color-paper);
+	border: 1px solid var(--color-stone-300);
 }
 
 .markdown td {
-	@apply border border-neutral-300 px-4 py-2;
+	@apply px-4 py-2;
+	border: 1px solid var(--color-stone-300);
 }
 
 .markdown img {
 	@apply max-w-full h-auto rounded-lg my-4;
+}
+
+/* Button Variants */
+.btn-primary {
+	background-color: var(--color-navy);
+	color: var(--color-white);
+}
+
+.btn-primary:hover:not(:disabled) {
+	background-color: var(--color-navy-light);
+}
+
+.btn-secondary {
+	background-color: var(--color-paper);
+	color: var(--color-navy);
+	border: 1px solid var(--color-navy);
+}
+
+.btn-secondary:hover:not(:disabled) {
+	background-color: var(--color-paper-dark);
+}
+
+.btn-ghost {
+	background-color: transparent;
+	color: var(--color-stone-700);
+}
+
+.btn-ghost:hover:not(:disabled) {
+	background-color: var(--color-paper);
 }
 

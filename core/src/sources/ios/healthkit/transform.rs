@@ -11,6 +11,9 @@ use crate::database::Database;
 use crate::error::Result;
 use crate::sources::base::{OntologyTransform, TransformResult};
 
+/// Batch size for bulk inserts
+const BATCH_SIZE: usize = 500;
+
 /// Transform HealthKit heart rate data to health_heart_rate ontology
 pub struct HealthKitHeartRateTransform;
 
@@ -35,21 +38,35 @@ impl OntologyTransform for HealthKitHeartRateTransform {
         let mut records_failed = 0;
         let mut last_processed_id: Option<Uuid> = None;
 
+        let transform_start = std::time::Instant::now();
+
         tracing::info!(
             source_id = %source_id,
             "Starting HealthKit to health_heart_rate transformation"
         );
 
-        // Read stream data from S3 using checkpoint
+        // Read stream data from data source using checkpoint
         let checkpoint_key = "healthkit_to_heart_rate";
-        let batches = context.stream_reader
+        let read_start = std::time::Instant::now();
+        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let batches = data_source
             .read_with_checkpoint(source_id, "healthkit", checkpoint_key)
             .await?;
+        let read_duration = read_start.elapsed();
 
-        tracing::debug!(
+        tracing::info!(
             batch_count = batches.len(),
-            "Fetched HealthKit batches from S3"
+            read_duration_ms = read_duration.as_millis(),
+            source_type = ?data_source.source_type(),
+            "Fetched HealthKit batches from data source"
         );
+
+        // Batch insert configuration
+        let mut pending_records: Vec<(i32, Option<String>, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut batch_insert_total_ms = 0u128;
+        let mut batch_insert_count = 0;
+
+        let processing_start = std::time::Instant::now();
 
         for batch in batches {
             for record in &batch.records {
@@ -84,48 +101,51 @@ impl OntologyTransform for HealthKitHeartRateTransform {
                     "healthkit_raw": raw_data,
                 });
 
-                // Insert into health_heart_rate
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO elt.health_heart_rate (
-                        bpm, measurement_context, timestamp,
-                        source_stream_id, source_table, source_provider,
-                        metadata
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7
-                    )
-                    ON CONFLICT (source_stream_id) DO NOTHING
-                    "#,
-                )
-                .bind(heart_rate as i32) // Convert to BPM integer
-                .bind(&measurement_context)
-                .bind(timestamp)
-                .bind(stream_id)
-                .bind("stream_ios_healthkit")
-                .bind("ios")
-                .bind(&metadata)
-                .execute(db.pool())
-                .await;
+                // Add to pending batch
+                pending_records.push((
+                    heart_rate as i32,
+                    measurement_context,
+                    timestamp,
+                    stream_id,
+                    metadata,
+                ));
 
-                match result {
-                    Ok(_) => {
-                        records_written += 1;
-                        last_processed_id = Some(stream_id);
+                last_processed_id = Some(stream_id);
+
+                // Execute batch insert when we reach batch size
+                if pending_records.len() >= BATCH_SIZE {
+                    let insert_start = std::time::Instant::now();
+                    let batch_result = execute_heart_rate_batch_insert(db, &pending_records).await;
+                    let insert_duration = insert_start.elapsed();
+                    batch_insert_total_ms += insert_duration.as_millis();
+                    batch_insert_count += 1;
+
+                    tracing::info!(
+                        batch_size = pending_records.len(),
+                        insert_duration_ms = insert_duration.as_millis(),
+                        "Executed batch insert"
+                    );
+
+                    match batch_result {
+                        Ok(written) => {
+                            records_written += written;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                batch_size = pending_records.len(),
+                                "Batch insert failed"
+                            );
+                            records_failed += pending_records.len();
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            stream_id = %stream_id,
-                            error = %e,
-                            "Failed to transform heart rate record"
-                        );
-                        records_failed += 1;
-                    }
+                    pending_records.clear();
                 }
             }
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                context.stream_reader.update_checkpoint(
+                data_source.update_checkpoint(
                     source_id,
                     "healthkit",
                     checkpoint_key,
@@ -134,11 +154,49 @@ impl OntologyTransform for HealthKitHeartRateTransform {
             }
         }
 
+        // Insert any remaining records
+        if !pending_records.is_empty() {
+            let insert_start = std::time::Instant::now();
+            let batch_result = execute_heart_rate_batch_insert(db, &pending_records).await;
+            let insert_duration = insert_start.elapsed();
+            batch_insert_total_ms += insert_duration.as_millis();
+            batch_insert_count += 1;
+
+            tracing::info!(
+                batch_size = pending_records.len(),
+                insert_duration_ms = insert_duration.as_millis(),
+                "Executed final batch insert"
+            );
+
+            match batch_result {
+                Ok(written) => {
+                    records_written += written;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        batch_size = pending_records.len(),
+                        "Final batch insert failed"
+                    );
+                    records_failed += pending_records.len();
+                }
+            }
+        }
+
+        let processing_duration = processing_start.elapsed();
+        let total_duration = transform_start.elapsed();
+
         tracing::info!(
             source_id = %source_id,
             records_read,
             records_written,
             records_failed,
+            total_duration_ms = total_duration.as_millis(),
+            processing_duration_ms = processing_duration.as_millis(),
+            read_duration_ms = read_duration.as_millis(),
+            batch_insert_total_ms,
+            batch_insert_count,
+            avg_batch_insert_ms = if batch_insert_count > 0 { batch_insert_total_ms / batch_insert_count as u128 } else { 0 },
             "HealthKit to health_heart_rate transformation completed"
         );
 
@@ -176,21 +234,35 @@ impl OntologyTransform for HealthKitHRVTransform {
         let mut records_failed = 0;
         let mut last_processed_id: Option<Uuid> = None;
 
+        let transform_start = std::time::Instant::now();
+
         tracing::info!(
             source_id = %source_id,
             "Starting HealthKit to health_hrv transformation"
         );
 
-        // Read stream data from S3 using checkpoint
+        // Read stream data from data source using checkpoint
         let checkpoint_key = "healthkit_to_hrv";
-        let batches = context.stream_reader
+        let read_start = std::time::Instant::now();
+        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let batches = data_source
             .read_with_checkpoint(source_id, "healthkit", checkpoint_key)
             .await?;
+        let read_duration = read_start.elapsed();
 
-        tracing::debug!(
+        tracing::info!(
             batch_count = batches.len(),
-            "Fetched HealthKit batches from S3"
+            read_duration_ms = read_duration.as_millis(),
+            source_type = ?data_source.source_type(),
+            "Fetched HealthKit batches from data source"
         );
+
+        // Batch insert configuration
+        let mut pending_records: Vec<(f64, String, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut batch_insert_total_ms = 0u128;
+        let mut batch_insert_count = 0;
+
+        let processing_start = std::time::Instant::now();
 
         for batch in batches {
             for record in &batch.records {
@@ -224,48 +296,51 @@ impl OntologyTransform for HealthKitHRVTransform {
                     "healthkit_raw": raw_data,
                 });
 
-                // Insert into health_hrv
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO elt.health_hrv (
-                        hrv_ms, measurement_type, timestamp,
-                        source_stream_id, source_table, source_provider,
-                        metadata
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7
-                    )
-                    ON CONFLICT (source_stream_id) DO NOTHING
-                    "#,
-                )
-                .bind(hrv)
-                .bind(measurement_type)
-                .bind(timestamp)
-                .bind(stream_id)
-                .bind("stream_ios_healthkit")
-                .bind("ios")
-                .bind(&metadata)
-                .execute(db.pool())
-                .await;
+                // Add to pending batch
+                pending_records.push((
+                    hrv,
+                    measurement_type.to_string(),
+                    timestamp,
+                    stream_id,
+                    metadata,
+                ));
 
-                match result {
-                    Ok(_) => {
-                        records_written += 1;
-                        last_processed_id = Some(stream_id);
+                last_processed_id = Some(stream_id);
+
+                // Execute batch insert when we reach batch size
+                if pending_records.len() >= BATCH_SIZE {
+                    let insert_start = std::time::Instant::now();
+                    let batch_result = execute_hrv_batch_insert(db, &pending_records).await;
+                    let insert_duration = insert_start.elapsed();
+                    batch_insert_total_ms += insert_duration.as_millis();
+                    batch_insert_count += 1;
+
+                    tracing::info!(
+                        batch_size = pending_records.len(),
+                        insert_duration_ms = insert_duration.as_millis(),
+                        "Executed batch insert"
+                    );
+
+                    match batch_result {
+                        Ok(written) => {
+                            records_written += written;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                batch_size = pending_records.len(),
+                                "Batch insert failed"
+                            );
+                            records_failed += pending_records.len();
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            stream_id = %stream_id,
-                            error = %e,
-                            "Failed to transform HRV record"
-                        );
-                        records_failed += 1;
-                    }
+                    pending_records.clear();
                 }
             }
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                context.stream_reader.update_checkpoint(
+                data_source.update_checkpoint(
                     source_id,
                     "healthkit",
                     checkpoint_key,
@@ -274,11 +349,49 @@ impl OntologyTransform for HealthKitHRVTransform {
             }
         }
 
+        // Insert any remaining records
+        if !pending_records.is_empty() {
+            let insert_start = std::time::Instant::now();
+            let batch_result = execute_hrv_batch_insert(db, &pending_records).await;
+            let insert_duration = insert_start.elapsed();
+            batch_insert_total_ms += insert_duration.as_millis();
+            batch_insert_count += 1;
+
+            tracing::info!(
+                batch_size = pending_records.len(),
+                insert_duration_ms = insert_duration.as_millis(),
+                "Executed final batch insert"
+            );
+
+            match batch_result {
+                Ok(written) => {
+                    records_written += written;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        batch_size = pending_records.len(),
+                        "Final batch insert failed"
+                    );
+                    records_failed += pending_records.len();
+                }
+            }
+        }
+
+        let processing_duration = processing_start.elapsed();
+        let total_duration = transform_start.elapsed();
+
         tracing::info!(
             source_id = %source_id,
             records_read,
             records_written,
             records_failed,
+            total_duration_ms = total_duration.as_millis(),
+            processing_duration_ms = processing_duration.as_millis(),
+            read_duration_ms = read_duration.as_millis(),
+            batch_insert_total_ms,
+            batch_insert_count,
+            avg_batch_insert_ms = if batch_insert_count > 0 { batch_insert_total_ms / batch_insert_count as u128 } else { 0 },
             "HealthKit to health_hrv transformation completed"
         );
 
@@ -316,21 +429,35 @@ impl OntologyTransform for HealthKitStepsTransform {
         let mut records_failed = 0;
         let mut last_processed_id: Option<Uuid> = None;
 
+        let transform_start = std::time::Instant::now();
+
         tracing::info!(
             source_id = %source_id,
             "Starting HealthKit to health_steps transformation"
         );
 
-        // Read stream data from S3 using checkpoint
+        // Read stream data from data source using checkpoint
         let checkpoint_key = "healthkit_to_steps";
-        let batches = context.stream_reader
+        let read_start = std::time::Instant::now();
+        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let batches = data_source
             .read_with_checkpoint(source_id, "healthkit", checkpoint_key)
             .await?;
+        let read_duration = read_start.elapsed();
 
-        tracing::debug!(
+        tracing::info!(
             batch_count = batches.len(),
-            "Fetched HealthKit batches from S3"
+            read_duration_ms = read_duration.as_millis(),
+            source_type = ?data_source.source_type(),
+            "Fetched HealthKit batches from data source"
         );
+
+        // Batch insert configuration
+        let mut pending_records: Vec<(i32, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut batch_insert_total_ms = 0u128;
+        let mut batch_insert_count = 0;
+
+        let processing_start = std::time::Instant::now();
 
         for batch in batches {
             for record in &batch.records {
@@ -357,47 +484,50 @@ impl OntologyTransform for HealthKitStepsTransform {
                     "healthkit_raw": raw_data,
                 });
 
-                // Insert into health_steps
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO elt.health_steps (
-                        step_count, timestamp,
-                        source_stream_id, source_table, source_provider,
-                        metadata
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6
-                    )
-                    ON CONFLICT (source_stream_id) DO NOTHING
-                    "#,
-                )
-                .bind(steps as i32)
-                .bind(timestamp)
-                .bind(stream_id)
-                .bind("stream_ios_healthkit")
-                .bind("ios")
-                .bind(&metadata)
-                .execute(db.pool())
-                .await;
+                // Add to pending batch
+                pending_records.push((
+                    steps as i32,
+                    timestamp,
+                    stream_id,
+                    metadata,
+                ));
 
-                match result {
-                    Ok(_) => {
-                        records_written += 1;
-                        last_processed_id = Some(stream_id);
+                last_processed_id = Some(stream_id);
+
+                // Execute batch insert when we reach batch size
+                if pending_records.len() >= BATCH_SIZE {
+                    let insert_start = std::time::Instant::now();
+                    let batch_result = execute_steps_batch_insert(db, &pending_records).await;
+                    let insert_duration = insert_start.elapsed();
+                    batch_insert_total_ms += insert_duration.as_millis();
+                    batch_insert_count += 1;
+
+                    tracing::info!(
+                        batch_size = pending_records.len(),
+                        insert_duration_ms = insert_duration.as_millis(),
+                        "Executed batch insert"
+                    );
+
+                    match batch_result {
+                        Ok(written) => {
+                            records_written += written;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                batch_size = pending_records.len(),
+                                "Batch insert failed"
+                            );
+                            records_failed += pending_records.len();
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            stream_id = %stream_id,
-                            error = %e,
-                            "Failed to transform steps record"
-                        );
-                        records_failed += 1;
-                    }
+                    pending_records.clear();
                 }
             }
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                context.stream_reader.update_checkpoint(
+                data_source.update_checkpoint(
                     source_id,
                     "healthkit",
                     checkpoint_key,
@@ -406,11 +536,49 @@ impl OntologyTransform for HealthKitStepsTransform {
             }
         }
 
+        // Insert any remaining records
+        if !pending_records.is_empty() {
+            let insert_start = std::time::Instant::now();
+            let batch_result = execute_steps_batch_insert(db, &pending_records).await;
+            let insert_duration = insert_start.elapsed();
+            batch_insert_total_ms += insert_duration.as_millis();
+            batch_insert_count += 1;
+
+            tracing::info!(
+                batch_size = pending_records.len(),
+                insert_duration_ms = insert_duration.as_millis(),
+                "Executed final batch insert"
+            );
+
+            match batch_result {
+                Ok(written) => {
+                    records_written += written;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        batch_size = pending_records.len(),
+                        "Final batch insert failed"
+                    );
+                    records_failed += pending_records.len();
+                }
+            }
+        }
+
+        let processing_duration = processing_start.elapsed();
+        let total_duration = transform_start.elapsed();
+
         tracing::info!(
             source_id = %source_id,
             records_read,
             records_written,
             records_failed,
+            total_duration_ms = total_duration.as_millis(),
+            processing_duration_ms = processing_duration.as_millis(),
+            read_duration_ms = read_duration.as_millis(),
+            batch_insert_total_ms,
+            batch_insert_count,
+            avg_batch_insert_ms = if batch_insert_count > 0 { batch_insert_total_ms / batch_insert_count as u128 } else { 0 },
             "HealthKit to health_steps transformation completed"
         );
 
@@ -448,21 +616,35 @@ impl OntologyTransform for HealthKitSleepTransform {
         let mut records_failed = 0;
         let mut last_processed_id: Option<Uuid> = None;
 
+        let transform_start = std::time::Instant::now();
+
         tracing::info!(
             source_id = %source_id,
             "Starting HealthKit to health_sleep transformation"
         );
 
-        // Read stream data from S3 using checkpoint
+        // Read stream data from data source using checkpoint
         let checkpoint_key = "healthkit_to_sleep";
-        let batches = context.stream_reader
+        let read_start = std::time::Instant::now();
+        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let batches = data_source
             .read_with_checkpoint(source_id, "healthkit", checkpoint_key)
             .await?;
+        let read_duration = read_start.elapsed();
 
-        tracing::debug!(
+        tracing::info!(
             batch_count = batches.len(),
-            "Fetched HealthKit batches from S3"
+            read_duration_ms = read_duration.as_millis(),
+            source_type = ?data_source.source_type(),
+            "Fetched HealthKit batches from data source"
         );
+
+        // Batch insert configuration
+        let mut pending_records: Vec<(Option<serde_json::Value>, i32, Option<f64>, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut batch_insert_total_ms = 0u128;
+        let mut batch_insert_count = 0;
+
+        let processing_start = std::time::Instant::now();
 
         for batch in batches {
             for record in &batch.records {
@@ -510,51 +692,53 @@ impl OntologyTransform for HealthKitSleepTransform {
                     "healthkit_raw": raw_data,
                 });
 
-                // Insert into health_sleep
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO elt.health_sleep (
-                        sleep_stages, total_duration_minutes, sleep_quality_score,
-                        start_time, end_time,
-                        source_stream_id, source_table, source_provider,
-                        metadata
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9
-                    )
-                    ON CONFLICT (source_stream_id) DO NOTHING
-                    "#,
-                )
-                .bind(&sleep_stages)
-                .bind(sleep_duration as i32)
-                .bind(None::<f64>) // sleep_quality_score not available in basic data
-                .bind(timestamp)
-                .bind(end_time)
-                .bind(stream_id)
-                .bind("stream_ios_healthkit")
-                .bind("ios")
-                .bind(&metadata)
-                .execute(db.pool())
-                .await;
+                // Add to pending batch
+                pending_records.push((
+                    sleep_stages,
+                    sleep_duration as i32,
+                    None, // sleep_quality_score not available in basic data
+                    timestamp,
+                    end_time,
+                    stream_id,
+                    metadata,
+                ));
 
-                match result {
-                    Ok(_) => {
-                        records_written += 1;
-                        last_processed_id = Some(stream_id);
+                last_processed_id = Some(stream_id);
+
+                // Execute batch insert when we reach batch size
+                if pending_records.len() >= BATCH_SIZE {
+                    let insert_start = std::time::Instant::now();
+                    let batch_result = execute_sleep_batch_insert(db, &pending_records).await;
+                    let insert_duration = insert_start.elapsed();
+                    batch_insert_total_ms += insert_duration.as_millis();
+                    batch_insert_count += 1;
+
+                    tracing::info!(
+                        batch_size = pending_records.len(),
+                        insert_duration_ms = insert_duration.as_millis(),
+                        "Executed batch insert"
+                    );
+
+                    match batch_result {
+                        Ok(written) => {
+                            records_written += written;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                batch_size = pending_records.len(),
+                                "Batch insert failed"
+                            );
+                            records_failed += pending_records.len();
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            stream_id = %stream_id,
-                            error = %e,
-                            "Failed to transform sleep record"
-                        );
-                        records_failed += 1;
-                    }
+                    pending_records.clear();
                 }
             }
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                context.stream_reader.update_checkpoint(
+                data_source.update_checkpoint(
                     source_id,
                     "healthkit",
                     checkpoint_key,
@@ -563,11 +747,49 @@ impl OntologyTransform for HealthKitSleepTransform {
             }
         }
 
+        // Insert any remaining records
+        if !pending_records.is_empty() {
+            let insert_start = std::time::Instant::now();
+            let batch_result = execute_sleep_batch_insert(db, &pending_records).await;
+            let insert_duration = insert_start.elapsed();
+            batch_insert_total_ms += insert_duration.as_millis();
+            batch_insert_count += 1;
+
+            tracing::info!(
+                batch_size = pending_records.len(),
+                insert_duration_ms = insert_duration.as_millis(),
+                "Executed final batch insert"
+            );
+
+            match batch_result {
+                Ok(written) => {
+                    records_written += written;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        batch_size = pending_records.len(),
+                        "Final batch insert failed"
+                    );
+                    records_failed += pending_records.len();
+                }
+            }
+        }
+
+        let processing_duration = processing_start.elapsed();
+        let total_duration = transform_start.elapsed();
+
         tracing::info!(
             source_id = %source_id,
             records_read,
             records_written,
             records_failed,
+            total_duration_ms = total_duration.as_millis(),
+            processing_duration_ms = processing_duration.as_millis(),
+            read_duration_ms = read_duration.as_millis(),
+            batch_insert_total_ms,
+            batch_insert_count,
+            avg_batch_insert_ms = if batch_insert_count > 0 { batch_insert_total_ms / batch_insert_count as u128 } else { 0 },
             "HealthKit to health_sleep transformation completed"
         );
 
@@ -605,21 +827,35 @@ impl OntologyTransform for HealthKitWorkoutTransform {
         let mut records_failed = 0;
         let mut last_processed_id: Option<Uuid> = None;
 
+        let transform_start = std::time::Instant::now();
+
         tracing::info!(
             source_id = %source_id,
             "Starting HealthKit to health_workout transformation"
         );
 
-        // Read stream data from S3 using checkpoint
+        // Read stream data from data source using checkpoint
         let checkpoint_key = "healthkit_to_workout";
-        let batches = context.stream_reader
+        let read_start = std::time::Instant::now();
+        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let batches = data_source
             .read_with_checkpoint(source_id, "healthkit", checkpoint_key)
             .await?;
+        let read_duration = read_start.elapsed();
 
-        tracing::debug!(
+        tracing::info!(
             batch_count = batches.len(),
-            "Fetched HealthKit batches from S3"
+            read_duration_ms = read_duration.as_millis(),
+            source_type = ?data_source.source_type(),
+            "Fetched HealthKit batches from data source"
         );
+
+        // Batch insert configuration
+        let mut pending_records: Vec<(String, Option<String>, Option<i32>, Option<i32>, Option<i32>, Option<f64>, Option<Uuid>, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut batch_insert_total_ms = 0u128;
+        let mut batch_insert_count = 0;
+
+        let processing_start = std::time::Instant::now();
 
         for batch in batches {
             for record in &batch.records {
@@ -670,57 +906,57 @@ impl OntologyTransform for HealthKitWorkoutTransform {
                     "healthkit_raw": raw_data,
                 });
 
-                // Insert into health_workout
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO elt.health_workout (
-                        activity_type, intensity,
-                        calories_burned, average_heart_rate, max_heart_rate, distance_meters,
-                        place_id,
-                        start_time, end_time,
-                        source_stream_id, source_table, source_provider,
-                        metadata
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
-                    )
-                    ON CONFLICT (source_stream_id) DO NOTHING
-                    "#,
-                )
-                .bind(workout_type)
-                .bind(&intensity)
-                .bind(active_energy.map(|e| e as i32))
-                .bind(heart_rate.map(|h| h as i32))
-                .bind(max_heart_rate)
-                .bind(distance)
-                .bind(None::<Uuid>) // place_id not available yet
-                .bind(timestamp)
-                .bind(end_time)
-                .bind(stream_id)
-                .bind("stream_ios_healthkit")
-                .bind("ios")
-                .bind(&metadata)
-                .execute(db.pool())
-                .await;
+                // Add to pending batch
+                pending_records.push((
+                    workout_type.to_string(),
+                    intensity,
+                    active_energy.map(|e| e as i32),
+                    heart_rate.map(|h| h as i32),
+                    max_heart_rate,
+                    distance,
+                    None, // place_id not available yet
+                    timestamp,
+                    end_time,
+                    stream_id,
+                    metadata,
+                ));
 
-                match result {
-                    Ok(_) => {
-                        records_written += 1;
-                        last_processed_id = Some(stream_id);
+                last_processed_id = Some(stream_id);
+
+                // Execute batch insert when we reach batch size
+                if pending_records.len() >= BATCH_SIZE {
+                    let insert_start = std::time::Instant::now();
+                    let batch_result = execute_workout_batch_insert(db, &pending_records).await;
+                    let insert_duration = insert_start.elapsed();
+                    batch_insert_total_ms += insert_duration.as_millis();
+                    batch_insert_count += 1;
+
+                    tracing::info!(
+                        batch_size = pending_records.len(),
+                        insert_duration_ms = insert_duration.as_millis(),
+                        "Executed batch insert"
+                    );
+
+                    match batch_result {
+                        Ok(written) => {
+                            records_written += written;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                batch_size = pending_records.len(),
+                                "Batch insert failed"
+                            );
+                            records_failed += pending_records.len();
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            stream_id = %stream_id,
-                            error = %e,
-                            "Failed to transform workout record"
-                        );
-                        records_failed += 1;
-                    }
+                    pending_records.clear();
                 }
             }
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                context.stream_reader.update_checkpoint(
+                data_source.update_checkpoint(
                     source_id,
                     "healthkit",
                     checkpoint_key,
@@ -729,11 +965,49 @@ impl OntologyTransform for HealthKitWorkoutTransform {
             }
         }
 
+        // Insert any remaining records
+        if !pending_records.is_empty() {
+            let insert_start = std::time::Instant::now();
+            let batch_result = execute_workout_batch_insert(db, &pending_records).await;
+            let insert_duration = insert_start.elapsed();
+            batch_insert_total_ms += insert_duration.as_millis();
+            batch_insert_count += 1;
+
+            tracing::info!(
+                batch_size = pending_records.len(),
+                insert_duration_ms = insert_duration.as_millis(),
+                "Executed final batch insert"
+            );
+
+            match batch_result {
+                Ok(written) => {
+                    records_written += written;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        batch_size = pending_records.len(),
+                        "Final batch insert failed"
+                    );
+                    records_failed += pending_records.len();
+                }
+            }
+        }
+
+        let processing_duration = processing_start.elapsed();
+        let total_duration = transform_start.elapsed();
+
         tracing::info!(
             source_id = %source_id,
             records_read,
             records_written,
             records_failed,
+            total_duration_ms = total_duration.as_millis(),
+            processing_duration_ms = processing_duration.as_millis(),
+            read_duration_ms = read_duration.as_millis(),
+            batch_insert_total_ms,
+            batch_insert_count,
+            avg_batch_insert_ms = if batch_insert_count > 0 { batch_insert_total_ms / batch_insert_count as u128 } else { 0 },
             "HealthKit to health_workout transformation completed"
         );
 
@@ -745,6 +1019,193 @@ impl OntologyTransform for HealthKitWorkoutTransform {
             chained_transforms: vec![],
         })
     }
+}
+
+/// Execute batch insert for heart rate records
+///
+/// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
+async fn execute_heart_rate_batch_insert(
+    db: &Database,
+    records: &[(i32, Option<String>, DateTime<Utc>, Uuid, serde_json::Value)],
+) -> Result<usize> {
+    if records.is_empty() {
+        return Ok(0);
+    }
+
+    let query_str = Database::build_batch_insert_query(
+        "elt.health_heart_rate",
+        &["bpm", "measurement_context", "timestamp", "source_stream_id", "source_table", "source_provider", "metadata"],
+        "source_stream_id",
+        records.len(),
+    );
+
+    let mut query = sqlx::query(&query_str);
+
+    // Bind all parameters row by row
+    for (bpm, measurement_context, timestamp, stream_id, metadata) in records {
+        query = query
+            .bind(bpm)
+            .bind(measurement_context)
+            .bind(timestamp)
+            .bind(stream_id)
+            .bind("stream_ios_healthkit")
+            .bind("ios")
+            .bind(metadata);
+    }
+
+    let result = query.execute(db.pool()).await?;
+    Ok(result.rows_affected() as usize)
+}
+
+/// Execute batch insert for HRV records
+///
+/// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
+async fn execute_hrv_batch_insert(
+    db: &Database,
+    records: &[(f64, String, DateTime<Utc>, Uuid, serde_json::Value)],
+) -> Result<usize> {
+    if records.is_empty() {
+        return Ok(0);
+    }
+
+    let query_str = Database::build_batch_insert_query(
+        "elt.health_hrv",
+        &["hrv_ms", "measurement_type", "timestamp", "source_stream_id", "source_table", "source_provider", "metadata"],
+        "source_stream_id",
+        records.len(),
+    );
+
+    let mut query = sqlx::query(&query_str);
+
+    // Bind all parameters row by row
+    for (hrv_ms, measurement_type, timestamp, stream_id, metadata) in records {
+        query = query
+            .bind(hrv_ms)
+            .bind(measurement_type)
+            .bind(timestamp)
+            .bind(stream_id)
+            .bind("stream_ios_healthkit")
+            .bind("ios")
+            .bind(metadata);
+    }
+
+    let result = query.execute(db.pool()).await?;
+    Ok(result.rows_affected() as usize)
+}
+
+/// Execute batch insert for steps records
+///
+/// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
+async fn execute_steps_batch_insert(
+    db: &Database,
+    records: &[(i32, DateTime<Utc>, Uuid, serde_json::Value)],
+) -> Result<usize> {
+    if records.is_empty() {
+        return Ok(0);
+    }
+
+    let query_str = Database::build_batch_insert_query(
+        "elt.health_steps",
+        &["step_count", "timestamp", "source_stream_id", "source_table", "source_provider", "metadata"],
+        "source_stream_id",
+        records.len(),
+    );
+
+    let mut query = sqlx::query(&query_str);
+
+    // Bind all parameters row by row
+    for (step_count, timestamp, stream_id, metadata) in records {
+        query = query
+            .bind(step_count)
+            .bind(timestamp)
+            .bind(stream_id)
+            .bind("stream_ios_healthkit")
+            .bind("ios")
+            .bind(metadata);
+    }
+
+    let result = query.execute(db.pool()).await?;
+    Ok(result.rows_affected() as usize)
+}
+
+/// Execute batch insert for sleep records
+///
+/// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
+async fn execute_sleep_batch_insert(
+    db: &Database,
+    records: &[(Option<serde_json::Value>, i32, Option<f64>, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)],
+) -> Result<usize> {
+    if records.is_empty() {
+        return Ok(0);
+    }
+
+    let query_str = Database::build_batch_insert_query(
+        "elt.health_sleep",
+        &["sleep_stages", "total_duration_minutes", "sleep_quality_score", "start_time", "end_time", "source_stream_id", "source_table", "source_provider", "metadata"],
+        "source_stream_id",
+        records.len(),
+    );
+
+    let mut query = sqlx::query(&query_str);
+
+    // Bind all parameters row by row
+    for (sleep_stages, total_duration_minutes, sleep_quality_score, start_time, end_time, stream_id, metadata) in records {
+        query = query
+            .bind(sleep_stages)
+            .bind(total_duration_minutes)
+            .bind(sleep_quality_score)
+            .bind(start_time)
+            .bind(end_time)
+            .bind(stream_id)
+            .bind("stream_ios_healthkit")
+            .bind("ios")
+            .bind(metadata);
+    }
+
+    let result = query.execute(db.pool()).await?;
+    Ok(result.rows_affected() as usize)
+}
+
+/// Execute batch insert for workout records
+///
+/// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
+async fn execute_workout_batch_insert(
+    db: &Database,
+    records: &[(String, Option<String>, Option<i32>, Option<i32>, Option<i32>, Option<f64>, Option<Uuid>, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)],
+) -> Result<usize> {
+    if records.is_empty() {
+        return Ok(0);
+    }
+
+    let query_str = Database::build_batch_insert_query(
+        "elt.health_workout",
+        &["activity_type", "intensity", "calories_burned", "average_heart_rate", "max_heart_rate", "distance_meters", "place_id", "start_time", "end_time", "source_stream_id", "source_table", "source_provider", "metadata"],
+        "source_stream_id",
+        records.len(),
+    );
+
+    let mut query = sqlx::query(&query_str);
+
+    // Bind all parameters row by row
+    for (activity_type, intensity, calories_burned, average_heart_rate, max_heart_rate, distance_meters, place_id, start_time, end_time, stream_id, metadata) in records {
+        query = query
+            .bind(activity_type)
+            .bind(intensity)
+            .bind(calories_burned)
+            .bind(average_heart_rate)
+            .bind(max_heart_rate)
+            .bind(distance_meters)
+            .bind(place_id)
+            .bind(start_time)
+            .bind(end_time)
+            .bind(stream_id)
+            .bind("stream_ios_healthkit")
+            .bind("ios")
+            .bind(metadata);
+    }
+
+    let result = query.execute(db.pool()).await?;
+    Ok(result.rows_affected() as usize)
 }
 
 #[cfg(test)]

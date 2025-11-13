@@ -108,6 +108,8 @@ impl NotionPagesStream {
             next_cursor: None,
             started_at,
             completed_at,
+            records: None, // Notion uses database, not direct transform
+            archive_job_id: None,
         };
 
         // Logging is handled by job executor
@@ -380,7 +382,7 @@ impl NotionPagesStream {
                 "pages",
                 record,
                 Some(page.last_edited_time),
-            ).await?;
+            )?;
         }
 
         tracing::debug!(page_id = %page.id, "Wrote Notion page to object storage");

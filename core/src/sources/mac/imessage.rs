@@ -53,7 +53,7 @@ pub async fn process(
             "imessage",
             record.clone(),
             Some(timestamp_dt),
-        ).await?;
+        )?;
     }
 
     tracing::debug!("Wrote iMessage record to object storage for device {}", device_id);

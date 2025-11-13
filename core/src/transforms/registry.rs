@@ -96,22 +96,45 @@ pub fn list_transform_streams() -> Vec<&'static str> {
 
 /// Normalize stream name from short form to full table name
 ///
-/// Converts short stream names (e.g., "gmail") to full table names (e.g., "stream_google_gmail").
-/// If the name already starts with "stream_", it is returned as-is.
+/// ## Naming Convention
 ///
-/// This centralizes the mapping logic to avoid duplication across the codebase.
+/// The system uses a three-tier naming architecture:
+/// 1. **Stream Name** (registered in elt.streams) - e.g., "app_export", "gmail"
+/// 2. **Stream Table** (object storage) - e.g., "stream_ariata_ai_chat", "stream_google_gmail"
+/// 3. **Ontology Table** (elt schema) - e.g., "knowledge_ai_conversation", "social_email"
+///
+/// This function maps stream names (tier 1) to stream tables (tier 2).
+/// The transform registry then maps stream tables to ontology tables.
+///
+/// ## Provider Semantics
+///
+/// - `ariata` - Internal system source and provider label
+/// - Stream: `app_export` - Exports chat sessions from app.chat_sessions
+/// - Table: `stream_ariata_ai_chat` - Raw exported data in object storage
+/// - Ontology: `knowledge_ai_conversation` - Normalized conversation records
+///
+/// ## Usage
+///
+/// If the name already starts with "stream_", it is returned as-is.
+/// Otherwise, short names are expanded to their full stream table names.
 pub fn normalize_stream_name(name: &str) -> String {
     if name.starts_with("stream_") {
         name.to_string()
     } else {
         match name {
-            "ai_chat" => "stream_ariata_ai_chat",
+            // Internal Ariata streams
+            "app_export" => "stream_ariata_ai_chat",
+
+            // External provider streams
             "gmail" => "stream_google_gmail",
             "calendar" => "stream_google_calendar",
             "pages" => "stream_notion_pages",
+
+            // iOS device streams
             "microphone" => "stream_ios_microphone",
             "healthkit" => "stream_ios_healthkit",
             "location" => "stream_ios_location",
+
             _ => name, // Return as-is if unknown
         }
         .to_string()

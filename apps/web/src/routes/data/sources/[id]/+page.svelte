@@ -26,11 +26,13 @@
 	let enablingStreams = $state(new Set<string>());
 	let pollingIntervals = new Map<string, number>(); // job_id -> interval_id
 
-	// Determine if this source is OAuth-based
-	const isOAuthSource = $derived(() => {
+	// Determine if this source should show sync button (OAuth2 and None, but not Device)
+	const shouldShowSyncButton = $derived(() => {
 		if (!data.catalog || !data.source) return false;
 		const catalogSource = data.catalog.find((c: any) => c.name === data.source.type);
-		return catalogSource?.auth_type === 'oauth2';
+		const authType = catalogSource?.auth_type;
+		// Show sync button for OAuth2 and None (ariata), but not for Device
+		return authType === 'oauth2' || authType === 'none';
 	});
 
 	function formatRelativeTime(timestamp: string | null): string {
@@ -291,7 +293,7 @@
 								<th class="px-6 py-3 text-left text-xs font-medium text-neutral-600 uppercase tracking-wider">
 									Last Sync
 								</th>
-								{#if isOAuthSource()}
+								{#if shouldShowSyncButton()}
 									<th class="px-6 py-3 text-right text-xs font-medium text-neutral-600 uppercase tracking-wider">
 										Actions
 									</th>
@@ -323,7 +325,7 @@
 											{formatRelativeTime(stream.last_sync_at)}
 										</span>
 									</td>
-									{#if isOAuthSource()}
+									{#if shouldShowSyncButton()}
 										<td class="px-6 py-4 text-right">
 											{#if stream.is_enabled}
 												<button

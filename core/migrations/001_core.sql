@@ -119,30 +119,6 @@ CREATE TRIGGER streams_updated_at
 COMMENT ON TABLE streams IS 'Tracks enabled streams, schedules, and stream-specific config';
 
 -- ============================================================================
--- SYNC SCHEDULES: Cron-based scheduling for periodic source syncs
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS sync_schedules (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
-
-    cron_expression TEXT NOT NULL,
-
-    enabled BOOLEAN NOT NULL DEFAULT true,
-
-    last_run TIMESTAMPTZ,
-    next_run TIMESTAMPTZ,
-
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    UNIQUE(source_id)
-);
-
-
-COMMENT ON TABLE sync_schedules IS 'Cron-based scheduling for periodic source syncs';
-
--- ============================================================================
 -- JOBS: Job queue for async processing (sync jobs, transform jobs, etc.)
 -- ============================================================================
 
@@ -197,23 +173,169 @@ CREATE TRIGGER jobs_updated_at
 COMMENT ON TABLE jobs IS 'Job queue for async processing (sync jobs, transform jobs, etc.)';
 
 -- ============================================================================
--- JOB DEPENDENCIES: Job chaining and dependency management
+-- STREAM OBJECTS: S3/MinIO object storage metadata
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS job_dependencies (
+CREATE TABLE IF NOT EXISTS stream_objects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-    depends_on_job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    -- Source and stream identification
+    source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    stream_name TEXT NOT NULL,
 
+    -- S3 object location
+    s3_key TEXT NOT NULL UNIQUE,
+
+    -- Object metadata
+    record_count INTEGER NOT NULL CHECK (record_count > 0),
+    size_bytes BIGINT NOT NULL CHECK (size_bytes > 0),
+
+    -- Time range of records in this object (for efficient querying)
+    min_timestamp TIMESTAMPTZ,
+    max_timestamp TIMESTAMPTZ,
+
+    -- Timestamps
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    UNIQUE(job_id, depends_on_job_id),
-
-    CONSTRAINT no_self_dependency CHECK (job_id != depends_on_job_id)
+    -- Constraints
+    CHECK (min_timestamp IS NULL OR max_timestamp IS NULL OR min_timestamp <= max_timestamp)
 );
 
-COMMENT ON TABLE job_dependencies IS 'Tracks job dependencies for chaining and sequencing';
+-- Indexes for efficient lookups
+CREATE INDEX idx_stream_objects_source_stream ON stream_objects(source_id, stream_name);
+CREATE INDEX idx_stream_objects_timestamp_range ON stream_objects(source_id, stream_name, min_timestamp, max_timestamp);
+CREATE INDEX idx_stream_objects_created_at ON stream_objects(created_at);
+
+COMMENT ON TABLE stream_objects IS 'Metadata for stream data stored in S3/MinIO object storage. Each row represents a JSONL file containing batched stream records.';
+COMMENT ON COLUMN stream_objects.s3_key IS 'S3 object key following pattern: streams/{source_id}/{stream_name}/date={YYYY-MM-DD}/records_{timestamp}.jsonl';
+COMMENT ON COLUMN stream_objects.record_count IS 'Number of JSON records in this JSONL file. Used for monitoring and validation.';
+COMMENT ON COLUMN stream_objects.min_timestamp IS 'Earliest timestamp of records in this object. Used for efficient time-range queries.';
+COMMENT ON COLUMN stream_objects.max_timestamp IS 'Latest timestamp of records in this object. Used for efficient time-range queries.';
+
+-- ============================================================================
+-- STREAM TRANSFORM CHECKPOINTS: Track which S3 objects have been transformed
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS stream_transform_checkpoints (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Identifies which transform this checkpoint is for
+    source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    stream_name TEXT NOT NULL,
+    transform_name TEXT NOT NULL,
+
+    -- Checkpoint state
+    last_processed_s3_key TEXT,
+    last_processed_timestamp TIMESTAMPTZ,
+    last_processed_object_id UUID REFERENCES stream_objects(id) ON DELETE SET NULL,
+
+    -- Statistics
+    records_processed BIGINT NOT NULL DEFAULT 0,
+    objects_processed BIGINT NOT NULL DEFAULT 0,
+
+    -- Timestamps
+    last_run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Ensure one checkpoint per source/stream/transform combination
+    UNIQUE(source_id, stream_name, transform_name)
+);
+
+-- Index for checkpoint queries
+CREATE INDEX idx_transform_checkpoints_lookup ON stream_transform_checkpoints(source_id, stream_name, transform_name);
+CREATE INDEX idx_transform_checkpoints_last_run ON stream_transform_checkpoints(last_run_at);
+
+COMMENT ON TABLE stream_transform_checkpoints IS 'Tracks transform job progress when reading from S3. Replaces LEFT JOIN pattern used with Postgres stream tables.';
+COMMENT ON COLUMN stream_transform_checkpoints.last_processed_s3_key IS 'Last S3 object key that was fully processed by this transform. Resume from next object on restart.';
+COMMENT ON COLUMN stream_transform_checkpoints.last_processed_timestamp IS 'Timestamp of last record processed. Used to avoid reprocessing and for monitoring.';
+COMMENT ON COLUMN stream_transform_checkpoints.records_processed IS 'Total count of stream records transformed. Used for monitoring and analytics.';
+
+-- ============================================================================
+-- ARCHIVE JOBS: Async S3 archival tracking
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS archive_jobs (
+    -- Primary key
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- References (sync_job_id nullable to support device ingests)
+    sync_job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
+    source_id UUID NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+
+    -- Stream metadata
+    stream_name TEXT NOT NULL,
+    s3_key TEXT NOT NULL,
+
+    -- Job status
+    status TEXT NOT NULL CHECK (status IN ('pending', 'in_progress', 'completed', 'failed')),
+    error_message TEXT,
+
+    -- Retry tracking
+    retry_count INT NOT NULL DEFAULT 0,
+    max_retries INT NOT NULL DEFAULT 3,
+
+    -- Record metadata
+    record_count INT NOT NULL DEFAULT 0,
+    size_bytes BIGINT NOT NULL DEFAULT 0,
+
+    -- Timestamps for archival window
+    min_timestamp TIMESTAMPTZ,
+    max_timestamp TIMESTAMPTZ,
+
+    -- Audit timestamps
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+
+    -- Constraints
+    CONSTRAINT valid_status_timestamps CHECK (
+        (status = 'in_progress' AND started_at IS NOT NULL) OR
+        (status = 'completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL) OR
+        (status IN ('pending', 'failed'))
+    )
+);
+
+-- Index for finding pending jobs (job executor query)
+CREATE INDEX idx_archive_jobs_pending
+    ON archive_jobs(status, created_at)
+    WHERE status IN ('pending', 'failed');
+
+-- Index for monitoring by source
+CREATE INDEX idx_archive_jobs_source
+    ON archive_jobs(source_id, stream_name, created_at DESC);
+
+-- Index for finding jobs by sync_job_id
+CREATE INDEX idx_archive_jobs_sync_job
+    ON archive_jobs(sync_job_id)
+    WHERE sync_job_id IS NOT NULL;
+
+-- Index for finding stale jobs (alerting)
+CREATE INDEX idx_archive_jobs_stale
+    ON archive_jobs(created_at)
+    WHERE status IN ('pending', 'in_progress');
+
+-- Add archive_job_id reference to stream_objects
+ALTER TABLE stream_objects
+ADD COLUMN IF NOT EXISTS archive_job_id UUID REFERENCES archive_jobs(id) ON DELETE SET NULL;
+
+-- Index for finding stream objects by archive job
+CREATE INDEX IF NOT EXISTS idx_stream_objects_archive_job
+    ON stream_objects(archive_job_id)
+    WHERE archive_job_id IS NOT NULL;
+
+COMMENT ON TABLE archive_jobs IS 'Async S3 archival job tracking for direct transform pipeline';
+COMMENT ON COLUMN archive_jobs.id IS 'Unique archive job identifier';
+COMMENT ON COLUMN archive_jobs.sync_job_id IS 'Parent sync job that created this archive job (NULL for device ingests)';
+COMMENT ON COLUMN archive_jobs.source_id IS 'Source UUID for this archive';
+COMMENT ON COLUMN archive_jobs.stream_name IS 'Stream name (e.g., "app_export", "healthkit")';
+COMMENT ON COLUMN archive_jobs.s3_key IS 'S3 object key where data will be archived';
+COMMENT ON COLUMN archive_jobs.status IS 'Job status: pending, in_progress, completed, failed';
+COMMENT ON COLUMN archive_jobs.retry_count IS 'Number of retry attempts for this job';
+COMMENT ON COLUMN archive_jobs.record_count IS 'Number of records to archive';
+COMMENT ON COLUMN archive_jobs.size_bytes IS 'Total size of records in bytes';
+COMMENT ON COLUMN archive_jobs.min_timestamp IS 'Earliest record timestamp in batch';
+COMMENT ON COLUMN archive_jobs.max_timestamp IS 'Latest record timestamp in batch';
+COMMENT ON COLUMN stream_objects.archive_job_id IS 'Archive job that created this S3 object (NULL for legacy synchronous writes)';
 
 -- ============================================================================
 -- BOOTSTRAP DATA: Internal sources

@@ -1,30 +1,25 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getPool } from '$lib/server/db';
-import { createAnthropic } from '@ai-sdk/anthropic';
 import { generateText } from 'ai';
 import { env } from '$env/dynamic/private';
 
-// Get Anthropic instance with runtime env
-const getAnthropic = () => {
-	const apiKey = env.ANTHROPIC_API_KEY;
-	if (!apiKey) {
-		throw new Error('ANTHROPIC_API_KEY environment variable is not set');
-	}
-	return createAnthropic({ apiKey });
-};
+// Verify AI Gateway API key is set
+if (!env.AI_GATEWAY_API_KEY) {
+	console.warn('AI_GATEWAY_API_KEY environment variable is not set');
+}
 
 export const POST: RequestHandler = async ({ request }) => {
 	const pool = getPool();
 
 	try {
 		const body = await request.json();
-		const { conversationId, messages } = body;
+		const { sessionId, messages } = body;
 
-		if (!conversationId || !messages || !Array.isArray(messages)) {
+		if (!sessionId || !messages || !Array.isArray(messages)) {
 			return json(
 				{
-					error: 'conversation_id and messages array are required'
+					error: 'sessionId and messages array are required'
 				},
 				{ status: 400 }
 			);
@@ -38,9 +33,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			.join('\n\n');
 
 		// Use Claude Haiku to generate a short title
-		const anthropic = getAnthropic();
+		// When using AI Gateway, simply pass the model string
+		// The AI SDK will automatically use the AI_GATEWAY_API_KEY environment variable
 		const { text } = await generateText({
-			model: anthropic('claude-haiku-4-20250514'),
+			model: 'anthropic/claude-haiku-4.5',
 			maxSteps: 1,
 			prompt: `Based on this conversation, generate a very short title (3-6 words maximum) that captures the main topic or theme. Only return the title, nothing else.
 
@@ -58,36 +54,30 @@ ${conversationSummary}`
 			title = title.substring(0, 57) + '...';
 		}
 
-		// Update the conversation title in the database
+		// Update the chat session title in the app database
 		const result = await pool.query(
 			`
-			UPDATE elt.knowledge_ai_conversation
+			UPDATE app.chat_sessions
 			SET
-				conversation_title = $1,
-				conversation_last_updated = NOW(),
+				title = $1,
 				updated_at = NOW()
-			WHERE conversation_id = $2
-			RETURNING conversation_id, conversation_title
+			WHERE id = $2
+			RETURNING id, title
 			`,
-			[title, conversationId]
+			[title, sessionId]
 		);
 
 		if (result.rows.length === 0) {
 			return json(
 				{
-					error: 'Conversation not found'
+					error: 'Session not found'
 				},
 				{ status: 404 }
 			);
 		}
 
-		// Refresh materialized view in background (don't wait)
-		pool.query('REFRESH MATERIALIZED VIEW CONCURRENTLY elt.conversation_list').catch((err) => {
-			console.error('Failed to refresh conversation_list view:', err);
-		});
-
 		return json({
-			conversation_id: conversationId,
+			session_id: sessionId,
 			title
 		});
 	} catch (error) {

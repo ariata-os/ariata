@@ -11,6 +11,9 @@ use crate::database::Database;
 use crate::error::Result;
 use crate::sources::base::{OntologyTransform, TransformResult};
 
+/// Batch size for bulk inserts
+const BATCH_SIZE: usize = 500;
+
 /// Transform Google Calendar events to activity_calendar_entry ontology
 pub struct GoogleCalendarTransform;
 
@@ -35,23 +38,42 @@ impl OntologyTransform for GoogleCalendarTransform {
         let mut records_failed = 0;
         let mut last_processed_id: Option<Uuid> = None;
 
+        let transform_start = std::time::Instant::now();
+
         tracing::info!(
             source_id = %source_id,
             "Starting Google Calendar to activity_calendar_entry transformation"
         );
 
-        // Read stream data from S3 using checkpoint
+        // Read stream data using data source (memory for hot path)
         let checkpoint_key = "calendar_to_activity_calendar_entry";
-        let batches = context.stream_reader
+        let read_start = std::time::Instant::now();
+        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let batches = data_source
             .read_with_checkpoint(source_id, "calendar", checkpoint_key)
             .await?;
+        let read_duration = read_start.elapsed();
 
-        tracing::debug!(
+        tracing::info!(
             batch_count = batches.len(),
-            "Fetched Google Calendar batches from S3"
+            read_duration_ms = read_duration.as_millis(),
+            source_type = ?data_source.source_type(),
+            "Fetched Google Calendar batches from data source"
         );
 
+        // Batch insert configuration
+        let mut pending_records: Vec<(Option<String>, Option<String>, String, Option<&'static str>, Option<String>, Vec<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>, DateTime<Utc>, bool, Option<String>, Option<String>, Uuid, serde_json::Value)> = Vec::new();
+        let mut batch_insert_total_ms = 0u128;
+        let mut batch_insert_count = 0;
+
+        let processing_start = std::time::Instant::now();
+
         for batch in batches {
+            tracing::debug!(
+                batch_record_count = batch.records.len(),
+                "Processing batch"
+            );
+
             for record in &batch.records {
                 records_read += 1;
 
@@ -67,7 +89,8 @@ impl OntologyTransform for GoogleCalendarTransform {
 
                 let calendar_id = record.get("calendar_id")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                    .unwrap_or("")
+                    .to_string();
 
                 let summary = record.get("summary")
                     .and_then(|v| v.as_str())
@@ -96,7 +119,8 @@ impl OntologyTransform for GoogleCalendarTransform {
                     .unwrap_or_else(|| Utc::now());
 
                 let all_day = record.get("all_day")
-                    .and_then(|v| v.as_bool());
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
 
                 let organizer_email = record.get("organizer_email")
                     .and_then(|v| v.as_str())
@@ -138,7 +162,7 @@ impl OntologyTransform for GoogleCalendarTransform {
                     Some("meeting")
                 } else if attendee_count.unwrap_or(0) > 1 {
                     Some("meeting")
-                } else if all_day.unwrap_or(false) {
+                } else if all_day {
                     Some("reminder")
                 } else {
                     Some("appointment")
@@ -152,64 +176,62 @@ impl OntologyTransform for GoogleCalendarTransform {
                     "google_raw": raw_json,
                 });
 
-                // Insert into activity_calendar_entry
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO elt.activity_calendar_entry (
-                        title, description, calendar_name, event_type,
-                        organizer_identifier, attendee_identifiers,
-                        location_name, conference_url, conference_platform,
-                        start_time, end_time, is_all_day,
-                        status, response_status,
-                        source_stream_id, source_table, source_provider,
-                        metadata
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
-                    )
-                    ON CONFLICT (source_stream_id) DO NOTHING
-                    "#,
-                )
-                .bind(&summary) // title
-                .bind(&description) // description
-                .bind(calendar_id) // calendar_name
-                .bind(event_type) // event_type
-                .bind(&organizer_email) // organizer_identifier
-                .bind(&attendee_identifiers) // attendee_identifiers
-                .bind(&location) // location_name
-                .bind(&conference_link) // conference_url
-                .bind(&conference_type) // conference_platform
-                .bind(start_time) // start_time
-                .bind(end_time) // end_time
-                .bind(all_day.unwrap_or(false)) // is_all_day
-                .bind(&status) // status
-                .bind(None::<String>) // response_status (not available in stream table)
-                .bind(stream_id) // source_stream_id
-                .bind("stream_google_calendar") // source_table
-                .bind("google") // source_provider
-                .bind(&metadata) // metadata
-                .execute(db.pool())
-                .await;
+                // Add to pending batch
+                pending_records.push((
+                    summary,
+                    description,
+                    calendar_id,
+                    event_type,
+                    organizer_email,
+                    attendee_identifiers,
+                    location,
+                    conference_link,
+                    conference_type,
+                    start_time,
+                    end_time,
+                    all_day,
+                    status,
+                    None, // response_status (not available in stream table)
+                    stream_id,
+                    metadata,
+                ));
 
-                match result {
-                    Ok(_) => {
-                        records_written += 1;
-                        last_processed_id = Some(stream_id);
+                last_processed_id = Some(stream_id);
+
+                // Execute batch insert when we reach batch size
+                if pending_records.len() >= BATCH_SIZE {
+                    let insert_start = std::time::Instant::now();
+                    let batch_result = execute_calendar_batch_insert(db, &pending_records).await;
+                    let insert_duration = insert_start.elapsed();
+                    batch_insert_total_ms += insert_duration.as_millis();
+                    batch_insert_count += 1;
+
+                    tracing::info!(
+                        batch_size = pending_records.len(),
+                        insert_duration_ms = insert_duration.as_millis(),
+                        "Executed batch insert"
+                    );
+
+                    match batch_result {
+                        Ok(written) => {
+                            records_written += written;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                batch_size = pending_records.len(),
+                                "Batch insert failed"
+                            );
+                            records_failed += pending_records.len();
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            event_id = %event_id,
-                            stream_id = %stream_id,
-                            error = %e,
-                            "Failed to transform calendar record"
-                        );
-                        records_failed += 1;
-                    }
+                    pending_records.clear();
                 }
             }
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                context.stream_reader.update_checkpoint(
+                data_source.update_checkpoint(
                     source_id,
                     "calendar",
                     checkpoint_key,
@@ -218,11 +240,49 @@ impl OntologyTransform for GoogleCalendarTransform {
             }
         }
 
+        // Insert any remaining records
+        if !pending_records.is_empty() {
+            let insert_start = std::time::Instant::now();
+            let batch_result = execute_calendar_batch_insert(db, &pending_records).await;
+            let insert_duration = insert_start.elapsed();
+            batch_insert_total_ms += insert_duration.as_millis();
+            batch_insert_count += 1;
+
+            tracing::info!(
+                batch_size = pending_records.len(),
+                insert_duration_ms = insert_duration.as_millis(),
+                "Executed final batch insert"
+            );
+
+            match batch_result {
+                Ok(written) => {
+                    records_written += written;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        batch_size = pending_records.len(),
+                        "Final batch insert failed"
+                    );
+                    records_failed += pending_records.len();
+                }
+            }
+        }
+
+        let processing_duration = processing_start.elapsed();
+        let total_duration = transform_start.elapsed();
+
         tracing::info!(
             source_id = %source_id,
             records_read,
             records_written,
             records_failed,
+            total_duration_ms = total_duration.as_millis(),
+            processing_duration_ms = processing_duration.as_millis(),
+            read_duration_ms = read_duration.as_millis(),
+            batch_insert_total_ms,
+            batch_insert_count,
+            avg_batch_insert_ms = if batch_insert_count > 0 { batch_insert_total_ms / batch_insert_count as u128 } else { 0 },
             "Google Calendar to activity_calendar_entry transformation completed"
         );
 
@@ -234,6 +294,53 @@ impl OntologyTransform for GoogleCalendarTransform {
             chained_transforms: vec![], // Calendar transform doesn't chain to other transforms
         })
     }
+}
+
+/// Execute batch insert for calendar records
+///
+/// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
+async fn execute_calendar_batch_insert(
+    db: &Database,
+    records: &[(Option<String>, Option<String>, String, Option<&str>, Option<String>, Vec<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>, DateTime<Utc>, bool, Option<String>, Option<String>, Uuid, serde_json::Value)],
+) -> Result<usize> {
+    if records.is_empty() {
+        return Ok(0);
+    }
+
+    let query_str = Database::build_batch_insert_query(
+        "elt.activity_calendar_entry",
+        &["title", "description", "calendar_name", "event_type", "organizer_identifier", "attendee_identifiers", "location_name", "conference_url", "conference_platform", "start_time", "end_time", "is_all_day", "status", "response_status", "source_stream_id", "metadata", "source_table", "source_provider"],
+        "source_stream_id",
+        records.len(),
+    );
+
+    let mut query = sqlx::query(&query_str);
+
+    // Bind all parameters row by row
+    for (title, description, calendar_name, event_type, organizer_identifier, attendee_identifiers, location_name, conference_url, conference_platform, start_time, end_time, is_all_day, status, response_status, stream_id, metadata) in records {
+        query = query
+            .bind(title)
+            .bind(description)
+            .bind(calendar_name)
+            .bind(event_type)
+            .bind(organizer_identifier)
+            .bind(attendee_identifiers)
+            .bind(location_name)
+            .bind(conference_url)
+            .bind(conference_platform)
+            .bind(start_time)
+            .bind(end_time)
+            .bind(is_all_day)
+            .bind(status)
+            .bind(response_status)
+            .bind(stream_id)
+            .bind(metadata)
+            .bind("stream_google_calendar")
+            .bind("google");
+    }
+
+    let result = query.execute(db.pool()).await?;
+    Ok(result.rows_affected() as usize)
 }
 
 #[cfg(test)]

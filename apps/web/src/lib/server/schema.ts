@@ -1,11 +1,17 @@
 /**
  * Drizzle ORM Schema for App Database
  *
+ * IMPORTANT: This file is a TYPE DEFINITION LAYER ONLY.
+ *
+ * - Schema migrations: Managed by SQLx in core/migrations/ (single source of truth)
+ * - This file: TypeScript types for Drizzle ORM queries (must be manually kept in sync)
+ * - After changing migrations, update this file to match the SQL schema
+ *
  * Defines the app schema tables (operational data for fast UI queries)
  * Separate from ELT schema (analytical data warehouse)
  */
 
-import { pgTable, uuid, text, jsonb, timestamp, integer, pgSchema } from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // App schema namespace
@@ -24,7 +30,22 @@ export interface ChatMessage {
 	timestamp: string; // ISO 8601 timestamp
 	model?: string | null; // Claude model used (null for user messages)
 	provider?: string; // AI provider (e.g., "anthropic")
-	tool_calls?: ToolCall[]; // Future: record tool invocations
+	tool_calls?: ToolCall[]; // Record tool invocations
+	intent?: IntentMetadata; // Intent classification metadata (assistant messages only)
+}
+
+/**
+ * Intent classification metadata for analytics and debugging
+ */
+export interface IntentMetadata {
+	type: 'data_query' | 'visualization' | 'analysis' | 'general_chat';
+	confidence: number;
+	reasoning: string;
+	entities?: string[];
+	timeRange?: {
+		start?: string;
+		end?: string;
+	};
 }
 
 /**
@@ -57,6 +78,73 @@ export const chatSessions = appSchema.table('chat_sessions', {
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 	messageCount: integer('message_count').notNull().default(0)
+});
+
+// ============================================================================
+// Type Inference
+// ============================================================================
+
+// ============================================================================
+// Preferences Table
+// ============================================================================
+
+/**
+ * User preferences table
+ * Key-value store for user settings (name, system prompt, etc.)
+ */
+export const preferences = appSchema.table('preferences', {
+	key: text('key').primaryKey(),
+	value: text('value').notNull(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================================================
+// Dashboards Table
+// ============================================================================
+
+/**
+ * Saved dashboards and visualizations
+ */
+export const dashboards = appSchema.table('dashboards', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	description: text('description'),
+	layout: text('layout').notNull(), // JSON string with widget positions
+	isDefault: boolean('is_default').notNull().default(false),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================================================
+// Saved Queries Table
+// ============================================================================
+
+/**
+ * Saved queries for exploring data
+ */
+export const savedQueries = appSchema.table('saved_queries', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	name: text('name').notNull(),
+	description: text('description'),
+	query: text('query').notNull(), // SQL query string
+	sourceId: text('source_id'), // Optional: associated source from ELT schema
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================================================
+// Recently Viewed Table
+// ============================================================================
+
+/**
+ * Recently viewed sources (for quick access)
+ */
+export const recentlyViewed = appSchema.table('recently_viewed', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	sourceId: text('source_id').notNull(), // References sources.id from elt schema
+	sourceName: text('source_name').notNull(),
+	provider: text('provider').notNull(),
+	viewedAt: timestamp('viewed_at', { withTimezone: true }).notNull().defaultNow()
 });
 
 // ============================================================================

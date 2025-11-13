@@ -37,7 +37,7 @@
 
 <div class="chat-input-container {maxWidth} w-full">
 	<div
-		class="chat-input-wrapper bg-white border border-neutral-300 rounded-lg"
+		class="chat-input-wrapper bg-white border border-stone-300 rounded-lg"
 	>
 		<!-- Textarea Area -->
 		<div class="textarea-section pt-4 px-4 pb-1">
@@ -51,7 +51,7 @@
 				{placeholder}
 				{disabled}
 				rows="1"
-				class="w-full resize-none outline-none text-neutral-900 placeholder:text-neutral-400 font-sans text-base"
+				class="w-full resize-none outline-none text-stone-800 placeholder:text-stone-500 font-sans text-base"
 				style="max-height: 200px; overflow-y: auto;"
 			></textarea>
 		</div>
@@ -65,19 +65,19 @@
 				type="button"
 				on:click={handleSubmit}
 				disabled={!value.trim() || disabled}
-				class="send-button w-8 h-8 bg-neutral-900 hover:bg-blue-600 cursor-pointer text-white rounded-full disabled:bg-neutral-200 disabled:border-neutral-600 disabled:cursor-not-allowed transition-all flex items-center justify-center group"
+				class="send-button w-8 h-8 btn-primary hover:bg-blue cursor-pointer text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center group"
 			>
 				{#if disabled}
 					<iconify-icon
 						icon="ri:loader-4-line"
-						class="animate-spin"
+						class="animate-spin text-white"
 						width="16"
 					></iconify-icon>
 				{:else}
 					<iconify-icon
 						icon="ri:arrow-up-line"
 						width="16"
-						class="{(!value.trim() || disabled) ? 'text-neutral-800' : 'text-white'} transition-transform duration-300 group-hover:rotate-45"
+						class="text-white transition-transform duration-300 group-hover:rotate-45"
 					></iconify-icon>
 				{/if}
 			</button>
@@ -113,12 +113,12 @@
 	}
 
 	textarea::-webkit-scrollbar-thumb {
-		background: #d4d4d4;
+		background: var(--color-stone-300);
 		border-radius: 3px;
 	}
 
 	textarea::-webkit-scrollbar-thumb:hover {
-		background: #a3a3a3;
+		background: var(--color-stone-400);
 	}
 
 	.chat-input-wrapper {

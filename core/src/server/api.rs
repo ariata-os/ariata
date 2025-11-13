@@ -328,28 +328,17 @@ pub struct SyncStreamRequest {
 ///
 /// POST /api/sources/:source_id/transforms/:stream_name
 pub async fn trigger_transform_handler(
-    State(state): State<AppState>,
-    Path((source_id, stream_name)): Path<(Uuid, String)>,
+    State(_state): State<AppState>,
+    Path((_source_id, stream_name)): Path<(Uuid, String)>,
 ) -> Response {
-    // Get transform route from centralized registry
-    let route = match crate::transforms::get_transform_route(&stream_name) {
-        Ok(route) => route,
-        Err(e) => return error_response(e),
-    };
-
-    match crate::api::jobs::trigger_transform_job(
-        state.db.pool(),
-        &*state.storage,
-        state.stream_writer.clone(),
-        source_id,
-        route.source_table,
-        route.target_tables,
-    )
-    .await
-    {
-        Ok(response) => (StatusCode::CREATED, Json(response)).into_response(),
-        Err(e) => error_response(e),
-    }
+    // Manual transform triggers are deprecated in the direct transform architecture.
+    // Transforms are now automatically triggered after sync jobs complete.
+    error_response(crate::error::Error::InvalidInput(format!(
+        "Manual transform triggers are not supported. \
+         Transforms are automatically triggered after sync jobs complete. \
+         To transform data for '{}', run a sync job instead.",
+        stream_name
+    )))
 }
 
 // ============================================================================
@@ -392,6 +381,11 @@ pub async fn list_catalog_sources_handler() -> Response {
 /// List available ontology tables
 pub async fn list_available_ontologies_handler(State(state): State<AppState>) -> Response {
     api_response(crate::api::ontologies::list_available_ontologies(state.db.pool()).await)
+}
+
+/// Get ontologies overview with record counts and samples
+pub async fn get_ontologies_overview_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::ontologies::get_ontologies_overview(state.db.pool()).await)
 }
 
 // ============================================================================

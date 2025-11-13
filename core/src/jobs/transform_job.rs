@@ -10,12 +10,7 @@ use sqlx::PgPool;
 use crate::error::Result;
 use crate::jobs::models::Job;
 use crate::jobs::transform_context::TransformContext;
-use crate::sources::ariata::transform::ChatConversationTransform;
-use crate::sources::base::OntologyTransform;
-use crate::sources::google::calendar::transform::GoogleCalendarTransform;
-use crate::sources::google::gmail::transform::GmailEmailTransform;
-use crate::sources::ios::microphone::MicrophoneTranscriptionTransform;
-use crate::sources::notion::pages::transform::NotionPageTransform;
+use crate::transforms::TransformFactory;
 
 /// Execute a transform job
 ///
@@ -60,41 +55,8 @@ pub async fn execute_transform_job(
         "Starting transform job execution"
     );
 
-    // Route to appropriate transformer based on source/target pair
-    let transformer: Box<dyn OntologyTransform> = match (source_table, target_table) {
-        ("stream_ariata_ai_chat", "knowledge_ai_conversation") => {
-            Box::new(ChatConversationTransform)
-        }
-
-        ("stream_google_gmail", "social_email") => {
-            Box::new(GmailEmailTransform)
-        }
-
-        ("stream_google_calendar", "activity_calendar_entry") => {
-            Box::new(GoogleCalendarTransform)
-        }
-
-        ("stream_notion_pages", "knowledge_document") => {
-            Box::new(NotionPageTransform)
-        }
-
-        ("stream_ios_microphone", "speech_transcription") => {
-            // Get AssemblyAI API key (will error if not configured)
-            let api_key = context.api_keys.assemblyai_required()?.to_string();
-
-            // Clone storage from context
-            let storage = (*context.storage).clone();
-
-            Box::new(MicrophoneTranscriptionTransform::new(api_key, storage))
-        }
-
-        _ => {
-            return Err(crate::Error::InvalidInput(format!(
-                "Unknown transform mapping: {} -> {}",
-                source_table, target_table
-            )));
-        }
-    };
+    // Create transformer using factory (single source of truth)
+    let transformer = TransformFactory::create(source_table, target_table, context)?;
 
     // Create database wrapper from pool
     let db_wrapper = crate::database::Database::from_pool(db.clone());

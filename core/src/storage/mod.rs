@@ -2,7 +2,6 @@
 
 pub mod encryption;
 pub mod models;
-pub mod stream_reader;
 pub mod stream_writer;
 
 use std::path::PathBuf;
@@ -266,20 +265,49 @@ impl Storage {
 pub struct S3Storage {
     bucket: String,
     client: aws_sdk_s3::Client,
+    /// Whether the endpoint uses HTTPS (required for SSE-C encryption)
+    is_https: bool,
 }
 
 impl S3Storage {
+    /// Helper to convert AWS SDK errors to our Error type with context preserved
+    fn map_s3_error<E: std::fmt::Display>(operation: &str, err: E) -> Error {
+        let error_msg = format!("{}", err);
+
+        // Try to extract error code from the message for better classification
+        let error_info = if error_msg.contains("NoSuchBucket") {
+            "NoSuchBucket"
+        } else if error_msg.contains("AccessDenied") || error_msg.contains("forbidden") {
+            "AccessDenied"
+        } else if error_msg.contains("InvalidRequest") {
+            "InvalidRequest"
+        } else if error_msg.contains("NoSuchKey") {
+            "NoSuchKey"
+        } else if error_msg.contains("PreconditionFailed") {
+            "PreconditionFailed"
+        } else {
+            "Unknown"
+        };
+
+        Error::S3(format!("{} failed: {} [code: {}]", operation, error_msg, error_info))
+    }
+
     pub async fn new(
         bucket: String,
         endpoint: Option<String>,
         access_key: Option<String>,
         secret_key: Option<String>,
     ) -> Result<Self> {
+        // Detect if endpoint uses HTTPS (required for SSE-C encryption)
+        let is_https = endpoint.as_ref()
+            .map(|url| url.starts_with("https://"))
+            .unwrap_or(true); // AWS S3 always uses HTTPS
+
         // Build AWS configuration
         let mut config_loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
 
         // Configure endpoint if provided (for MinIO)
-        if let Some(endpoint_url) = endpoint {
+        if let Some(endpoint_url) = &endpoint {
             config_loader = config_loader.endpoint_url(endpoint_url);
             // Set a default region for MinIO (required by AWS SDK)
             config_loader = config_loader.region(aws_sdk_s3::config::Region::new("us-east-1"));
@@ -306,7 +334,22 @@ impl S3Storage {
 
         let client = aws_sdk_s3::Client::from_conf(s3_config);
 
-        Ok(Self { bucket, client })
+        // Log encryption configuration
+        if is_https {
+            tracing::info!(
+                bucket = %bucket,
+                endpoint = ?endpoint,
+                "S3 storage initialized with HTTPS - SSE-C encryption enabled"
+            );
+        } else {
+            tracing::warn!(
+                bucket = %bucket,
+                endpoint = ?endpoint,
+                "S3 storage initialized with HTTP - SSE-C encryption DISABLED (requires HTTPS)"
+            );
+        }
+
+        Ok(Self { bucket, client, is_https })
     }
 }
 
@@ -325,12 +368,31 @@ impl StorageBackend for S3Storage {
             .body(data.into())
             .send()
             .await
-            .map_err(|e| Error::S3(e.to_string()))?;
+            .map_err(|e| Self::map_s3_error("PutObject", e))?;
 
         Ok(())
     }
 
     async fn upload_encrypted(&self, key: &str, data: Vec<u8>, encryption_key: &EncryptionKey) -> Result<()> {
+        // SSE-C encryption requires HTTPS - fall back to unencrypted upload for HTTP endpoints
+        if !self.is_https {
+            tracing::debug!(
+                key = %key,
+                "Skipping SSE-C encryption for HTTP endpoint - uploading without encryption"
+            );
+            return self.upload(key, data).await;
+        }
+
+        // Decode the base64 key to compute MD5 hash
+        let key_bytes = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            &encryption_key.key_base64
+        ).map_err(|e| Error::Other(format!("Failed to decode encryption key: {}", e)))?;
+
+        // Compute MD5 hash of the key and encode as base64 (required by S3 SSE-C)
+        let key_md5_bytes = md5::compute(&key_bytes);
+        let key_md5 = base64::engine::general_purpose::STANDARD.encode(key_md5_bytes.as_ref());
+
         self.client
             .put_object()
             .bucket(&self.bucket)
@@ -338,9 +400,10 @@ impl StorageBackend for S3Storage {
             .body(data.into())
             .sse_customer_algorithm("AES256")
             .sse_customer_key(&encryption_key.key_base64)
+            .sse_customer_key_md5(&key_md5)
             .send()
             .await
-            .map_err(|e| Error::S3(e.to_string()))?;
+            .map_err(|e| Self::map_s3_error("PutObject (encrypted)", e))?;
 
         Ok(())
     }
@@ -352,34 +415,54 @@ impl StorageBackend for S3Storage {
             .key(key)
             .send()
             .await
-            .map_err(|e| Error::S3(e.to_string()))?;
+            .map_err(|e| Self::map_s3_error("GetObject", e))?;
 
         let bytes = response
             .body
             .collect()
             .await
-            .map_err(|e| Error::S3(e.to_string()))?
+            .map_err(|e| Self::map_s3_error("GetObject (read body)", e))?
             .into_bytes();
 
         Ok(bytes.to_vec())
     }
 
     async fn download_encrypted(&self, key: &str, encryption_key: &EncryptionKey) -> Result<Vec<u8>> {
+        // SSE-C encryption requires HTTPS - fall back to unencrypted download for HTTP endpoints
+        if !self.is_https {
+            tracing::debug!(
+                key = %key,
+                "Skipping SSE-C decryption for HTTP endpoint - downloading without encryption"
+            );
+            return self.download(key).await;
+        }
+
+        // Decode the base64 key to compute MD5 hash
+        let key_bytes = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            &encryption_key.key_base64
+        ).map_err(|e| Error::Other(format!("Failed to decode encryption key: {}", e)))?;
+
+        // Compute MD5 hash of the key and encode as base64 (required by S3 SSE-C)
+        let key_md5_bytes = md5::compute(&key_bytes);
+        let key_md5 = base64::engine::general_purpose::STANDARD.encode(key_md5_bytes.as_ref());
+
         let response = self.client
             .get_object()
             .bucket(&self.bucket)
             .key(key)
             .sse_customer_algorithm("AES256")
             .sse_customer_key(&encryption_key.key_base64)
+            .sse_customer_key_md5(&key_md5)
             .send()
             .await
-            .map_err(|e| Error::S3(e.to_string()))?;
+            .map_err(|e| Self::map_s3_error("GetObject (encrypted)", e))?;
 
         let bytes = response
             .body
             .collect()
             .await
-            .map_err(|e| Error::S3(e.to_string()))?
+            .map_err(|e| Self::map_s3_error("GetObject (read encrypted body)", e))?
             .into_bytes();
 
         Ok(bytes.to_vec())
@@ -392,7 +475,7 @@ impl StorageBackend for S3Storage {
             .key(key)
             .send()
             .await
-            .map_err(|e| Error::S3(e.to_string()))?;
+            .map_err(|e| Self::map_s3_error("DeleteObject", e))?;
 
         Ok(())
     }
@@ -404,7 +487,7 @@ impl StorageBackend for S3Storage {
             .prefix(prefix)
             .send()
             .await
-            .map_err(|e| Error::S3(e.to_string()))?;
+            .map_err(|e| Self::map_s3_error("ListObjectsV2", e))?;
 
         let keys = response
             .contents()
@@ -433,7 +516,7 @@ impl StorageBackend for S3Storage {
         let response = request
             .send()
             .await
-            .map_err(|e| Error::S3(e.to_string()))?;
+            .map_err(|e| Self::map_s3_error("ListObjectsV2 (paginated)", e))?;
 
         let keys = response
             .contents()
@@ -638,5 +721,89 @@ mod tests {
 
         // Test delete
         storage.delete("test.txt").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_local_storage_encryption_roundtrip() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Storage::local(temp_dir.path().to_str().unwrap().to_string()).unwrap();
+
+        storage.initialize().await.unwrap();
+
+        // Create test data
+        let original_data = b"sensitive test data that should be encrypted".to_vec();
+
+        // Create encryption key (base64-encoded 32-byte key for AES-256)
+        let key_bytes = [0u8; 32]; // In real usage, use a proper random key
+        let key_base64 = base64::engine::general_purpose::STANDARD.encode(&key_bytes);
+        let encryption_key = EncryptionKey { key_base64 };
+
+        // Test upload with encryption
+        storage.upload_encrypted("encrypted_test.bin", original_data.clone(), &encryption_key)
+            .await
+            .unwrap();
+
+        // Test download with encryption
+        let decrypted_data = storage.download_encrypted("encrypted_test.bin", &encryption_key)
+            .await
+            .unwrap();
+
+        // Verify round-trip
+        assert_eq!(original_data, decrypted_data);
+
+        // Test JSONL encryption
+        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+        struct TestRecord {
+            id: i32,
+            name: String,
+        }
+
+        let records = vec![
+            TestRecord { id: 1, name: "Alice".to_string() },
+            TestRecord { id: 2, name: "Bob".to_string() },
+            TestRecord { id: 3, name: "Charlie".to_string() },
+        ];
+
+        // Upload JSONL with encryption
+        storage.upload_jsonl_encrypted("encrypted_records.jsonl", &records, &encryption_key)
+            .await
+            .unwrap();
+
+        // Download JSONL with encryption
+        let downloaded_records: Vec<TestRecord> = storage
+            .download_jsonl_encrypted("encrypted_records.jsonl", &encryption_key)
+            .await
+            .unwrap();
+
+        // Verify records
+        assert_eq!(records, downloaded_records);
+    }
+
+    #[test]
+    fn test_s3_md5_hash_encoding() {
+        // Test that MD5 hashes are properly base64 encoded (not hex)
+        // This is a regression test for the bug where MD5 was hex-encoded
+
+        let key_bytes = [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+                        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+                        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11,
+                        0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99];
+
+        // Compute MD5 hash
+        let md5_hash = md5::compute(&key_bytes);
+
+        // Encode as base64 (CORRECT way for S3 SSE-C)
+        let md5_base64 = base64::engine::general_purpose::STANDARD.encode(md5_hash.as_ref());
+
+        // Verify it's base64 (contains typical base64 characters)
+        assert!(md5_base64.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='));
+
+        // Verify it's NOT hex format (should not be 32 hex characters)
+        let md5_hex = format!("{:x}", md5_hash);
+        assert_ne!(md5_base64, md5_hex, "MD5 should be base64-encoded, not hex");
+        assert_eq!(md5_hex.len(), 32, "Hex MD5 should be 32 characters");
+
+        // Base64-encoded MD5 should be 24 characters (16 bytes -> 24 base64 chars with padding)
+        assert_eq!(md5_base64.len(), 24, "Base64 MD5 should be 24 characters");
     }
 }

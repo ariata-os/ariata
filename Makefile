@@ -24,7 +24,7 @@ STUDIO_PORT := 4983
 
 # === PHONY TARGETS ===
 .PHONY: help dev dev-watch stop restart logs clean ps rebuild
-.PHONY: migrate migrate-rust migrate-drizzle prepare
+.PHONY: migrate migrate-rust prepare seed seed-rome
 .PHONY: db-reset db-status
 .PHONY: prod prod-build prod-restart
 .PHONY: env-check minio-setup
@@ -38,6 +38,7 @@ help:
 	@echo ""
 	@echo "Development Commands (Native):"
 	@echo "  make dev          Start infrastructure (Postgres + MinIO)"
+	@echo "  make dev SEED=true  Start infrastructure with test data seeding"
 	@echo "                    Then run services natively:"
 	@echo "                      Terminal 1: cd core && cargo run -- server"
 	@echo "                      Terminal 2: cd apps/web && npm run dev"
@@ -47,8 +48,9 @@ help:
 	@echo "  make ps           Show running services"
 	@echo ""
 	@echo "Database Commands:"
-	@echo "  make migrate      Run all migrations (Rust elt + Drizzle app schemas)"
+	@echo "  make migrate      Run database migrations (SQLx - manages both elt and app schemas)"
 	@echo "  make prepare      Regenerate SQLx .sqlx/ metadata (after schema changes)"
+	@echo "  make seed         Seed database with Monday in Rome reference dataset (real-world data)"
 	@echo "  make db-reset     Reset all schemas (WARNING: deletes data)"
 	@echo "  make db-status    Check database schemas status"
 	@echo ""
@@ -83,7 +85,7 @@ env-check:
 		echo "⚠️  Please update .env with your actual credentials"; \
 	fi
 
-# Start development environment (infrastructure only)
+# Start development environment (infrastructure + migrations + SQLx cache)
 dev: env-check
 	@echo "🚀 Starting development environment..."
 	@echo ""
@@ -91,9 +93,28 @@ dev: env-check
 	@docker-compose -f docker-compose.dev.yml up -d
 	@echo "⏳ Waiting for services..."
 	@sleep 8
+	@echo ""
+	@echo "🗄️  Running database migrations..."
+	@$(MAKE) migrate
+	@echo ""
+	@echo "🔄 Checking SQLx query cache..."
+	@if [ ! -f core/.sqlx/query-*.json ]; then \
+		echo "   Setting up database for SQLx..."; \
+		docker-compose -f docker-compose.dev.yml exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "ALTER ROLE $(DB_USER) IN DATABASE $(DB_NAME) SET search_path TO elt, public;" > /dev/null 2>&1; \
+		echo "   Generating SQLx cache (first time setup)..."; \
+		$(MAKE) prepare; \
+	else \
+		echo "   ✅ SQLx cache exists"; \
+	fi
+	@echo ""
 	@$(MAKE) minio-setup
 	@echo ""
-	@echo "✅ Infrastructure ready!"
+	@if [ "$$SEED" = "true" ]; then \
+		echo "🌱 Seeding database..."; \
+		$(MAKE) seed; \
+		echo ""; \
+	fi
+	@echo "✅ Development environment ready!"
 	@echo ""
 	@echo "📋 Next steps - Open 2 terminals:"
 	@echo ""
@@ -148,36 +169,18 @@ dev-web:
 
 # === MIGRATION COMMANDS ===
 
-# Run all migrations (Rust + Drizzle)
-migrate: migrate-rust migrate-drizzle
+# Run all migrations (SQLx manages both elt and app schemas)
+migrate: migrate-rust
 
-# Run Rust migrations (ELT database) - works with native dev
+# Run SQLx migrations (elt + app schemas) - works with native dev
 migrate-rust:
-	@echo "🗄️  Running Rust migrations for ariata_elt..."
+	@echo "🗄️  Running SQLx migrations (elt + app schemas)..."
 	@if docker ps | grep -q ariata-core; then \
 		docker-compose exec core ariata migrate; \
 	else \
 		cd core && sqlx migrate run --database-url $(DB_URL); \
 	fi
-	@echo "✅ Rust migrations complete"
-
-# Run Drizzle migrations (App schema) - native dev
-migrate-drizzle:
-	@echo "🗄️  Running Drizzle migrations for 'app' schema..."
-	@cd apps/web && DATABASE_URL="$(DB_URL)" npx drizzle-kit migrate
-	@echo "✅ Drizzle migrations complete"
-
-# Generate new Drizzle migration
-migrate-drizzle-generate:
-	@echo "📝 Generating Drizzle migration..."
-	@cd apps/web && DATABASE_URL="$(DB_URL)" npx drizzle-kit generate
-	@echo "✅ Migration generated in apps/web/drizzle/"
-
-# Push schema directly (no migration files)
-migrate-drizzle-push:
-	@echo "⚡ Pushing Drizzle schema to database..."
-	@cd apps/web && DATABASE_URL="$(DB_URL)" npx drizzle-kit push
-	@echo "✅ Schema pushed"
+	@echo "✅ Migrations complete"
 
 # Regenerate SQLx offline query metadata
 # Run this after:
@@ -186,11 +189,18 @@ migrate-drizzle-push:
 #  - Running migrations that change table schemas
 prepare:
 	@echo "🔄 Regenerating SQLx query metadata..."
-	@cd core && cargo sqlx prepare --database-url $(DB_URL)
+	@cd core && SQLX_OFFLINE=false cargo sqlx prepare --database-url "$(DB_URL)?options=-csearch_path%3Delt%2Cpublic"
 	@echo "✅ SQLx metadata updated in core/.sqlx/"
 	@echo "💡 Remember to commit the updated .sqlx/ files"
 
 # === DATABASE COMMANDS ===
+
+# Seed database with Monday in Rome reference dataset
+seed:
+	@echo "🇮🇹 Seeding database with Monday in Rome reference dataset..."
+	@echo "   This tests the full pipeline: CSV → Archive → Transform → Ontology tables"
+	@cd core && SQLX_OFFLINE=false cargo run --bin ariata-seed
+	@echo "✅ Database seeding complete"
 
 # Check database status
 db-status:

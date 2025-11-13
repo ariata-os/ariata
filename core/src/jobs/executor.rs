@@ -82,6 +82,17 @@ impl JobExecutor {
         let result = match job.job_type {
             JobType::Sync => execute_sync_job(db, &executor, context, &job).await,
             JobType::Transform => execute_transform_job(db, context, &job).await,
+            JobType::Archive => {
+                // Archive jobs are typically executed directly from sync_job with records
+                // This path is for retries or manual triggers where records are in S3
+                tracing::warn!(
+                    job_id = %job_id,
+                    "Archive job execution via executor not yet implemented (records not available)"
+                );
+                Err(crate::error::Error::Other(
+                    "Archive job retry logic not yet implemented".to_string()
+                ))
+            }
         };
 
         // Log result

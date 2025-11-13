@@ -46,6 +46,7 @@ Server runs on `http://localhost:3000`
 This endpoint is typically called by the web interface or CLI to generate a pairing code.
 
 **Request:**
+
 ```json
 {
   "device_type": "ios",
@@ -54,6 +55,7 @@ This endpoint is typically called by the web interface or CLI to generate a pair
 ```
 
 **Response:**
+
 ```json
 {
   "source_id": "uuid-v4",
@@ -69,6 +71,7 @@ This endpoint is typically called by the web interface or CLI to generate a pair
 This is the primary endpoint the iOS app will call with the pairing code and device info.
 
 **Request:**
+
 ```json
 {
   "code": "ABC123",
@@ -83,6 +86,7 @@ This is the primary endpoint the iOS app will call with the pairing code and dev
 ```
 
 **Response:**
+
 ```json
 {
   "source_id": "uuid-v4",
@@ -200,11 +204,13 @@ This is the primary endpoint the iOS app will call with the pairing code and dev
 The iOS app calls this to verify its token is valid and get the list of enabled streams.
 
 **Headers:**
+
 ```
 Authorization: Bearer <device_token>
 ```
 
 **Response:**
+
 ```json
 {
   "source_id": "uuid-v4",
@@ -275,6 +281,7 @@ Authorization: Bearer <device_token>
 **Endpoint:** `GET /health`
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -287,26 +294,31 @@ Authorization: Bearer <device_token>
 ### Option 1: Fly.io (Recommended for Bun)
 
 1. Install flyctl:
+
 ```bash
 brew install flyctl
 ```
 
 2. Login:
+
 ```bash
 fly auth login
 ```
 
 3. Launch app:
+
 ```bash
 fly launch --name ariata-ios-test --region sjc
 ```
 
 4. Deploy:
+
 ```bash
 fly deploy
 ```
 
 5. Set custom domain:
+
 ```bash
 fly certs add test-ios.ariata.com
 ```
@@ -314,16 +326,19 @@ fly certs add test-ios.ariata.com
 ### Option 2: Railway
 
 1. Install Railway CLI:
+
 ```bash
 npm i -g @railway/cli
 ```
 
 2. Login:
+
 ```bash
 railway login
 ```
 
 3. Deploy:
+
 ```bash
 railway up
 ```
@@ -340,9 +355,10 @@ deployctl deploy --project=ariata-ios-test index.ts
 
 ## Testing with curl
 
-### Full pairing flow:
+### Full pairing flow
 
 **Step 1: Initiate pairing (web/CLI would do this)**
+
 ```bash
 curl -X POST http://localhost:3000/api/devices/pairing/initiate \
   -H "Content-Type: application/json" \
@@ -355,6 +371,7 @@ curl -X POST http://localhost:3000/api/devices/pairing/initiate \
 This returns a code like `ABC123`.
 
 **Step 2: Complete pairing (iOS app does this)**
+
 ```bash
 curl -X POST http://localhost:3000/api/devices/pairing/complete \
   -H "Content-Type: application/json" \
@@ -373,12 +390,14 @@ curl -X POST http://localhost:3000/api/devices/pairing/complete \
 This returns a `device_token`.
 
 **Step 3: Verify token**
+
 ```bash
 curl -X POST http://localhost:3000/api/devices/verify \
   -H "Authorization: Bearer <device_token_from_step_2>"
 ```
 
-### Health check:
+### Health check
+
 ```bash
 curl http://localhost:3000/health
 ```
@@ -406,6 +425,7 @@ The iOS app should:
 ## Architecture Alignment
 
 This endpoint mirrors the Rust backend exactly:
+
 - [core/src/api/device_pairing.rs](../../core/src/api/device_pairing.rs) - Pairing logic
 - [core/src/sources/ios/](../../core/src/sources/ios/) - Stream implementations
 - [core/src/server/api.rs](../../core/src/server/api.rs) - API routes (line 97: complete pairing, line 693: verify)

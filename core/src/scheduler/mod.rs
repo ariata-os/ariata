@@ -25,6 +25,8 @@ use uuid::Uuid;
 
 use crate::{
     error::{Error, Result},
+    jobs::PrudentContextJob,
+    llm::LLMClient,
     storage::{Storage, stream_writer::StreamWriter},
 };
 
@@ -148,6 +150,51 @@ impl Scheduler {
             .map_err(|e| Error::Other(format!("Failed to start scheduler: {e}")))?;
 
         tracing::info!("Scheduler started successfully");
+        Ok(())
+    }
+
+    /// Schedule the prudent context job (4x daily: 6am, 12pm, 6pm, 10pm)
+    pub async fn schedule_prudent_context_job(&self, llm_client: Arc<dyn LLMClient>) -> Result<()> {
+        let schedules = vec![
+            ("0 0 6 * * *", "6am"),
+            ("0 0 12 * * *", "12pm"),
+            ("0 0 18 * * *", "6pm"),
+            ("0 0 22 * * *", "10pm"),
+        ];
+
+        for (cron_expr, label) in schedules {
+            let db = self.db.clone();
+            let llm_client = llm_client.clone();
+
+            tracing::info!("Scheduling PrudentContextJob at {}", label);
+
+            let job = Job::new_async(cron_expr, move |_uuid, _lock| {
+                let db_pool = Arc::new(db.clone());
+                let llm = llm_client.clone();
+
+                Box::pin(async move {
+                    tracing::info!("Running PrudentContextJob");
+                    let job = PrudentContextJob::new(db_pool, llm);
+
+                    match job.execute().await {
+                        Ok(()) => {
+                            tracing::info!("PrudentContextJob completed successfully");
+                        }
+                        Err(e) => {
+                            tracing::error!("PrudentContextJob failed: {}", e);
+                        }
+                    }
+                })
+            })
+            .map_err(|e| Error::Other(format!("Failed to create PrudentContextJob for {}: {}", label, e)))?;
+
+            self.scheduler
+                .add(job)
+                .await
+                .map_err(|e| Error::Other(format!("Failed to add PrudentContextJob: {}", e)))?;
+        }
+
+        tracing::info!("PrudentContextJob scheduled for 6am, 12pm, 6pm, and 10pm");
         Ok(())
     }
 

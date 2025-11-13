@@ -25,7 +25,7 @@ impl SourceRegistry for MacSource {
                     .config_example(apps_config_example())
                     .supports_incremental(false)
                     .supports_full_refresh(false)  // Push-based
-                    .default_cron_schedule("*/5 * * * *")  // Every 5 minutes (device batches all streams)
+                    .default_cron_schedule("0 */5 * * * *")  // Every 5 minutes (6-field: sec min hour day month dow)
                     .build(),
 
                 // Browser stream
@@ -37,7 +37,7 @@ impl SourceRegistry for MacSource {
                     .config_example(browser_config_example())
                     .supports_incremental(false)
                     .supports_full_refresh(false)  // Push-based
-                    .default_cron_schedule("*/5 * * * *")  // Every 5 minutes (device batches all streams)
+                    .default_cron_schedule("0 */5 * * * *")  // Every 5 minutes (6-field: sec min hour day month dow)
                     .build(),
 
                 // iMessage stream
@@ -49,7 +49,7 @@ impl SourceRegistry for MacSource {
                     .config_example(imessage_config_example())
                     .supports_incremental(false)
                     .supports_full_refresh(false)  // Push-based
-                    .default_cron_schedule("*/5 * * * *")  // Every 5 minutes (device batches all streams)
+                    .default_cron_schedule("0 */5 * * * *")  // Every 5 minutes (6-field: sec min hour day month dow)
                     .build(),
             ],
         }

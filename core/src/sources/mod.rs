@@ -1,7 +1,6 @@
 //! Source implementations for various data providers
 
 pub mod ariata;
-pub mod ariata_app;
 pub mod auth;
 pub mod base;
 pub mod factory;

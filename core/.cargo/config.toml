@@ -1,0 +1,6 @@
+# Cargo configuration for the ariata core crate
+
+[env]
+# Use SQLx offline mode by default for faster builds
+# The offline cache (.sqlx/) must be kept up-to-date by running `make prepare`
+SQLX_OFFLINE = "true"

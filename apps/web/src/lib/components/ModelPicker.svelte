@@ -21,22 +21,22 @@
 
 	const models: ModelOption[] = [
 		{
+			id: "claude-sonnet-4-20250514",
+			displayName: "Claude 3.5 Sonnet v2",
+			provider: "Anthropic",
+			description: "Latest and most capable model",
+		},
+		{
 			id: "claude-opus-4-20250514",
 			displayName: "Claude Opus 4",
 			provider: "Anthropic",
 			description: "Most powerful model for complex tasks",
 		},
 		{
-			id: "claude-sonnet-4-20250514",
-			displayName: "Claude Sonnet 4",
-			provider: "Anthropic",
-			description: "Balanced performance and speed",
-		},
-		{
 			id: "claude-haiku-4-20250514",
-			displayName: "Claude Haiku 4",
+			displayName: "Claude 3.5 Haiku",
 			provider: "Anthropic",
-			description: "Fast and efficient for simple tasks",
+			description: "Fast and efficient",
 		},
 	];
 

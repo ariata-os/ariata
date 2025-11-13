@@ -53,7 +53,7 @@ pub async fn process(
             "browser",
             record.clone(),
             Some(timestamp_dt),
-        ).await?;
+        )?;
     }
 
     tracing::debug!("Wrote browser record to object storage for device {}", device_id);

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO elt.activity_calendar_entry\n                (title, calendar_name, start_time, end_time, is_all_day,\n                 source_stream_id, source_table, source_provider)\n                VALUES ($1, $2, $3, $4, $5, $6, 'stream_seed_data', 'seed')\n                ON CONFLICT DO NOTHING\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "32c35c378a5fd0851eb9fa43b3f77d466702692cffcacd52efb273e88083ae0d"
+}

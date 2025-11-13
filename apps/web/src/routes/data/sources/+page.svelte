@@ -1,9 +1,6 @@
 <script lang="ts">
 	import { Button, Page } from "$lib";
-	import {
-		getSourceTypeIcon,
-		getSourceTypeColor,
-	} from "$lib/mock-data/connections";
+
 	import "iconify-icon";
 	import type { PageData } from "./$types";
 
@@ -29,14 +26,6 @@
 
 	function isSourceConnected(catalogSourceName: string): boolean {
 		return data.sources.some((s: any) => s.type === catalogSourceName);
-	}
-
-	function getCatalogIcon(sourceType: string): string {
-		return getSourceTypeIcon(sourceType);
-	}
-
-	function getCatalogColor(sourceType: string): string {
-		return getSourceTypeColor(sourceType);
 	}
 </script>
 
@@ -107,15 +96,7 @@
 							<!-- Header with Icon and Status -->
 							<div class="flex items-start justify-between mb-4">
 								<div class="flex items-center gap-3">
-									<iconify-icon
-										icon={getSourceTypeIcon(source.type)}
-										class="text-3xl {getSourceTypeColor(
-											source.type,
-										)}"
-									></iconify-icon>
-									<h3
-										class="font-medium text-neutral-900"
-									>
+									<h3 class="font-medium text-neutral-900">
 										{source.name}
 									</h3>
 								</div>

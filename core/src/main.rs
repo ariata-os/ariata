@@ -8,7 +8,10 @@ use std::env;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
-    let _ = dotenv::dotenv();
+    // Try current directory first, then parent directory (for running from core/)
+    if dotenv::dotenv().is_err() {
+        let _ = dotenv::from_path("../.env");
+    }
 
     // Initialize tracing
     tracing_subscriber::fmt()

@@ -111,10 +111,10 @@ impl StreamFactory {
                 let source = self.load_source(source_id).await?;
                 Ok(SourceAuth::device(source.name))
             }
-            "ariata_app" => {
+            "ariata" => {
                 // Internal source - no external authentication needed
                 // Uses device auth pattern with internal name
-                Ok(SourceAuth::device("ariata_app_internal".to_string()))
+                Ok(SourceAuth::device("ariata_internal".to_string()))
             }
             _ => Err(Error::Other(format!("Unknown provider: {}", provider))),
         }
@@ -134,9 +134,9 @@ impl StreamFactory {
     ) -> Result<Box<dyn Stream>> {
         match (provider, stream_name) {
             // Internal streams
-            ("ariata_app", "app_export") => {
-                use crate::sources::ariata_app::AppChatExportStream;
-                Ok(Box::new(AppChatExportStream::new(self.db.clone(), source_id)))
+            ("ariata", "app_export") => {
+                use crate::sources::ariata::AppChatExportStream;
+                Ok(Box::new(AppChatExportStream::new(self.db.clone(), source_id, self.stream_writer.clone())))
             }
 
             // Google streams

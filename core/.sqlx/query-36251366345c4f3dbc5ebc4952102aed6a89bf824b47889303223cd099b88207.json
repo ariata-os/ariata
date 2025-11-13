@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO elt.health_steps\n            (step_count, timestamp, source_stream_id, source_table, source_provider)\n            VALUES ($1, $2, $3, 'stream_seed_data', 'seed')\n            ON CONFLICT DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "36251366345c4f3dbc5ebc4952102aed6a89bf824b47889303223cd099b88207"
+}

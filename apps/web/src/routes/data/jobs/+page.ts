@@ -24,15 +24,35 @@ export const load: PageLoad = async ({ url, fetch }) => {
 		}
 		if (limit) queryParams.set('limit', limit.toString());
 
-		// Fetch jobs from API using SvelteKit's fetch with relative URL
-		const res = await fetch(`/api/jobs?${queryParams}`);
-		if (!res.ok) {
-			throw new Error(`Failed to query jobs: ${res.statusText}`);
+		// Fetch jobs and sources in parallel
+		const [jobsRes, sourcesRes] = await Promise.all([
+			fetch(`/api/jobs?${queryParams}`),
+			fetch(`/api/sources`)
+		]);
+
+		if (!jobsRes.ok) {
+			throw new Error(`Failed to query jobs: ${jobsRes.statusText}`);
 		}
-		const jobs: Job[] = await res.json();
+		if (!sourcesRes.ok) {
+			throw new Error(`Failed to query sources: ${sourcesRes.statusText}`);
+		}
+
+		const jobs: Job[] = await jobsRes.json();
+		const sources: any[] = await sourcesRes.json();
+
+		// Create a map of source_id -> source_name for fast lookup
+		const sourceMap = new Map(
+			sources.map((source) => [source.id, source.name])
+		);
+
+		// Enrich jobs with source names
+		const enrichedJobs = jobs.map((job) => ({
+			...job,
+			source_name: job.source_id ? sourceMap.get(job.source_id) : undefined
+		}));
 
 		return {
-			jobs,
+			jobs: enrichedJobs,
 			filters: {
 				sourceId,
 				status,

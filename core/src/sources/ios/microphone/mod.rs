@@ -89,7 +89,7 @@ pub async fn process(
             "microphone",
             record_with_audio,
             Some(timestamp_dt),
-        ).await?;
+        )?;
     }
 
     tracing::debug!("Wrote microphone record to object storage for device {}", device_id);

@@ -4,11 +4,10 @@ use crate::error::{Error, Result};
 use crate::jobs::{
     self, CreateJobRequest, Job, JobExecutor, JobStatus, SyncJobMetadata, TransformContext, ApiKeys,
 };
-use crate::storage::{Storage, stream_writer::StreamWriter, stream_reader::{StreamReader, StreamReaderConfig}, encryption};
+use crate::storage::{Storage, stream_writer::StreamWriter};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;
-use std::env;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -60,123 +59,14 @@ pub async fn trigger_stream_sync(
     // Create job in database
     let job = jobs::create_job(db, request).await?;
 
-    // Load master encryption key from environment
-    let master_key_hex = env::var("STREAM_ENCRYPTION_MASTER_KEY")
-        .map_err(|_| Error::Other(
-            "STREAM_ENCRYPTION_MASTER_KEY environment variable is required".into()
-        ))?;
-    let master_key = encryption::parse_master_key_hex(&master_key_hex)?;
-
-    // Create StreamReader for transforms
-    let stream_reader_config = StreamReaderConfig {
-        batch_size: 1000,
-        max_parallel_objects: 4,
-        master_key,
-    };
-    let stream_reader = StreamReader::new(
-        Arc::new(storage.clone()),
-        db.clone(),
-        stream_reader_config,
-    );
-
-    // Create transform context with storage, stream writer, stream reader, and API keys
+    // Create context without data source
+    // The sync_job executor will create its own context with the actual records after sync completes.
     let api_keys = ApiKeys::from_env();
-    let context = TransformContext::new(storage.clone(), stream_writer, stream_reader, api_keys);
-
-    // Start job execution in background
-    let executor = JobExecutor::new(db.clone(), context);
-    executor.execute_async(job.id);
-
-    Ok(CreateJobResponse {
-        job_id: job.id,
-        status: job.status.to_string(),
-        started_at: job.started_at,
-    })
-}
-
-/// Trigger a transform job for a specific source/stream
-///
-/// This creates a transform job directly and executes it in the background.
-/// Useful for manually triggering transformations on existing stream data.
-///
-/// # Arguments
-/// * `db` - Database connection pool
-/// * `storage` - Storage backend
-/// * `stream_writer` - StreamWriter for writing stream data to object storage
-/// * `source_id` - UUID of the source
-/// * `source_table` - Source stream table name (e.g., "stream_ios_microphone")
-/// * `target_tables` - Target ontology tables (e.g., ["speech_transcription"])
-///
-/// # Returns
-/// Job response with job_id for monitoring
-pub async fn trigger_transform_job(
-    db: &PgPool,
-    storage: &Storage,
-    stream_writer: Arc<Mutex<StreamWriter>>,
-    source_id: Uuid,
-    source_table: &str,
-    target_tables: Vec<&str>,
-) -> Result<CreateJobResponse> {
-    // Look up domain and transform_stage from centralized transform registry
-    let route = crate::transforms::get_transform_route(source_table)
-        .map_err(|_| Error::InvalidInput(format!(
-            "Unknown source table for transform: {}. Not found in transform registry.",
-            source_table
-        )))?;
-
-    let domain = route.domain;
-    let transform_stage = route.transform_stage;
-
-    // Create the transform job
-    // For now, we only support single target table transforms
-    let target_table = target_tables.first().ok_or_else(|| {
-        Error::InvalidInput("At least one target table must be specified".into())
-    })?;
-
-    let metadata = serde_json::json!({
-        "source_table": source_table,
-        "target_table": target_table,
-        "domain": domain,
-        "transform_stage": transform_stage,
-    });
-
-    let request = jobs::CreateJobRequest {
-        job_type: jobs::JobType::Transform,
-        status: jobs::JobStatus::Pending,
-        source_id: Some(source_id),
-        stream_name: None,
-        sync_mode: None,
-        transform_id: None,
-        transform_strategy: None,
-        parent_job_id: None,  // No parent job for manually triggered transforms
-        transform_stage: Some(transform_stage.to_string()),
-        metadata,
-    };
-
-    let job = jobs::create_job(db, request).await?;
-
-    // Load master encryption key from environment
-    let master_key_hex = env::var("STREAM_ENCRYPTION_MASTER_KEY")
-        .map_err(|_| Error::Other(
-            "STREAM_ENCRYPTION_MASTER_KEY environment variable is required".into()
-        ))?;
-    let master_key = encryption::parse_master_key_hex(&master_key_hex)?;
-
-    // Create StreamReader for transforms
-    let stream_reader_config = StreamReaderConfig {
-        batch_size: 1000,
-        max_parallel_objects: 4,
-        master_key,
-    };
-    let stream_reader = StreamReader::new(
+    let context = TransformContext::new(
         Arc::new(storage.clone()),
-        db.clone(),
-        stream_reader_config,
+        stream_writer,
+        api_keys,
     );
-
-    // Create transform context with storage, stream writer, stream reader, and API keys
-    let api_keys = ApiKeys::from_env();
-    let context = TransformContext::new(storage.clone(), stream_writer, stream_reader, api_keys);
 
     // Start job execution in background
     let executor = JobExecutor::new(db.clone(), context);

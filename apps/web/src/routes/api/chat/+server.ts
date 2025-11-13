@@ -1,29 +1,30 @@
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { streamText, stepCountIs } from 'ai';
 import type { RequestHandler } from './$types';
+import type { Config } from '@sveltejs/adapter-vercel';
 import { env } from '$env/dynamic/private';
-import { createQueryOntologiesTool } from '$lib/tools/query-ontologies';
-import { createLocationMapTool } from '$lib/tools/query-location-map';
+import { orchestrateChat } from '$lib/server/agent-orchestrator';
 import { getDb, getPool } from '$lib/server/db';
-import { chatSessions, type ChatMessage } from '$lib/server/schema';
+import { chatSessions, preferences, type ChatMessage } from '$lib/server/schema';
 import { eq, sql } from 'drizzle-orm';
-import type { CoreMessage } from 'ai';
+import { convertToModelMessages, type UIMessage } from 'ai';
 
 // Constants
 const MAX_TITLE_LENGTH = 50;
+// Anthropic model strings
 const ALLOWED_MODELS = [
-	'claude-sonnet-4-20250514',
-	'claude-opus-4-20250514',
-	'claude-haiku-4-20250514'
+	'claude-sonnet-4-20250514', // Claude Sonnet 4
+	'claude-opus-4-20250514', // Claude Opus 4
+	'claude-haiku-4-20250514' // Claude Haiku 4
 ];
 
-// Get Anthropic instance with runtime env
-const getAnthropic = () => {
-	const apiKey = env.ANTHROPIC_API_KEY;
-	if (!apiKey) {
-		throw new Error('ANTHROPIC_API_KEY environment variable is not set');
-	}
-	return createAnthropic({ apiKey });
+// Verify Anthropic API key is set
+if (!env.ANTHROPIC_API_KEY) {
+	console.warn('ANTHROPIC_API_KEY environment variable is not set');
+}
+
+// Vercel serverless function configuration
+// Increase timeout for complex multi-step queries (default is 10s on Hobby, 15s on Pro)
+export const config: Config = {
+	maxDuration: 60 // seconds - adjust based on Vercel plan
 };
 
 /**
@@ -39,6 +40,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		const { messages, sessionId, model = 'claude-sonnet-4-20250514' } = body;
 
 		console.log('[API] Received request with model:', model, 'sessionId:', sessionId);
+		console.log('[API] Messages format:', messages?.[0]); // Log first message to see format
 
 		// Validate messages
 		if (!messages || !Array.isArray(messages)) {
@@ -80,7 +82,6 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		const db = getDb();
-		const pool = getPool();
 
 		// Get or create session
 		let session = await db.query.chatSessions.findFirst({
@@ -106,42 +107,37 @@ export const POST: RequestHandler = async ({ request }) => {
 			console.log('[API] Created new session:', sessionId, 'with title:', autoTitle);
 		}
 
-		// Create dynamic tools based on enabled streams/ontologies
-		const queryOntologiesTool = await createQueryOntologiesTool(pool);
-		const locationMapTool = await createLocationMapTool(pool);
+		// Load user preferences for personalization
+		const prefs = await db.select().from(preferences);
+		const userName = prefs.find((p) => p.key === 'user_name')?.value || 'the user';
 
-		// Call Claude API with streaming
-		const anthropic = getAnthropic();
-		const result = streamText({
-			model: anthropic(model),
-			system: `You are a helpful AI assistant with access to the user's personal life logging data.
+		// Get database pool for tools
+		const pool = getPool();
 
-When using tools:
-- After getting tool results, ALWAYS provide a human-readable summary
-- Interpret the data and explain what it means in natural language
-- For location maps, briefly describe what the visualization shows
-- For query results, summarize the key findings
-- Make your responses conversational and helpful`,
-			messages: messages as CoreMessage[],
-			temperature: 0.7,
-			tools: {
-				queryOntologies: queryOntologiesTool,
-				queryLocationMap: locationMapTool
-			},
-			maxSteps: 10, // Allow multi-step tool calls - higher to ensure final text step
-			// Save messages asynchronously after streaming completes
-			// This allows the stream to start immediately while ensuring data persistence
+		// Convert UIMessages to ModelMessages
+		const modelMessages = convertToModelMessages(messages as UIMessage[]);
+		console.log('[API] Converted to ModelMessages:', modelMessages.length, 'messages');
+
+		// Run agent with custom tools (queryOntologies, queryLocationMap)
+		// Uses @ai-sdk/anthropic provider with ANTHROPIC_API_KEY
+		const result = await orchestrateChat({
+			messages: modelMessages,
+			model,
+			pool,
+			sessionId,
+			userName,
 			onFinish: async (event) => {
 				try {
-					await saveMessagesToSession(sessionId, messages as CoreMessage[], event, model);
+					await saveMessagesToSession(sessionId, messages as UIMessage[], event, model);
 				} catch (error) {
 					console.error('[API] Failed to save messages to session:', error);
 				}
 			}
 		});
 
-		// Convert to Response stream and return immediately
-		return result.toTextStreamResponse();
+		// toUIMessageStreamResponse() streams tool calls in real-time (compatible with useChat)
+		// Tool calls are saved to DB in the onFinish callback
+		return result.toUIMessageStreamResponse();
 	} catch (error) {
 		console.error('Chat API error:', error);
 		return new Response(JSON.stringify({ error: 'Internal server error' }), {
@@ -159,7 +155,7 @@ When using tools:
  */
 async function saveMessagesToSession(
 	sessionId: string,
-	userMessages: CoreMessage[],
+	userMessages: UIMessage[],
 	event: any, // onFinish event containing text, toolCalls, toolResults, etc.
 	model: string
 ) {
@@ -186,7 +182,7 @@ async function saveMessagesToSession(
 			.filter((m) => m.role === 'user')
 			.map((m, idx) => ({
 				role: 'user' as const,
-				content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+				content: m.parts.find(p => p.type === 'text')?.text || '',
 				timestamp: new Date(now.getTime() + idx).toISOString(), // Offset by 1ms per message
 				model: null
 			})),
@@ -202,7 +198,7 @@ async function saveMessagesToSession(
 					? toolCalls.map((call, idx) => ({
 							tool_name: call.toolName,
 							arguments: call.args,
-							result: toolResults?.[idx]?.output,
+							result: toolResults?.[idx]?.output || toolResults?.[idx]?.result,
 							timestamp: new Date().toISOString()
 						}))
 					: undefined

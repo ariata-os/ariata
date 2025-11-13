@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO elt.health_sleep\n            (total_duration_minutes, sleep_quality_score, start_time, end_time,\n             source_stream_id, source_table, source_provider)\n            VALUES ($1, $2, $3, $4, $5, 'stream_seed_data', 'seed')\n            ON CONFLICT DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Float8",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "af4da62ee59772433a64598a79224549a2ca59b9645687cc4f1b8682979a87a4"
+}

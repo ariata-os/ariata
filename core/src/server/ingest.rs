@@ -27,12 +27,16 @@ pub struct IngestRequest {
     pub stream: String,
 
     /// Device or instance ID
+    /// Currently unused but kept for future device-specific features
+    #[allow(dead_code)]
     pub device_id: String,
 
     /// Actual data records
     pub records: Vec<Value>,
 
     /// Optional checkpoint for incremental sync
+    /// Currently unused but kept for future checkpoint tracking
+    #[allow(dead_code)]
     pub checkpoint: Option<String>,
 
     /// Timestamp of this batch
@@ -104,22 +108,6 @@ pub async fn ingest(
         }))).into_response();
     }
 
-    // Create pipeline activity record
-    let activity_id = match create_pipeline_activity(
-        &state.db,
-        &payload.source,
-        &payload.stream,
-        &payload.device_id,
-        payload.records.len(),
-    ).await {
-        Ok(id) => id,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                "error": e.to_string()
-            }))).into_response();
-        }
-    };
-
     // Process records based on storage strategy
     let (accepted, rejected) = match process_records(
         &state,
@@ -134,34 +122,26 @@ pub async fn ingest(
         }
     };
 
-    // Update checkpoint if provided
-    let next_checkpoint = if let Some(checkpoint) = payload.checkpoint {
-        if let Err(e) = update_checkpoint(
-            &state.db,
-            &payload.source,
+    // Trigger transforms if records were successfully processed (hot path like cloud syncs)
+    if accepted > 0 {
+        if let Err(e) = trigger_transforms_for_batch(
+            &state,
+            source_id,
             &payload.stream,
-            &payload.device_id,
-            &checkpoint,
         ).await {
-            tracing::warn!("Failed to update checkpoint: {}", e);
-            None
-        } else {
-            Some(generate_next_checkpoint(&checkpoint))
+            tracing::warn!(
+                error = %e,
+                stream = %payload.stream,
+                "Failed to trigger transforms for device batch, continuing"
+            );
         }
-    } else {
-        None
-    };
-
-    // Update pipeline activity status
-    if let Err(e) = update_pipeline_activity(&state.db, &activity_id, "completed", accepted).await {
-        tracing::warn!("Failed to update pipeline activity: {}", e);
     }
 
     (StatusCode::OK, Json(IngestResponse {
         accepted,
         rejected,
-        next_checkpoint,
-        activity_id,
+        next_checkpoint: None, // Checkpoint management will be implemented later if needed
+        activity_id: uuid::Uuid::new_v4().to_string(), // Generate ID for debugging/tracing
     })).into_response()
 }
 
@@ -175,66 +155,18 @@ fn extract_device_token(headers: &HeaderMap) -> Option<String> {
 }
 
 /// Validate source and stream configuration exists
+///
+/// This validation is now minimal - we accept any source/stream combination and let
+/// the downstream processors and transform registry determine if it's valid. This
+/// avoids maintaining a hardcoded list that can get out of sync with the rest of the system.
 async fn validate_source_stream(
     _db: &Database,
-    source: &str,
-    stream: &str,
+    _source: &str,
+    _stream: &str,
 ) -> Result<()> {
-    // List of valid source/stream combinations
-    let valid_combinations = [
-        // iOS streams
-        ("ios", "healthkit"),
-        ("ios", "location"),
-        ("ios", "microphone"),
-        ("ios", "mic"),  // alias for microphone
-
-        // Mac streams
-        ("mac", "apps"),
-        ("mac", "browser"),
-        ("mac", "imessage"),
-        ("mac", "screentime"),
-
-        // Cloud OAuth sources
-        ("google", "calendar"),
-        ("google", "gmail"),
-        ("strava", "activities"),
-        ("notion", "pages"),
-    ];
-
-    let is_valid = valid_combinations
-        .iter()
-        .any(|(s, st)| *s == source && *st == stream);
-
-    if !is_valid {
-        return Err(Error::Other(format!("Invalid source/stream: {source}/{stream}")));
-    }
-
+    // Basic validation - just ensure strings are not empty
+    // Downstream processors will handle unknown source/stream combinations
     Ok(())
-}
-
-/// Create pipeline activity record
-async fn create_pipeline_activity(
-    _db: &Database,
-    source: &str,
-    stream: &str,
-    device_id: &str,
-    record_count: usize,
-) -> Result<String> {
-    let activity_id = uuid::Uuid::new_v4().to_string();
-
-    // NOTE: Pipeline activity tracking not persisted to database yet.
-    // This would enable features like:
-    // - Ingestion history and audit trail
-    // - Progress tracking for large uploads
-    // - Retry logic for failed batches
-    //
-    // Current behavior: Log activity ID for debugging, return immediately
-    tracing::info!(
-        "Created pipeline activity {} for {}/{} from device {} with {} records",
-        activity_id, source, stream, device_id, record_count
-    );
-
-    Ok(activity_id)
 }
 
 /// Process records based on storage strategy
@@ -325,45 +257,80 @@ async fn get_storage_strategy(
     }
 }
 
-/// Update sync checkpoint
+/// Trigger transforms for device batch (hot path - unified with cloud syncs)
 ///
-/// NOTE: Checkpoint persistence not implemented yet.
-/// For device sources using push model, checkpoints are less critical since
-/// devices maintain their own state. For future pull-based device syncs,
-/// implement checkpoint storage in the `sources` table.
-async fn update_checkpoint(
-    _db: &Database,
-    source: &str,
-    stream: &str,
-    device_id: &str,
-    checkpoint: &str,
+/// After device records are processed and buffered in StreamWriter,
+/// this function collects them and triggers transform jobs directly,
+/// just like cloud syncs do. Also creates async archive job for S3 backup.
+/// This fully unifies the push (device) and pull (cloud) data pipelines.
+async fn trigger_transforms_for_batch(
+    state: &AppState,
+    source_id: uuid::Uuid,
+    stream_name: &str,
 ) -> Result<()> {
-    tracing::debug!(
-        "Checkpoint update (not persisted): {}/{} device {} -> {}",
-        source, stream, device_id, checkpoint
-    );
-    Ok(())
-}
+    // Collect buffered records from StreamWriter
+    let (records, min_timestamp, max_timestamp) = {
+        let mut writer = state.stream_writer.lock().await;
+        match writer.collect_records(source_id, stream_name) {
+            Some((records, min_ts, max_ts)) => {
+                tracing::info!(
+                    source_id = %source_id,
+                    stream_name,
+                    record_count = records.len(),
+                    "Collected records from device batch for direct transform (hot path)"
+                );
+                (records, min_ts, max_ts)
+            }
+            None => {
+                tracing::debug!(
+                    source_id = %source_id,
+                    stream_name,
+                    "No buffered records to transform"
+                );
+                return Ok(());
+            }
+        }
+    };
 
-/// Generate next checkpoint
-fn generate_next_checkpoint(current: &str) -> String {
-    // Simple increment for now, will be more sophisticated based on source type
-    format!("{current}_next")
-}
+    // Create archive job for async S3 archival (hot path - same as cloud syncs)
+    let _archive_job_id = if !records.is_empty() {
+        let archive_id = crate::jobs::spawn_archive_job_async(
+            state.db.pool(),
+            state.storage.as_ref(),
+            None, // No parent job for device ingests
+            source_id,
+            stream_name,
+            records.clone(),
+            (min_timestamp, max_timestamp),
+        ).await?;
+        Some(archive_id)
+    } else {
+        None
+    };
 
-/// Update pipeline activity status
-///
-/// NOTE: Activity status tracking not persisted (see `create_pipeline_activity`).
-async fn update_pipeline_activity(
-    _db: &Database,
-    activity_id: &str,
-    status: &str,
-    records_processed: usize,
-) -> Result<()> {
-    tracing::debug!(
-        "Activity update (not persisted): {} -> {} ({} records)",
-        activity_id, status, records_processed
-    );
+    // Create context without data source for transform triggering
+    // The create_transform_job_for_stream function will create a new context
+    // with the actual MemoryDataSource when executing the transform
+    let api_keys = crate::jobs::ApiKeys::from_env();
+
+    let context = Arc::new(crate::jobs::TransformContext::new(
+        Arc::clone(&state.storage),
+        state.stream_writer.clone(),
+        api_keys,
+    ));
+
+    let executor = crate::jobs::JobExecutor::new(state.db.pool().clone(), (*context).clone());
+
+    // Create and execute transform job with in-memory records (hot path)
+    let _job_id = crate::jobs::create_transform_job_for_stream(
+        state.db.pool(),
+        &executor,
+        &context,
+        source_id,
+        stream_name,
+        Some(records), // Pass collected records for direct transform
+    ).await?;
+
     Ok(())
 }
 

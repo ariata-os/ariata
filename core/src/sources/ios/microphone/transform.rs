@@ -8,10 +8,13 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::database::Database;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::sources::base::{ChainedTransform, OntologyTransform, TransformResult};
 use crate::storage::Storage;
 use crate::transcription::AssemblyAIClient;
+
+/// Batch size for database inserts
+const BATCH_SIZE: usize = 500;
 
 /// Transform iOS microphone audio to speech_transcription ontology
 pub struct MicrophoneTranscriptionTransform {
@@ -51,9 +54,13 @@ impl OntologyTransform for MicrophoneTranscriptionTransform {
     async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
-        let records_failed = 0;
+        let mut records_failed = 0;
         let mut last_processed_id: Option<Uuid> = None;
         let mut chained_transforms = Vec::new();
+
+        // Batch accumulation for inserts
+        let mut pending_records: Vec<(Uuid, String, Option<i32>, String, Option<String>, f64, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut batch_insert_total_ms = 0u128;
 
         tracing::info!(
             source_id = %source_id,
@@ -64,7 +71,8 @@ impl OntologyTransform for MicrophoneTranscriptionTransform {
 
         // Read stream data from S3 using checkpoint
         let checkpoint_key = "microphone_to_transcription";
-        let batches = context.stream_reader
+        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let batches = data_source
             .read_with_checkpoint(source_id, "microphone", checkpoint_key)
             .await?;
 
@@ -206,52 +214,19 @@ impl OntologyTransform for MicrophoneTranscriptionTransform {
             // Create speech_transcription record with real transcript
             let transcription_id = Uuid::new_v4();
 
-            sqlx::query(
-                r#"
-                INSERT INTO elt.speech_transcription (
-                    id,
-                    audio_file_path,
-                    audio_duration_seconds,
-                    transcript_text,
-                    language,
-                    confidence_score,
-                    speaker_count,
-                    speaker_labels,
-                    recorded_at,
-                    source_stream_id,
-                    source_table,
-                    source_provider,
-                    metadata
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                ON CONFLICT DO NOTHING
-                "#,
-            )
-            .bind(transcription_id)
-            .bind(&audio_file_key)
-            .bind(duration_seconds)
-            .bind(&transcription_result.text)
-            .bind(transcription_result.language.as_ref())
-            .bind(Some(transcription_result.confidence))
-            .bind(None::<i32>)  // speaker_count (not using diarization)
-            .bind(None::<serde_json::Value>)  // speaker_labels (not using diarization)
-            .bind(timestamp)
-            .bind(stream_id)
-            .bind(self.source_table())
-            .bind("ios")
-            .bind(serde_json::json!({}))
-            .execute(db.pool())
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    error = %e,
-                    stream_id = %stream_id,
-                    "Failed to insert speech_transcription record"
-                );
-                Error::Database(e.to_string())
-            })?;
+            // Accumulate record for batch insert
+            pending_records.push((
+                transcription_id,
+                audio_file_key.to_string(),
+                duration_seconds,
+                transcription_result.text.clone(),
+                transcription_result.language.clone(),
+                transcription_result.confidence,
+                timestamp,
+                stream_id,
+                serde_json::json!({}),
+            ));
 
-            records_written += 1;
             last_processed_id = Some(stream_id);
 
             // Chain to semantic parsing transform (when implemented)
@@ -262,11 +237,38 @@ impl OntologyTransform for MicrophoneTranscriptionTransform {
                 source_record_id: transcription_id,
                 transform_stage: "semantic_parsing".to_string(),
             });
+
+            // Flush batch if at capacity
+            if pending_records.len() >= BATCH_SIZE {
+                let insert_start = std::time::Instant::now();
+                let batch_result = execute_speech_transcription_batch_insert(db, &pending_records).await;
+                batch_insert_total_ms += insert_start.elapsed().as_millis();
+
+                match batch_result {
+                    Ok(written) => {
+                        records_written += written;
+                        tracing::debug!(
+                            batch_size = pending_records.len(),
+                            written,
+                            "Batch insert completed"
+                        );
+                    }
+                    Err(e) => {
+                        records_failed += pending_records.len();
+                        tracing::error!(
+                            error = %e,
+                            batch_size = pending_records.len(),
+                            "Batch insert failed"
+                        );
+                    }
+                }
+                pending_records.clear();
+            }
             }
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                context.stream_reader.update_checkpoint(
+                data_source.update_checkpoint(
                     source_id,
                     "microphone",
                     checkpoint_key,
@@ -275,10 +277,44 @@ impl OntologyTransform for MicrophoneTranscriptionTransform {
             }
         }
 
+        // Final flush of remaining records
+        if !pending_records.is_empty() {
+            let insert_start = std::time::Instant::now();
+            let batch_result = execute_speech_transcription_batch_insert(db, &pending_records).await;
+            batch_insert_total_ms += insert_start.elapsed().as_millis();
+
+            match batch_result {
+                Ok(written) => {
+                    records_written += written;
+                    tracing::debug!(
+                        batch_size = pending_records.len(),
+                        written,
+                        "Final batch insert completed"
+                    );
+                }
+                Err(e) => {
+                    records_failed += pending_records.len();
+                    tracing::error!(
+                        error = %e,
+                        batch_size = pending_records.len(),
+                        "Final batch insert failed"
+                    );
+                }
+            }
+        }
+
+        let avg_batch_insert_ms = if records_written > 0 {
+            batch_insert_total_ms / records_written as u128
+        } else {
+            0
+        };
+
         tracing::info!(
             records_read,
             records_written,
             records_failed,
+            batch_insert_total_ms,
+            avg_batch_insert_ms,
             "Completed microphone to speech_transcription transformation"
         );
 
@@ -290,6 +326,72 @@ impl OntologyTransform for MicrophoneTranscriptionTransform {
             chained_transforms,
         })
     }
+}
+
+/// Execute batch insert for speech_transcription records
+///
+/// # Arguments
+/// * `db` - Database connection
+/// * `records` - Batch of records to insert (id, audio_file_path, duration, text, language, confidence, timestamp, source_stream_id, metadata)
+///
+/// # Returns
+/// Number of records successfully written
+async fn execute_speech_transcription_batch_insert(
+    db: &Database,
+    records: &[(Uuid, String, Option<i32>, String, Option<String>, f64, DateTime<Utc>, Uuid, serde_json::Value)],
+) -> Result<usize> {
+    if records.is_empty() {
+        return Ok(0);
+    }
+
+    // Build batch insert query using helper
+    let columns = vec![
+        "id",
+        "audio_file_path",
+        "audio_duration_seconds",
+        "transcript_text",
+        "language",
+        "confidence_score",
+        "speaker_count",
+        "speaker_labels",
+        "recorded_at",
+        "source_stream_id",
+        "source_table",
+        "source_provider",
+        "metadata",
+    ];
+
+    let query_str = Database::build_batch_insert_query(
+        "elt.speech_transcription",
+        &columns,
+        "source_stream_id",
+        records.len(),
+    );
+
+    // Build query with proper parameter binding
+    let mut query = sqlx::query(&query_str);
+
+    // Bind all parameters row by row
+    for (id, audio_file_path, duration, text, language, confidence, timestamp, source_stream_id, metadata) in records {
+        query = query
+            .bind(id)
+            .bind(audio_file_path)
+            .bind(duration)
+            .bind(text)
+            .bind(language)
+            .bind(confidence)
+            .bind(None::<i32>) // speaker_count (not using diarization)
+            .bind(None::<serde_json::Value>) // speaker_labels (not using diarization)
+            .bind(timestamp)
+            .bind(source_stream_id)
+            .bind("stream_ios_microphone")
+            .bind("ios")
+            .bind(metadata);
+    }
+
+    // Execute batch insert
+    let result = query.execute(db.pool()).await?;
+    Ok(result.rows_affected() as usize)
 }
 
 #[cfg(test)]

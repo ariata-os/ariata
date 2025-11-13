@@ -2,257 +2,187 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { Pool } from 'pg';
 
-interface LocationPoint {
-	latitude: number;
-	longitude: number;
-	timestamp: string;
-	accuracy_meters?: number;
-	speed_meters_per_second?: number;
-}
-
-interface LocationVisit {
-	latitude: number;
-	longitude: number;
-	start_time: string;
-	end_time: string;
-	canonical_name?: string;
-	category?: string;
-	duration_minutes: number;
-}
-
-interface MapBounds {
-	minLat: number;
-	maxLat: number;
-	minLon: number;
-	maxLon: number;
-}
-
-interface MapData {
-	points: LocationPoint[];
-	visits: LocationVisit[];
-	bounds: MapBounds | null;
-	metadata: {
-		startTime: string;
-		endTime: string;
-		pointCount: number;
-		visitCount: number;
-	};
-}
-
 /**
- * Calculate bounding box for all location data
- */
-function calculateBounds(
-	points: LocationPoint[],
-	visits: LocationVisit[]
-): MapBounds | null {
-	const allLats = [
-		...points.map((p) => p.latitude),
-		...visits.map((v) => v.latitude)
-	];
-	const allLons = [
-		...points.map((p) => p.longitude),
-		...visits.map((v) => v.longitude)
-	];
-
-	if (allLats.length === 0) return null;
-
-	return {
-		minLat: Math.min(...allLats),
-		maxLat: Math.max(...allLats),
-		minLon: Math.min(...allLons),
-		maxLon: Math.max(...allLons)
-	};
-}
-
-/**
- * Create a location map visualization tool
- *
- * This tool queries location data from the database and returns it in a format
- * optimized for map rendering. It supports querying both raw location points
- * and aggregated place visits within a specified time range.
+ * Tool for querying location data and generating interactive maps
  */
 export async function createLocationMapTool(pool: Pool) {
 	return tool({
-		description: `PREFERRED TOOL for visualizing location data on an interactive map.
-
-Use this tool DIRECTLY when the user asks to:
-- See where they've been
-- View their location history or movement patterns
-- Show places they've visited
-- Display their travels or journeys
-- "show me on a map"
-- Visualize geographic activity
-
-DO NOT use queryOntologies first - this tool handles querying automatically.
-The tool will return an error message if no data exists for the time range.
-
-Returns location data formatted for interactive map rendering:
-- Raw location points (GPS traces shown as a path)
-- Place visits with names and durations (shown as markers)
-- Automatic map bounds for optimal viewing
-
-This provides a visual, geographic view rather than tabular data.`,
-
-		inputSchema: z.object({
-			startTime: z
-				.string()
-				.describe(
-					'Start of time range in ISO 8601 format (e.g., "2024-01-01T00:00:00Z"). Required.'
-				),
-			endTime: z
-				.string()
-				.describe(
-					'End of time range in ISO 8601 format (e.g., "2024-01-31T23:59:59Z"). Required.'
-				),
-			includePoints: z
-				.boolean()
-				.default(true)
-				.describe(
-					'Include raw GPS location points (shown as a path). Default: true. Set false for cleaner visit-only view.'
-				),
-			includeVisits: z
-				.boolean()
-				.default(true)
-				.describe(
-					'Include place visits with names and durations (shown as markers). Default: true.'
-				),
-			maxPoints: z
-				.number()
-				.default(1000)
-				.describe('Maximum number of location points to return. Default: 1000.')
+		description: 'Query location data and generate an interactive map visualization. IMPORTANT: Dates must be in YYYY-MM-DD format (e.g., "2025-11-10").',
+		parameters: z.object({
+			startDate: z.string().optional().describe('Start date in YYYY-MM-DD format (e.g., "2025-11-10")'),
+			endDate: z.string().optional().describe('End date in YYYY-MM-DD format (e.g., "2025-11-10")'),
+			limit: z.number().optional().describe('Maximum number of points to return (default: 10000)')
 		}),
+		execute: async ({ startDate, endDate, limit = 10000 }) => {
+			console.log('[queryLocationMap] ========== EXECUTE FUNCTION CALLED ==========');
+			console.log('[queryLocationMap] Input params:', { startDate, endDate, limit });
+			console.log('[queryLocationMap] Pool status:', { connected: !!pool });
 
-		execute: async ({ startTime, endTime, includePoints, includeVisits, maxPoints }) => {
-			console.log('[locationMapTool] Querying location data:', {
-				startTime,
-				endTime,
-				includePoints,
-				includeVisits,
-				maxPoints
-			});
-
-			const mapData: MapData = {
-				points: [],
-				visits: [],
-				bounds: null,
-				metadata: {
-					startTime,
-					endTime,
-					pointCount: 0,
-					visitCount: 0
-				}
-			};
+			// Validate date format
+			const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+			if (startDate && !dateRegex.test(startDate)) {
+				console.error('[queryLocationMap] Invalid startDate format:', startDate, '- expected YYYY-MM-DD');
+				throw new Error(`Invalid startDate format: "${startDate}". Expected YYYY-MM-DD format (e.g., "2025-11-10")`);
+			}
+			if (endDate && !dateRegex.test(endDate)) {
+				console.error('[queryLocationMap] Invalid endDate format:', endDate, '- expected YYYY-MM-DD');
+				throw new Error(`Invalid endDate format: "${endDate}". Expected YYYY-MM-DD format (e.g., "2025-11-10")`);
+			}
 
 			try {
-				const client = await pool.connect();
-				try {
-					await client.query('BEGIN TRANSACTION READ ONLY');
-					await client.query('SET search_path TO elt, public');
+				// Query location data from elt.location_point table
+				// Use systematic sampling (every 4th point) to evenly distribute points across the day
+				const params: any[] = [];
+				let paramIndex = 1;
 
-					// Query location points
-					if (includePoints) {
-						const pointsQuery = `
-							SELECT
-								latitude,
-								longitude,
-								timestamp,
-								accuracy_meters,
-								speed_meters_per_second
-							FROM location_point
-							WHERE timestamp >= $1 AND timestamp <= $2
-							ORDER BY timestamp ASC
-							LIMIT $3
-						`;
+				let whereConditions = '1=1';
 
-						const pointsResult = await client.query(pointsQuery, [
-							startTime,
-							endTime,
-							maxPoints
-						]);
-
-						mapData.points = pointsResult.rows.map((row) => ({
-							latitude: row.latitude,
-							longitude: row.longitude,
-							timestamp: row.timestamp,
-							accuracy_meters: row.accuracy_meters,
-							speed_meters_per_second: row.speed_meters_per_second
-						}));
-
-						console.log(`[locationMapTool] Found ${mapData.points.length} location points`);
-					}
-
-					// Query location visits with place information
-					if (includeVisits) {
-						const visitsQuery = `
-							SELECT
-								lv.latitude,
-								lv.longitude,
-								lv.start_time,
-								lv.end_time,
-								ep.canonical_name,
-								ep.category,
-								EXTRACT(EPOCH FROM (lv.end_time - lv.start_time)) / 60 as duration_minutes
-							FROM location_visit lv
-							LEFT JOIN entities_place ep ON lv.place_id = ep.id
-							WHERE lv.start_time >= $1 AND lv.end_time <= $2
-							ORDER BY lv.start_time ASC
-							LIMIT 200
-						`;
-
-						const visitsResult = await client.query(visitsQuery, [startTime, endTime]);
-
-						mapData.visits = visitsResult.rows.map((row) => ({
-							latitude: row.latitude,
-							longitude: row.longitude,
-							start_time: row.start_time,
-							end_time: row.end_time,
-							canonical_name: row.canonical_name,
-							category: row.category,
-							duration_minutes: Math.round(row.duration_minutes)
-						}));
-
-						console.log(`[locationMapTool] Found ${mapData.visits.length} place visits`);
-					}
-
-					await client.query('COMMIT');
-
-					// Calculate bounds
-					mapData.bounds = calculateBounds(mapData.points, mapData.visits);
-					mapData.metadata.pointCount = mapData.points.length;
-					mapData.metadata.visitCount = mapData.visits.length;
-
-					// Check if we have any data
-					if (mapData.points.length === 0 && mapData.visits.length === 0) {
-						return {
-							success: false,
-							error: `No location data found between ${startTime} and ${endTime}. The user may not have any location tracking data for this time period.`
-						};
-					}
-
-					console.log('[locationMapTool] Successfully prepared map data:', {
-						pointCount: mapData.metadata.pointCount,
-						visitCount: mapData.metadata.visitCount,
-						bounds: mapData.bounds
-					});
-
-					return {
-						success: true,
-						type: 'map_visualization',
-						data: mapData
-					};
-				} catch (error) {
-					await client.query('ROLLBACK');
-					throw error;
-				} finally {
-					client.release();
+				if (startDate) {
+					whereConditions += ` AND DATE(timestamp) >= $${paramIndex}::date`;
+					params.push(startDate);
+					paramIndex++;
 				}
-			} catch (error) {
-				console.error('[locationMapTool] Error:', error);
-				return {
-					success: false,
-					error: error instanceof Error ? error.message : 'Unknown database error'
+
+				if (endDate) {
+					whereConditions += ` AND DATE(timestamp) <= $${paramIndex}::date`;
+					params.push(endDate);
+					paramIndex++;
+				}
+
+				const query = `
+					WITH numbered_points AS (
+						SELECT
+							timestamp,
+							latitude,
+							longitude,
+							altitude_meters as altitude,
+							accuracy_meters as horizontal_accuracy,
+							speed_meters_per_second as speed,
+							course_degrees as course,
+							ROW_NUMBER() OVER (ORDER BY timestamp) as rn
+						FROM elt.location_point
+						WHERE ${whereConditions}
+					)
+					SELECT
+						timestamp,
+						latitude,
+						longitude,
+						altitude,
+						horizontal_accuracy,
+						speed,
+						course
+					FROM numbered_points
+					WHERE rn % 4 = 0
+					ORDER BY timestamp DESC
+					LIMIT $${paramIndex}
+				`;
+				params.push(Math.min(limit, 10000));
+
+				console.log('[queryLocationMap] Executing query:', query);
+				console.log('[queryLocationMap] Query params:', params);
+
+				let result = await pool.query(query, params);
+
+				// Fallback: if sampling returns 0 results, use simple LIMIT query
+				if (result.rows.length === 0) {
+					console.warn('[queryLocationMap] Sampling returned 0 results, falling back to simple LIMIT query');
+
+					const fallbackParams: any[] = [];
+					let fallbackParamIndex = 1;
+					let fallbackQuery = `
+						SELECT
+							timestamp,
+							latitude,
+							longitude,
+							altitude_meters as altitude,
+							accuracy_meters as horizontal_accuracy,
+							speed_meters_per_second as speed,
+							course_degrees as course
+						FROM elt.location_point
+						WHERE 1=1
+					`;
+
+					if (startDate) {
+						fallbackQuery += ` AND DATE(timestamp) >= $${fallbackParamIndex}::date`;
+						fallbackParams.push(startDate);
+						fallbackParamIndex++;
+					}
+
+					if (endDate) {
+						fallbackQuery += ` AND DATE(timestamp) <= $${fallbackParamIndex}::date`;
+						fallbackParams.push(endDate);
+						fallbackParamIndex++;
+					}
+
+					fallbackQuery += ` ORDER BY timestamp DESC LIMIT $${fallbackParamIndex}`;
+					fallbackParams.push(Math.min(limit, 5000)); // Use 5000 for fallback
+
+					console.log('[queryLocationMap] Fallback query:', fallbackQuery);
+					result = await pool.query(fallbackQuery, fallbackParams);
+					console.log(`[queryLocationMap] Fallback returned ${result.rows.length} location points`);
+				}
+
+				console.log('[queryLocationMap] Query completed successfully');
+				console.log(`[queryLocationMap] Returned ${result.rows.length} location points`);
+				console.log('[queryLocationMap] First row sample:', result.rows[0]);
+
+				// Transform to MapVisualization format
+				const points = result.rows.map((row) => ({
+					latitude: row.latitude,
+					longitude: row.longitude,
+					timestamp: row.timestamp,
+					accuracy_meters: row.horizontal_accuracy,
+					speed_meters_per_second: row.speed
+				}));
+
+				// Calculate bounds
+				let bounds = null;
+				if (points.length > 0) {
+					const lats = points.map(p => p.latitude);
+					const lons = points.map(p => p.longitude);
+					bounds = {
+						minLat: Math.min(...lats),
+						maxLat: Math.max(...lats),
+						minLon: Math.min(...lons),
+						maxLon: Math.max(...lons)
+					};
+				}
+
+				// Get time range from actual data
+				const timeRange = {
+					startTime: points.length > 0 ? points[points.length - 1].timestamp : (startDate || ''),
+					endTime: points.length > 0 ? points[0].timestamp : (endDate || '')
 				};
+
+				// Wrap result in expected format for frontend MapVisualization component
+				const wrappedResult = {
+					success: true,
+					type: 'map_visualization',
+					data: {
+						points: points,
+						visits: [],
+						bounds: bounds,
+						metadata: {
+							startTime: timeRange.startTime,
+							endTime: timeRange.endTime,
+							pointCount: points.length,
+							visitCount: 0
+						}
+					}
+				};
+
+				const resultString = JSON.stringify(wrappedResult);
+				console.log('[queryLocationMap] Wrapped result created, length:', resultString.length);
+				console.log('[queryLocationMap] Point count:', result.rows.length);
+				console.log('[queryLocationMap] ========== RETURNING RESULT ==========');
+
+				return resultString;
+			} catch (error: any) {
+				console.error('[queryLocationMap] ========== ERROR CAUGHT ==========');
+				console.error('[queryLocationMap] Error type:', error.constructor.name);
+				console.error('[queryLocationMap] Error message:', error.message);
+				console.error('[queryLocationMap] Error stack:', error.stack);
+				throw new Error(`Location query failed: ${error.message}`);
 			}
 		}
 	});

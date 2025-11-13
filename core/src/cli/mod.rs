@@ -5,38 +5,15 @@ pub mod display;
 pub mod types;
 
 use crate::Ariata;
-use crate::storage::stream_writer::{StreamWriter, StreamWriterConfig};
-use crate::storage::encryption;
-use crate::error::Error;
+use crate::storage::stream_writer::StreamWriter;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use std::env;
 use types::{Cli, Commands};
 
 /// Run the CLI application
 pub async fn run(cli: Cli, ariata: Ariata) -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize StreamWriter for commands that need it
-    // Load master encryption key from environment
-    let master_key_hex = env::var("STREAM_ENCRYPTION_MASTER_KEY")
-        .map_err(|_| Error::Other(
-            "STREAM_ENCRYPTION_MASTER_KEY environment variable is required. Generate with: openssl rand -hex 32".into()
-        ))
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-
-    let master_key = encryption::parse_master_key_hex(&master_key_hex)
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-
-    let stream_writer_config = StreamWriterConfig {
-        max_buffer_records: 1000,
-        max_buffer_bytes: 10 * 1024 * 1024, // 10 MB
-        master_key,
-    };
-
-    let stream_writer = StreamWriter::new(
-        (*ariata.storage).clone(),
-        (*ariata.database).clone(),
-        stream_writer_config,
-    );
+    // Initialize StreamWriter (simple in-memory buffer)
+    let stream_writer = StreamWriter::new();
     let stream_writer_arc = Arc::new(Mutex::new(stream_writer));
 
     match cli.command {
