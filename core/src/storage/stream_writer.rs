@@ -1,75 +1,35 @@
-//! StreamWriter - Buffered writer for stream data to object storage
+//! StreamWriter - In-memory buffer for direct transform architecture
 //!
-//! This module provides a high-level abstraction for writing stream data to S3/MinIO
-//! with automatic batching, encryption, and metadata tracking.
-//!
-//! # Features
-//! - Automatic buffering (up to 1000 records or 10MB)
-//! - Per-source/stream/date encryption with SSE-C
-//! - JSONL format for efficient appending
-//! - Metadata tracking in stream_objects table
-//! - Automatic flushing on size/count thresholds
+//! Simplified writer that ONLY buffers records in memory.
+//! S3 archival is handled separately by async archive jobs.
 
 use std::collections::HashMap;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::database::Database;
-use crate::error::{Error, Result};
-use crate::storage::{Storage, EncryptionKey, encryption, models::StreamKeyBuilder};
-
-/// Configuration for stream writer
-#[derive(Clone)]
-pub struct StreamWriterConfig {
-    /// Maximum number of records to buffer before flushing
-    pub max_buffer_records: usize,
-
-    /// Maximum buffer size in bytes before flushing
-    pub max_buffer_bytes: usize,
-
-    /// Master encryption key (32 bytes, from STREAM_ENCRYPTION_MASTER_KEY env var)
-    pub master_key: [u8; 32],
-}
-
-impl Default for StreamWriterConfig {
-    fn default() -> Self {
-        Self {
-            max_buffer_records: 1000,
-            max_buffer_bytes: 10 * 1024 * 1024, // 10 MB
-            master_key: [0u8; 32], // Must be set from environment
-        }
-    }
-}
+use crate::error::Result;
 
 /// Buffer for a single stream
+///
+/// Note: source_id and stream_name are encoded in the HashMap key,
+/// so we don't need to store them redundantly here.
 struct StreamBuffer {
-    source_id: Uuid,
-    stream_name: String,
     records: Vec<Value>,
-    size_bytes: usize,
-    min_timestamp: Option<chrono::DateTime<Utc>>,
-    max_timestamp: Option<chrono::DateTime<Utc>>,
+    min_timestamp: Option<DateTime<Utc>>,
+    max_timestamp: Option<DateTime<Utc>>,
 }
 
 impl StreamBuffer {
-    fn new(source_id: Uuid, stream_name: String) -> Self {
+    fn new() -> Self {
         Self {
-            source_id,
-            stream_name,
             records: Vec::new(),
-            size_bytes: 0,
             min_timestamp: None,
             max_timestamp: None,
         }
     }
 
-    fn add_record(&mut self, record: Value, timestamp: Option<chrono::DateTime<Utc>>) -> Result<()> {
-        // Estimate size (serialized JSON + newline)
-        let json_str = serde_json::to_string(&record)
-            .map_err(|e| Error::Other(format!("Failed to serialize record: {}", e)))?;
-        self.size_bytes += json_str.len() + 1; // +1 for newline
-
+    fn add_record(&mut self, record: Value, timestamp: Option<DateTime<Utc>>) {
         // Update timestamp range
         if let Some(ts) = timestamp {
             self.min_timestamp = Some(match self.min_timestamp {
@@ -85,176 +45,72 @@ impl StreamBuffer {
         }
 
         self.records.push(record);
-        Ok(())
-    }
-
-    fn should_flush(&self, config: &StreamWriterConfig) -> bool {
-        self.records.len() >= config.max_buffer_records || self.size_bytes >= config.max_buffer_bytes
-    }
-
-    fn clear(&mut self) {
-        self.records.clear();
-        self.size_bytes = 0;
-        self.min_timestamp = None;
-        self.max_timestamp = None;
     }
 }
 
-/// High-level writer for stream data
+/// In-memory stream writer for direct transform architecture
 pub struct StreamWriter {
-    storage: Storage,
-    db: Database,
-    config: StreamWriterConfig,
     buffers: HashMap<String, StreamBuffer>,
 }
 
 impl StreamWriter {
     /// Create a new stream writer
-    pub fn new(storage: Storage, db: Database, config: StreamWriterConfig) -> Self {
+    pub fn new() -> Self {
         Self {
-            storage,
-            db,
-            config,
             buffers: HashMap::new(),
         }
     }
 
-    /// Write a single record to the stream
+    /// Write a record to in-memory buffer
     ///
-    /// Records are buffered in memory until flush threshold is reached.
-    ///
-    /// # Arguments
-    /// * `source_id` - UUID of the source (user/device)
-    /// * `stream_name` - Name of the stream (e.g., "healthkit", "location")
-    /// * `record` - JSON record to write
-    /// * `timestamp` - Optional timestamp for the record (used for metadata tracking)
-    pub async fn write_record(
+    /// Records accumulate in memory until extracted via `collect_records()`.
+    pub fn write_record(
         &mut self,
         source_id: Uuid,
         stream_name: &str,
         record: Value,
-        timestamp: Option<chrono::DateTime<Utc>>,
+        timestamp: Option<DateTime<Utc>>,
     ) -> Result<()> {
         let buffer_key = format!("{}:{}", source_id, stream_name);
 
-        // Get or create buffer
         let buffer = self.buffers
-            .entry(buffer_key.clone())
-            .or_insert_with(|| StreamBuffer::new(source_id, stream_name.to_string()));
+            .entry(buffer_key)
+            .or_insert_with(StreamBuffer::new);
 
-        // Add record to buffer
-        buffer.add_record(record, timestamp)?;
-
-        // Flush if threshold reached
-        if buffer.should_flush(&self.config) {
-            self.flush_buffer(&buffer_key).await?;
-        }
-
+        buffer.add_record(record, timestamp);
         Ok(())
     }
 
-    /// Flush a specific buffer to storage
-    async fn flush_buffer(&mut self, buffer_key: &str) -> Result<()> {
-        let buffer = match self.buffers.get_mut(buffer_key) {
-            Some(b) if !b.records.is_empty() => b,
-            _ => return Ok(()), // Nothing to flush
-        };
-
-        let source_id = buffer.source_id;
-        let stream_name = buffer.stream_name.clone();
-        let records = std::mem::take(&mut buffer.records);
-        let min_timestamp = buffer.min_timestamp;
-        let max_timestamp = buffer.max_timestamp;
-
-        // Get current date (for key partitioning and encryption)
-        let date = Utc::now().date_naive();
-
-        // Generate S3 key
-        let key_builder = StreamKeyBuilder::new(source_id, &stream_name, date);
-        let s3_key = key_builder.build();
-
-        // Derive encryption key
-        let encryption_key_bytes = encryption::derive_stream_key(
-            &self.config.master_key,
-            source_id,
-            &stream_name,
-            date,
-        )?;
-        let encryption_key = EncryptionKey {
-            key_base64: encryption::encode_key_base64(&encryption_key_bytes),
-        };
-
-        // Upload to S3 as JSONL with encryption
-        self.storage.upload_jsonl_encrypted(&s3_key, &records, &encryption_key).await?;
-
-        // Calculate actual size (after serialization)
-        let actual_size = records.iter()
-            .map(|r| serde_json::to_string(r).map(|s| s.len() + 1).unwrap_or(0))
-            .sum::<usize>() as i64;
-
-        // Record metadata in database
-        sqlx::query(
-            "INSERT INTO elt.stream_objects
-             (source_id, stream_name, s3_key, record_count, size_bytes, min_timestamp, max_timestamp)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)"
-        )
-        .bind(source_id)
-        .bind(&stream_name)
-        .bind(&s3_key)
-        .bind(records.len() as i32)
-        .bind(actual_size)
-        .bind(min_timestamp)
-        .bind(max_timestamp)
-        .execute(self.db.pool())
-        .await
-        .map_err(|e| Error::Database(e.to_string()))?;
-
-        // Clear buffer
-        buffer.clear();
-
-        tracing::info!(
-            source_id = %source_id,
-            stream_name = %stream_name,
-            s3_key = %s3_key,
-            record_count = records.len(),
-            size_bytes = actual_size,
-            "Flushed stream buffer to S3"
-        );
-
-        Ok(())
-    }
-
-    /// Flush all buffers to storage
+    /// Collect all buffered records for a stream and clear the buffer
     ///
-    /// Call this before shutting down or when you want to ensure all data is persisted.
-    pub async fn flush_all(&mut self) -> Result<()> {
-        let buffer_keys: Vec<String> = self.buffers.keys().cloned().collect();
+    /// Returns: (records, min_timestamp, max_timestamp)
+    pub fn collect_records(
+        &mut self,
+        source_id: Uuid,
+        stream_name: &str,
+    ) -> Option<(Vec<Value>, Option<DateTime<Utc>>, Option<DateTime<Utc>>)> {
+        let buffer_key = format!("{}:{}", source_id, stream_name);
 
-        for key in buffer_keys {
-            self.flush_buffer(&key).await?;
-        }
-
-        Ok(())
+        self.buffers.remove(&buffer_key).and_then(|buffer| {
+            if buffer.records.is_empty() {
+                None
+            } else {
+                Some((buffer.records, buffer.min_timestamp, buffer.max_timestamp))
+            }
+        })
     }
 
-    /// Get current buffer statistics (for monitoring)
-    pub fn buffer_stats(&self) -> Vec<BufferStats> {
-        self.buffers.values().map(|buffer| BufferStats {
-            source_id: buffer.source_id,
-            stream_name: buffer.stream_name.clone(),
-            record_count: buffer.records.len(),
-            size_bytes: buffer.size_bytes,
-        }).collect()
+    /// Get record count for a stream (for monitoring)
+    pub fn buffer_count(&self, source_id: Uuid, stream_name: &str) -> usize {
+        let buffer_key = format!("{}:{}", source_id, stream_name);
+        self.buffers.get(&buffer_key).map_or(0, |b| b.records.len())
     }
 }
 
-/// Buffer statistics for monitoring
-#[derive(Debug, Clone)]
-pub struct BufferStats {
-    pub source_id: Uuid,
-    pub stream_name: String,
-    pub record_count: usize,
-    pub size_bytes: usize,
+impl Default for StreamWriter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -263,51 +119,53 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_stream_buffer() {
+    fn test_buffer_and_collect() {
+        let mut writer = StreamWriter::new();
         let source_id = Uuid::new_v4();
-        let mut buffer = StreamBuffer::new(source_id, "test_stream".to_string());
+        let stream_name = "test_stream";
 
-        let record1 = json!({"value": 100, "timestamp": "2025-01-15T10:00:00Z"});
-        let ts1 = chrono::DateTime::parse_from_rfc3339("2025-01-15T10:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        // Write records
+        writer.write_record(
+            source_id,
+            stream_name,
+            json!({"value": 1}),
+            None,
+        ).unwrap();
 
-        buffer.add_record(record1, Some(ts1)).unwrap();
+        writer.write_record(
+            source_id,
+            stream_name,
+            json!({"value": 2}),
+            None,
+        ).unwrap();
 
-        assert_eq!(buffer.records.len(), 1);
-        assert!(buffer.size_bytes > 0);
-        assert_eq!(buffer.min_timestamp, Some(ts1));
-        assert_eq!(buffer.max_timestamp, Some(ts1));
+        assert_eq!(writer.buffer_count(source_id, stream_name), 2);
 
-        let record2 = json!({"value": 200, "timestamp": "2025-01-15T11:00:00Z"});
-        let ts2 = chrono::DateTime::parse_from_rfc3339("2025-01-15T11:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        // Collect records
+        let result = writer.collect_records(source_id, stream_name);
+        assert!(result.is_some());
 
-        buffer.add_record(record2, Some(ts2)).unwrap();
+        let (records, _, _) = result.unwrap();
+        assert_eq!(records.len(), 2);
 
-        assert_eq!(buffer.records.len(), 2);
-        assert_eq!(buffer.min_timestamp, Some(ts1));
-        assert_eq!(buffer.max_timestamp, Some(ts2));
+        // Buffer should be empty after collection
+        assert_eq!(writer.buffer_count(source_id, stream_name), 0);
     }
 
     #[test]
-    fn test_should_flush() {
+    fn test_timestamp_tracking() {
+        let mut writer = StreamWriter::new();
         let source_id = Uuid::new_v4();
-        let mut buffer = StreamBuffer::new(source_id, "test_stream".to_string());
+        let stream_name = "test_stream";
 
-        let config = StreamWriterConfig {
-            max_buffer_records: 2,
-            max_buffer_bytes: 1000,
-            master_key: [0u8; 32],
-        };
+        let ts1 = Utc::now();
+        let ts2 = ts1 + chrono::Duration::hours(1);
 
-        assert!(!buffer.should_flush(&config));
+        writer.write_record(source_id, stream_name, json!({"value": 1}), Some(ts2)).unwrap();
+        writer.write_record(source_id, stream_name, json!({"value": 2}), Some(ts1)).unwrap();
 
-        buffer.add_record(json!({"value": 1}), None).unwrap();
-        assert!(!buffer.should_flush(&config));
-
-        buffer.add_record(json!({"value": 2}), None).unwrap();
-        assert!(buffer.should_flush(&config)); // Reached max_buffer_records
+        let result = writer.collect_records(source_id, stream_name).unwrap();
+        assert_eq!(result.1, Some(ts1)); // min
+        assert_eq!(result.2, Some(ts2)); // max
     }
 }

@@ -10,10 +10,7 @@
 		getJobStatus,
 		type Job,
 	} from "$lib/api/client";
-	import {
-		getSourceTypeIcon,
-		getSourceTypeColor,
-	} from "$lib/mock-data/connections";
+
 	import "iconify-icon";
 	import type { PageData } from "./$types";
 	import { onDestroy } from "svelte";
@@ -26,11 +23,15 @@
 	let enablingStreams = $state(new Set<string>());
 	let pollingIntervals = new Map<string, number>(); // job_id -> interval_id
 
-	// Determine if this source is OAuth-based
-	const isOAuthSource = $derived(() => {
+	// Determine if this source should show sync button (OAuth2 and None, but not Device)
+	const shouldShowSyncButton = $derived(() => {
 		if (!data.catalog || !data.source) return false;
-		const catalogSource = data.catalog.find((c: any) => c.name === data.source.type);
-		return catalogSource?.auth_type === 'oauth2';
+		const catalogSource = data.catalog.find(
+			(c: any) => c.name === data.source.type,
+		);
+		const authType = catalogSource?.auth_type;
+		// Show sync button for OAuth2 and None (ariata), but not for Device
+		return authType === "oauth2" || authType === "none";
 	});
 
 	function formatRelativeTime(timestamp: string | null): string {
@@ -75,7 +76,7 @@
 		if (isDeleting) return;
 
 		const confirmed = confirm(
-			`Are you sure you want to delete "${data.source.name}"? This will permanently delete the source, all its streams, and all synced data. This action cannot be undone.`
+			`Are you sure you want to delete "${data.source.name}"? This will permanently delete the source, all its streams, and all synced data. This action cannot be undone.`,
 		);
 		if (!confirmed) return;
 
@@ -105,7 +106,9 @@
 			startPollingJob(response.job_id, streamName);
 		} catch (error) {
 			console.error("Failed to start sync:", error);
-			alert(`Failed to start sync: ${error instanceof Error ? error.message : 'Unknown error'}`);
+			alert(
+				`Failed to start sync: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
 		}
 	}
 
@@ -116,30 +119,43 @@
 				const job = await getJobStatus(jobId);
 
 				// Check if job is complete
-				if (job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled') {
+				if (
+					job.status === "succeeded" ||
+					job.status === "failed" ||
+					job.status === "cancelled"
+				) {
 					// Stop polling
 					stopPollingJob(jobId, streamName);
 
 					// Update stream data
-					const streamIndex = data.streams.findIndex((s: any) => s.stream_name === streamName);
-					if (streamIndex !== -1 && job.status === 'succeeded') {
+					const streamIndex = data.streams.findIndex(
+						(s: any) => s.stream_name === streamName,
+					);
+					if (streamIndex !== -1 && job.status === "succeeded") {
 						// Refresh the page data to get updated last_sync_at
-						data.streams[streamIndex].last_sync_at = job.completed_at || new Date().toISOString();
+						data.streams[streamIndex].last_sync_at =
+							job.completed_at || new Date().toISOString();
 					}
 
 					// Show result
-					if (job.status === 'succeeded') {
-						alert(`Sync completed! Processed ${job.records_processed} records.`);
-					} else if (job.status === 'failed') {
-						alert(`Sync failed: ${job.error_message || 'Unknown error'}`);
-					} else if (job.status === 'cancelled') {
-						alert('Sync was cancelled.');
+					if (job.status === "succeeded") {
+						alert(
+							`Sync completed! Processed ${job.records_processed} records.`,
+						);
+					} else if (job.status === "failed") {
+						alert(
+							`Sync failed: ${job.error_message || "Unknown error"}`,
+						);
+					} else if (job.status === "cancelled") {
+						alert("Sync was cancelled.");
 					}
 				}
 			} catch (error) {
-				console.error('Failed to poll job status:', error);
+				console.error("Failed to poll job status:", error);
 				stopPollingJob(jobId, streamName);
-				alert(`Error checking sync status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+				alert(
+					`Error checking sync status: ${error instanceof Error ? error.message : "Unknown error"}`,
+				);
 			}
 		}, 2000) as any;
 
@@ -177,15 +193,19 @@
 			await enableStream(data.source.id, streamName);
 
 			// Update the stream's is_enabled in the data
-			const streamIndex = data.streams.findIndex((s: any) => s.stream_name === streamName);
+			const streamIndex = data.streams.findIndex(
+				(s: any) => s.stream_name === streamName,
+			);
 			if (streamIndex !== -1) {
 				data.streams[streamIndex].is_enabled = true;
 			}
 
-			alert('Stream enabled successfully!');
+			alert("Stream enabled successfully!");
 		} catch (error) {
 			console.error("Failed to enable stream:", error);
-			alert(`Failed to enable stream: ${error instanceof Error ? error.message : 'Unknown error'}`);
+			alert(
+				`Failed to enable stream: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
 		} finally {
 			const newSet = new Set(enablingStreams);
 			newSet.delete(streamName);
@@ -197,8 +217,12 @@
 {#if !data.source}
 	<Page>
 		<div class="text-center py-12">
-			<h1 class="text-2xl font-serif font-medium text-neutral-900 mb-2">Source not found</h1>
-			<p class="text-neutral-600 mb-4">The source you're looking for doesn't exist.</p>
+			<h1 class="text-2xl font-serif font-medium text-neutral-900 mb-2">
+				Source not found
+			</h1>
+			<p class="text-neutral-600 mb-4">
+				The source you're looking for doesn't exist.
+			</p>
 			<a
 				href="/data/sources"
 				class="inline-flex items-center gap-2 text-neutral-900 hover:underline"
@@ -215,13 +239,17 @@
 			<div class="mb-8">
 				<div class="flex items-start justify-between">
 					<div class="flex items-center gap-4">
-						<iconify-icon
+						<!-- <iconify-icon
 							icon={getSourceTypeIcon(data.source.type)}
-							class="text-5xl {getSourceTypeColor(data.source.type)}"
-						></iconify-icon>
+							class="text-5xl {getSourceTypeColor(
+								data.source.type,
+							)}"
+						></iconify-icon> -->
 						<div>
 							<div class="flex items-center gap-3 mb-1">
-								<h1 class="text-3xl font-serif font-medium text-neutral-900">
+								<h1
+									class="text-3xl font-serif font-medium text-neutral-900"
+								>
 									{data.source.name}
 								</h1>
 								{#if data.source.is_active}
@@ -238,7 +266,9 @@
 									</span>
 								{/if}
 							</div>
-							<p class="text-neutral-600 capitalize">{data.source.type} Source</p>
+							<p class="text-neutral-600 capitalize">
+								{data.source.type} Source
+							</p>
 						</div>
 					</div>
 
@@ -250,9 +280,15 @@
 							disabled={isPausing}
 						>
 							<iconify-icon
-								icon={data.source.is_active ? "ri:pause-line" : "ri:play-line"}
+								icon={data.source.is_active
+									? "ri:pause-line"
+									: "ri:play-line"}
 							></iconify-icon>
-							<span>{data.source.is_active ? "Pause" : "Resume"}</span>
+							<span
+								>{data.source.is_active
+									? "Pause"
+									: "Resume"}</span
+							>
 						</Button>
 						<Button
 							variant="danger"
@@ -260,7 +296,8 @@
 							onclick={handleDelete}
 							disabled={isDeleting}
 						>
-							<iconify-icon icon="ri:delete-bin-line"></iconify-icon>
+							<iconify-icon icon="ri:delete-bin-line"
+							></iconify-icon>
 							<span>Delete</span>
 						</Button>
 					</div>
@@ -269,30 +306,57 @@
 
 			<!-- Key Attributes -->
 			<div class="mb-8 text-neutral-600 space-y-1">
-				<p>Created {formatRelativeTime(data.source.created_at).toLowerCase()}</p>
-				<p>Last synced {formatRelativeTime(data.source.last_sync_at).toLowerCase()}</p>
-				<p>{data.source.enabled_streams_count} of {data.source.total_streams_count} streams enabled</p>
+				<p>
+					Created {formatRelativeTime(
+						data.source.created_at,
+					).toLowerCase()}
+				</p>
+				<p>
+					Last synced {formatRelativeTime(
+						data.source.last_sync_at,
+					).toLowerCase()}
+				</p>
+				<p>
+					{data.source.enabled_streams_count} of {data.source
+						.total_streams_count} streams enabled
+				</p>
 			</div>
 
 			<!-- Streams Section -->
 			<div class="mb-8">
-				<h2 class="text-xl font-serif font-medium text-neutral-900 mb-4">Streams</h2>
+				<h2
+					class="text-xl font-serif font-medium text-neutral-900 mb-4"
+				>
+					Streams
+				</h2>
 
-				<div class="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+				<div
+					class="bg-white border border-neutral-200 rounded-lg overflow-hidden"
+				>
 					<table class="w-full">
-						<thead class="bg-neutral-50 border-b border-neutral-200">
+						<thead
+							class="bg-neutral-50 border-b border-neutral-200"
+						>
 							<tr>
-								<th class="px-6 py-3 text-left text-xs font-medium text-neutral-600 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-neutral-600 uppercase tracking-wider"
+								>
 									Stream
 								</th>
-								<th class="px-6 py-3 text-left text-xs font-medium text-neutral-600 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-neutral-600 uppercase tracking-wider"
+								>
 									Status
 								</th>
-								<th class="px-6 py-3 text-left text-xs font-medium text-neutral-600 uppercase tracking-wider">
+								<th
+									class="px-6 py-3 text-left text-xs font-medium text-neutral-600 uppercase tracking-wider"
+								>
 									Last Sync
 								</th>
-								{#if isOAuthSource()}
-									<th class="px-6 py-3 text-right text-xs font-medium text-neutral-600 uppercase tracking-wider">
+								{#if shouldShowSyncButton()}
+									<th
+										class="px-6 py-3 text-right text-xs font-medium text-neutral-600 uppercase tracking-wider"
+									>
 										Actions
 									</th>
 								{/if}
@@ -300,56 +364,92 @@
 						</thead>
 						<tbody class="divide-y divide-neutral-200">
 							{#each data.streams as stream}
-								<tr class="hover:bg-neutral-50 transition-colors">
+								<tr
+									class="hover:bg-neutral-50 transition-colors"
+								>
 									<td class="px-6 py-4">
 										<div>
-											<div class="font-medium text-neutral-900">{stream.display_name}</div>
-											<div class="text-sm text-neutral-500">{stream.description}</div>
+											<div
+												class="font-medium text-neutral-900"
+											>
+												{stream.display_name}
+											</div>
+											<div
+												class="text-sm text-neutral-500"
+											>
+												{stream.description}
+											</div>
 										</div>
 									</td>
 									<td class="px-6 py-4">
 										{#if stream.is_enabled}
-											<span class="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">
+											<span
+												class="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full"
+											>
 												Enabled
 											</span>
 										{:else}
-											<span class="inline-block px-2 py-1 text-xs font-medium bg-neutral-100 text-neutral-500 rounded-full">
+											<span
+												class="inline-block px-2 py-1 text-xs font-medium bg-neutral-100 text-neutral-500 rounded-full"
+											>
 												Disabled
 											</span>
 										{/if}
 									</td>
 									<td class="px-6 py-4">
 										<span class="text-sm text-neutral-900">
-											{formatRelativeTime(stream.last_sync_at)}
+											{formatRelativeTime(
+												stream.last_sync_at,
+											)}
 										</span>
 									</td>
-									{#if isOAuthSource()}
+									{#if shouldShowSyncButton()}
 										<td class="px-6 py-4 text-right">
 											{#if stream.is_enabled}
 												<button
-													onclick={() => handleSyncStream(stream.stream_name)}
-													disabled={syncingStreams.has(stream.stream_name)}
+													onclick={() =>
+														handleSyncStream(
+															stream.stream_name,
+														)}
+													disabled={syncingStreams.has(
+														stream.stream_name,
+													)}
 													class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-neutral-700 bg-white border border-neutral-300 rounded-md hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 												>
 													{#if syncingStreams.has(stream.stream_name)}
-														<iconify-icon icon="ri:loader-4-line" class="animate-spin"></iconify-icon>
+														<iconify-icon
+															icon="ri:loader-4-line"
+															class="animate-spin"
+														></iconify-icon>
 														<span>Syncing...</span>
 													{:else}
-														<iconify-icon icon="ri:refresh-line"></iconify-icon>
+														<iconify-icon
+															icon="ri:refresh-line"
+														></iconify-icon>
 														<span>Sync Now</span>
 													{/if}
 												</button>
 											{:else}
 												<button
-													onclick={() => handleEnableStream(stream.stream_name)}
-													disabled={enablingStreams.has(stream.stream_name)}
+													onclick={() =>
+														handleEnableStream(
+															stream.stream_name,
+														)}
+													disabled={enablingStreams.has(
+														stream.stream_name,
+													)}
 													class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-neutral-700 bg-white border border-neutral-300 rounded-md hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 												>
 													{#if enablingStreams.has(stream.stream_name)}
-														<iconify-icon icon="ri:loader-4-line" class="animate-spin"></iconify-icon>
+														<iconify-icon
+															icon="ri:loader-4-line"
+															class="animate-spin"
+														></iconify-icon>
 														<span>Enabling...</span>
 													{:else}
-														<iconify-icon icon="ri:play-line"></iconify-icon>
+														<iconify-icon
+															icon="ri:play-line"
+														></iconify-icon>
 														<span>Enable</span>
 													{/if}
 												</button>
@@ -362,7 +462,6 @@
 					</table>
 				</div>
 			</div>
-
 		</div>
 	</Page>
 {/if}

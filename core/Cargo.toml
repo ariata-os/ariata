@@ -9,6 +9,7 @@ repository = "https://github.com/ariata/ariata"
 keywords = ["etl", "data-pipeline", "personal-data", "timeseries"]
 categories = ["database", "data-structures"]
 build = "build.rs"
+default-run = "ariata"
 
 [lib]
 name = "ariata"
@@ -17,6 +18,14 @@ path = "src/lib.rs"
 [[bin]]
 name = "ariata"
 path = "src/main.rs"
+
+[[bin]]
+name = "ariata-seed"
+path = "src/bin/seed.rs"
+
+[[bin]]
+name = "ariata-mcp-server"
+path = "src/bin/mcp-server.rs"
 
 [dependencies]
 # CLI
@@ -28,7 +37,7 @@ tokio = { version = "1.40", features = ["full"] }
 async-trait = "0.1"
 
 # Database
-sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "migrate", "chrono", "json", "macros", "uuid"] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "migrate", "chrono", "json", "macros", "uuid", "rust_decimal"] }
 
 # Storage
 aws-sdk-s3 = "1.49"
@@ -37,6 +46,7 @@ aws-config = "1.5"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+csv = "1.3"
 
 # Error handling
 anyhow = "1.0"
@@ -69,6 +79,7 @@ tokio-cron-scheduler = "0.13"
 ring = "0.17"
 base64 = "0.22"
 hex = "0.4"
+md5 = "0.7"
 
 # HMAC signing for OAuth state tokens
 hmac = "0.12"
@@ -76,6 +87,7 @@ sha2 = "0.10"
 
 # Random generation (for OAuth state)
 rand = "0.8"
+fake = { version = "2.9", features = ["derive", "chrono", "uuid"] }
 
 # URL encoding and validation
 urlencoding = "2.1"
@@ -83,6 +95,10 @@ url = "2.5"
 
 # Regular expressions
 regex = "1.0"
+
+# MCP Server
+rmcp = { version = "0.8.5", features = ["server", "transport-io", "transport-streamable-http-server"] }
+schemars = "1.0"
 
 # Interactive CLI setup
 dialoguer = "0.11"

@@ -5,6 +5,8 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use uuid::Uuid;
 
 /// Sync strategies for data extraction
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,6 +73,18 @@ pub struct SyncResult {
 
     /// Timestamp when sync completed
     pub completed_at: DateTime<Utc>,
+
+    /// In-memory records for direct transform (hot path)
+    /// Optional for backward compatibility. When present, transforms can use
+    /// these records directly without reading from S3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub records: Option<Vec<Value>>,
+
+    /// Archive job ID for tracking async S3 archival
+    /// Optional for backward compatibility. When present, indicates that
+    /// S3 archival is happening asynchronously in the background.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archive_job_id: Option<Uuid>,
 }
 
 impl SyncResult {
@@ -83,6 +97,8 @@ impl SyncResult {
             next_cursor: None,
             started_at,
             completed_at: Utc::now(),
+            records: None,
+            archive_job_id: None,
         }
     }
 

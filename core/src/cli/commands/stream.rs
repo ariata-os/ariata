@@ -238,35 +238,12 @@ pub async fn handle_stream_command(
             source_id,
             stream_name,
         } => {
-            let source_id_uuid = source_id.parse()?;
-
-            println!("Creating transform job for: {} / {}...", source_id_uuid, stream_name);
-
-            // Get transform route from centralized registry
-            let route = match crate::transforms::get_transform_route(&stream_name) {
-                Ok(route) => route,
-                Err(e) => {
-                    eprintln!("❌ {}", e);
-                    eprintln!("   Valid streams: {}", crate::transforms::list_transform_streams().join(", "));
-                    return Err("Invalid stream name".into());
-                }
-            };
-
-            let response = crate::api::jobs::trigger_transform_job(
-                ariata.database.pool(),
-                &*ariata.storage,
-                stream_writer.clone(),
-                source_id_uuid,
-                route.source_table,
-                route.target_tables,
-            )
-            .await?;
-
-            println!("\n✅ Transform job created!");
-            println!("  Job ID: {}", response.job_id);
-            println!("  Status: {}", response.status);
-            println!("  Started at: {}", response.started_at);
-            println!("\nNote: Job is running in the background. Use 'ariata jobs status {}' to monitor progress.", response.job_id);
+            // Manual transform triggers are deprecated in the direct transform architecture
+            eprintln!("❌ Manual transform triggers are not supported.");
+            eprintln!("   Transforms are automatically triggered after sync jobs complete.");
+            eprintln!("   To transform data for '{}', run a sync job instead:", stream_name);
+            eprintln!("   ariata sync {}", source_id);
+            return Err("Manual transforms not supported".into());
         }
     }
 

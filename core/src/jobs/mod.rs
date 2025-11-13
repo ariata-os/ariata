@@ -3,15 +3,21 @@
 //! Provides a unified job system for tracking sync, transform, and other async operations.
 //! Jobs are tracked in the database and can be polled for status updates.
 
+pub mod archive_job;
 pub mod executor;
 pub mod models;
+pub mod prudent_context_job;
 pub mod sync_job;
 pub mod transform_context;
 pub mod transform_job;
+pub mod transform_trigger;
 
+pub use archive_job::{ArchiveContext, create_archive_job, execute_archive_job, fetch_pending_archive_jobs, spawn_archive_job_async};
 pub use executor::JobExecutor;
 pub use models::{CreateJobRequest, Job, JobStatus, JobType, SyncJobMetadata};
+pub use prudent_context_job::PrudentContextJob;
 pub use transform_context::{ApiKeys, TransformContext};
+pub use transform_trigger::create_transform_job_for_stream;
 
 use crate::error::{Error, Result};
 use sqlx::PgPool;
@@ -319,4 +325,78 @@ pub async fn get_child_jobs(db: &PgPool, parent_job_id: Uuid) -> Result<Vec<Job>
     }
 
     Ok(jobs)
+}
+
+/// Wait for a job to complete (polling-based)
+///
+/// This function polls the job status until it reaches a terminal state.
+/// Useful for seeding scripts and other scenarios where you need to wait
+/// for a background job to finish.
+///
+/// # Arguments
+///
+/// * `db` - Database connection
+/// * `job_id` - ID of the job to wait for
+/// * `timeout_seconds` - Maximum time to wait (0 = no timeout)
+/// * `poll_interval_ms` - How often to check status (default: 500ms)
+///
+/// # Returns
+///
+/// The completed job, or an error if timeout is reached or job fails
+pub async fn wait_for_job_completion(
+    db: &PgPool,
+    job_id: Uuid,
+    timeout_seconds: u64,
+    poll_interval_ms: u64,
+) -> Result<Job> {
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(timeout_seconds);
+    let poll_interval = std::time::Duration::from_millis(poll_interval_ms);
+
+    loop {
+        // Fetch current job status
+        let job = get_job(db, job_id).await?;
+
+        // Check if job reached terminal state
+        match job.status {
+            JobStatus::Succeeded => {
+                tracing::info!(
+                    job_id = %job_id,
+                    duration_ms = start.elapsed().as_millis(),
+                    "Job completed successfully"
+                );
+                return Ok(job);
+            }
+            JobStatus::Failed => {
+                let error_msg = job.error_message.clone().unwrap_or_else(|| "Unknown error".to_string());
+                tracing::error!(
+                    job_id = %job_id,
+                    error = %error_msg,
+                    "Job failed"
+                );
+                return Err(Error::Other(format!("Job failed: {}", error_msg)));
+            }
+            JobStatus::Cancelled => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    "Job was cancelled"
+                );
+                return Err(Error::Other("Job was cancelled".to_string()));
+            }
+            JobStatus::Pending | JobStatus::Running => {
+                // Job still in progress - continue polling
+            }
+        }
+
+        // Check timeout
+        if timeout_seconds > 0 && start.elapsed() > timeout {
+            return Err(Error::Other(format!(
+                "Job timed out after {} seconds (status: {})",
+                timeout_seconds, job.status
+            )));
+        }
+
+        // Wait before next poll
+        tokio::time::sleep(poll_interval).await;
+    }
 }

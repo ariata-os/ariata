@@ -69,7 +69,7 @@ pub async fn process(
             "location",
             record.clone(),
             Some(timestamp_dt),
-        ).await?;
+        )?;
     }
 
     tracing::debug!("Wrote location record to object storage for device {}", device_id);

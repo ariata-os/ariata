@@ -244,7 +244,7 @@ fn init_registry() -> Registry {
     let mut registry = Registry::new();
 
     // Register internal sources
-    registry.register(crate::sources::ariata_app::registry::AriataAppSource::descriptor());
+    registry.register(crate::sources::ariata::registry::AriataSource::descriptor());
 
     // Register OAuth sources
     registry.register(crate::sources::google::registry::GoogleSource::descriptor());

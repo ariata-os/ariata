@@ -138,6 +138,8 @@ impl GoogleGmailStream {
             next_cursor,
             started_at,
             completed_at,
+            records: None, // Gmail uses database, not direct transform
+            archive_job_id: None,
         })
     }
 
@@ -526,7 +528,7 @@ impl GoogleGmailStream {
                 "gmail",
                 record,
                 Some(date),
-            ).await?;
+            )?;
         }
 
         tracing::debug!(message_id = %message.id, "Wrote Gmail message to object storage");

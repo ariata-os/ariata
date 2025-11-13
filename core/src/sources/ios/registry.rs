@@ -25,7 +25,7 @@ impl SourceRegistry for IosSource {
                     .config_example(healthkit_config_example())
                     .supports_incremental(false)
                     .supports_full_refresh(false)  // Push-based, not pull
-                    .default_cron_schedule("*/5 * * * *")  // Every 5 minutes (device batches all streams)
+                    .default_cron_schedule("0 */5 * * * *")  // Every 5 minutes (6-field: sec min hour day month dow)
                     .build(),
 
                 // Location stream
@@ -37,7 +37,7 @@ impl SourceRegistry for IosSource {
                     .config_example(location_config_example())
                     .supports_incremental(false)
                     .supports_full_refresh(false)  // Push-based
-                    .default_cron_schedule("*/5 * * * *")  // Every 5 minutes (device batches all streams)
+                    .default_cron_schedule("0 */5 * * * *")  // Every 5 minutes (6-field: sec min hour day month dow)
                     .build(),
 
                 // Microphone stream
@@ -49,7 +49,7 @@ impl SourceRegistry for IosSource {
                     .config_example(microphone_config_example())
                     .supports_incremental(false)
                     .supports_full_refresh(false)  // Push-based
-                    .default_cron_schedule("*/5 * * * *")  // Every 5 minutes (device batches all streams)
+                    .default_cron_schedule("0 */5 * * * *")  // Every 5 minutes (6-field: sec min hour day month dow)
                     .build(),
             ],
         }

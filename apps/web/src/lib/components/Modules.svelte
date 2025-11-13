@@ -87,7 +87,7 @@
     }
 </script>
 
-<div class="flex h-full w-20 flex-col justify-between bg-neutral-100">
+<div class="flex h-full w-20 flex-col justify-between bg-paper-dark">
     <div>
         <!-- Ariata Animated Logo -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -102,7 +102,7 @@
                 <div class="relative aspect-square h-[18px] w-[18px]">
                     <!-- Dot 1 -->
                     <div
-                        class="absolute h-[6px] w-[6px] rounded-full bg-neutral-700 group-hover:bg-neutral-900 transition-all duration-200 ease-in-out"
+                        class="absolute h-[6px] w-[6px] rounded-full bg-stone-600 group-hover:bg-navy transition-all duration-200 ease-in-out"
                         style="transform: translate({getDotAnimation(
                             1,
                             isSideNavOpen,
@@ -124,7 +124,7 @@
 
                     <!-- Dot 2 -->
                     <div
-                        class="absolute h-[6px] w-[6px] rounded-full bg-neutral-700 group-hover:bg-neutral-900 transition-all duration-200 ease-in-out"
+                        class="absolute h-[6px] w-[6px] rounded-full bg-stone-600 group-hover:bg-navy transition-all duration-200 ease-in-out"
                         style="transform: translate({getDotAnimation(
                             2,
                             isSideNavOpen,
@@ -146,7 +146,7 @@
 
                     <!-- Dot 3 -->
                     <div
-                        class="absolute h-[6px] w-[6px] rounded-full bg-neutral-700 group-hover:bg-neutral-900 transition-all duration-200 ease-in-out"
+                        class="absolute h-[6px] w-[6px] rounded-full bg-stone-600 group-hover:bg-navy transition-all duration-200 ease-in-out"
                         style="transform: translate({getDotAnimation(
                             3,
                             isSideNavOpen,
@@ -185,8 +185,8 @@
             >
                 <div
                     class="flex aspect-square w-full flex-col items-center justify-center rounded-xl transition-colors"
-                    class:bg-neutral-200={activeModule === module.id}
-                    class:hover:bg-neutral-200={activeModule !== module.id}
+                    class:bg-paper-dark={activeModule === module.id}
+                    class:hover:bg-paper-dark={activeModule !== module.id}
                 >
                     <div class="mb-1.5 flex size-6 items-center justify-center">
                         <iconify-icon
@@ -194,11 +194,11 @@
                             module.iconFilled
                                 ? module.iconFilled
                                 : module.icon}
-                            class="text-lg text-neutral-800 group-hover:text-neutral-800"
+                            class="text-lg text-stone-700 group-hover:text-navy"
                         ></iconify-icon>
                     </div>
                     <span
-                        class="text-xs whitespace-nowrap font-medium text-neutral-500 group-hover:text-neutral-900"
+                        class="text-xs whitespace-nowrap font-medium text-stone-600 group-hover:text-navy"
                     >
                         {module.name}
                     </span>

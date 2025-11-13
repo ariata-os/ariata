@@ -17,11 +17,8 @@ export const load: PageLoad = async ({ fetch }) => {
 		const allSources = await sourcesRes.json();
 		const catalog = await catalogRes.json();
 
-		// Filter out internal sources (like ariata-app) from user-facing UI
-		const sources = allSources.filter((s: any) => !s.is_internal);
-
 		return {
-			sources,
+			sources: allSources,
 			catalog
 		};
 	} catch (error) {

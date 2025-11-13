@@ -1,0 +1,84 @@
+message_id,thread_id,subject,snippet,body_plain,body_html,timestamp,from_address,from_name,to_addresses,to_names,cc_addresses,cc_names,direction,labels,is_read,is_starred,has_attachments,attachment_count,thread_position,thread_message_count,source_stream_id,source_table,source_provider
+msg_rome_001,thread_groq_001,Ongoing resources for your Groq journey!,"Groq sent a follow-up email to provide resources like their developer newsletter and community links...","Hi Adam,
+
+Thank you for generating your API key with Groq last week! We're excited to have you building with us.
+
+To help you on your journey, here are some valuable resources:
+
+📰 Developer Newsletter - Stay updated with the latest features and best practices
+👥 Community Discord - Connect with other developers and our team
+📚 Documentation - Comprehensive guides and API references
+💡 Example Projects - Get inspired by what others are building
+
+We can't wait to see what you create!
+
+Best regards,
+The Groq Team","<html><body><p>Hi Adam,</p><p>Thank you for generating your API key with Groq last week! We're excited to have you building with us.</p><p>To help you on your journey, here are some valuable resources:</p><ul><li>📰 Developer Newsletter</li><li>👥 Community Discord</li><li>📚 Documentation</li><li>💡 Example Projects</li></ul><p>We can't wait to see what you create!</p><p>Best regards,<br/>The Groq Team</p></body></html>",2025-11-11T09:09:00+01:00,hello@groq.com,Groq Team,"{adam@example.com}","{Adam Jace}",{},{},received,"{INBOX,CATEGORY_PROMOTIONS}",true,false,false,0,1,1,f8e7d6c5-b4a3-4291-8f7e-6d5c4b3a2918,stream_seed_gmail,seed
+msg_rome_002,thread_pitch_001,Preparation for Q4 Pitch Day,"Marcus congratulates Adam on being selected for Q4 Pitch Day and requests his updated deck...","Adam,
+
+Congratulations on being selected to present at our Q4 Pitch Day event!
+
+Event Details:
+📅 Thursday, November 13, 2025
+⏰ 1:00-2:00 PM EST
+🔗 Zoom (link will be sent separately)
+
+Next Steps:
+Please reply to this email with your updated pitch deck by end of day Wednesday. We recommend keeping it to 10-12 slides maximum.
+
+The format will be:
+- 7 minutes presentation
+- 5 minutes Q&A with our angel network
+
+Looking forward to your pitch!
+
+Best,
+Marcus Chen
+SENT Angels Program Director","<html><body><p>Adam,</p><p>Congratulations on being selected to present at our Q4 Pitch Day event!</p><p><strong>Event Details:</strong></p><ul><li>📅 Thursday, November 13, 2025</li><li>⏰ 1:00-2:00 PM EST</li><li>🔗 Zoom (link will be sent separately)</li></ul><p><strong>Next Steps:</strong><br/>Please reply to this email with your updated pitch deck by end of day Wednesday.</p><p>Looking forward to your pitch!</p><p>Best,<br/>Marcus Chen</p></body></html>",2025-11-11T14:49:00+01:00,marcus@sentangels.org,Marcus Chen,"{adam@example.com}","{Adam Jace}",{},{},received,"{INBOX,IMPORTANT}",false,true,false,0,1,1,a9b8c7d6-e5f4-4d32-9a8b-7c6d5e4f3a2b,stream_seed_gmail,seed
+msg_rome_003,thread_cohort_001,Re: Carlo Acutis Cohort,"Robert proposes new meeting time slots and asks everyone to share their availability...","Hi everyone,
+
+Thanks for your patience as we work to find a new meeting time that works for the whole cohort.
+
+Based on the feedback so far, here are the proposed time slots (all in Central Time):
+- Monday 3:00 PM CT
+- Tuesday 3:00 PM CT
+- Wednesday 3:00 PM CT
+- Wednesday 8:00 AM CT
+
+Please reply to this email with any times that DON'T work for you, and I'll select the best option once I hear from everyone.
+
+For context, we want to maintain our weekly fellowship meetings while ensuring maximum participation.
+
+Blessings,
+Robert Kim
+Carlo Acutis Fellowship Coordinator","<html><body><p>Hi everyone,</p><p>Thanks for your patience as we work to find a new meeting time that works for the whole cohort.</p><p>Based on the feedback so far, here are the proposed time slots (all in Central Time):</p><ul><li>Monday 3:00 PM CT</li><li>Tuesday 3:00 PM CT</li><li>Wednesday 3:00 PM CT</li><li>Wednesday 8:00 AM CT</li></ul><p>Please reply to this email with any times that DON'T work for you.</p><p>Blessings,<br/>Robert</p></body></html>",2025-11-11T14:48:00+01:00,robert@fellowship.org,Robert Kim,"{adam@example.com,david@fellowship.org,sarah@fellowship.org,michael@fellowship.org,jennifer@fellowship.org}","{Adam Jace,David Torres,Sarah Williams,Michael Brown,Jennifer Davis}",{},{},received,"{INBOX}",true,false,false,0,3,7,b1c2d3e4-f5a6-4b78-9c1d-2e3f4a5b6c7d,stream_seed_gmail,seed
+msg_rome_004,thread_cohort_001,Re: Carlo Acutis Cohort,"David confirms that 8am CT doesn't work for his schedule...","All,
+
+The 8am CT slot doesn't work for me unfortunately.
+
+The afternoon options should be fine though.
+
+Thanks,
+David","<html><body><p>All,</p><p>The 8am CT slot doesn't work for me unfortunately.</p><p>The afternoon options should be fine though.</p><p>Thanks,<br/>David</p></body></html>",2025-11-11T14:54:00+01:00,david@fellowship.org,David Torres,"{adam@example.com,robert@fellowship.org,sarah@fellowship.org,michael@fellowship.org,jennifer@fellowship.org}","{Adam Jace,Robert Kim,Sarah Williams,Michael Brown,Jennifer Davis}",{},{},received,"{INBOX}",true,false,false,0,4,7,c2d3e4f5-a6b7-4c89-0d1e-2f3a4b5c6d7e,stream_seed_gmail,seed
+msg_rome_005,thread_talixo_001,Important information for your ride to FCO Airport,"Talixo confirms your airport transfer with driver details and pickup time...","Dear Mr. Jace,
+
+Your ride has been confirmed!
+
+Booking Reference: TLXROME4782
+Date: November 11, 2025
+Pickup Time: 7:05 AM CET
+Pickup Location: Boutique Centrale Palace Hotel, Via Nazionale 243, Rome
+Destination: Leonardo da Vinci-Fiumicino Airport (FCO)
+
+Driver Details:
+Name: Tiziano Orecchia
+Vehicle: Mercedes E-Class (Black)
+License Plate: AB 847 CD
+Phone: +39 06 5551 2234
+
+Your driver will wait in the hotel lobby with a sign displaying your name. Please be ready 5 minutes before the scheduled pickup time.
+
+Have a safe journey!
+
+Talixo Transfer Service
+www.talixo.com","<html><body><p>Dear Mr. Jace,</p><p>Your ride has been confirmed!</p><table><tr><td>Booking Reference:</td><td>TLXROME4782</td></tr><tr><td>Date:</td><td>November 11, 2025</td></tr><tr><td>Pickup Time:</td><td>7:05 AM CET</td></tr><tr><td>Pickup Location:</td><td>Boutique Centrale Palace Hotel</td></tr><tr><td>Destination:</td><td>Leonardo da Vinci-Fiumicino Airport (FCO)</td></tr></table><p><strong>Driver Details:</strong><br/>Name: Tiziano Orecchia<br/>Vehicle: Mercedes E-Class (Black)</p><p>Have a safe journey!</p><p>Talixo Transfer Service</p></body></html>",2025-11-11T04:05:00+01:00,bookings@talixo.com,Talixo,"{adam@example.com}","{Adam Jace}",{},{},received,"{INBOX,CATEGORY_UPDATES}",true,false,false,0,1,1,d3e4f5a6-b7c8-4d90-1e2f-3a4b5c6d7e8f,stream_seed_gmail,seed

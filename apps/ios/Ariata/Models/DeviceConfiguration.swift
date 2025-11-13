@@ -64,14 +64,14 @@ struct DeviceConfiguration: Codable {
     var ingestURL: URL? {
         guard !apiEndpoint.isEmpty else { return nil }
         let cleanEndpoint = apiEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Handle cases where user might have included /api/ingest already
-        if cleanEndpoint.hasSuffix("/api/ingest") {
+
+        // Handle cases where user might have included /ingest already
+        if cleanEndpoint.hasSuffix("/ingest") {
             return URL(string: cleanEndpoint)
         } else if cleanEndpoint.hasSuffix("/") {
-            return URL(string: "\(cleanEndpoint)api/ingest")
+            return URL(string: "\(cleanEndpoint)ingest")
         } else {
-            return URL(string: "\(cleanEndpoint)/api/ingest")
+            return URL(string: "\(cleanEndpoint)/ingest")
         }
     }
 }

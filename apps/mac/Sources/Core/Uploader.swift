@@ -82,7 +82,7 @@ class Uploader {
             ]
             
             // Create request
-            guard let url = URL(string: "\(config.apiEndpoint)/api/ingest") else {
+            guard let url = URL(string: "\(config.apiEndpoint)/ingest") else {
                 print("Invalid API endpoint")
                 return (0, events.count)
             }
@@ -154,7 +154,7 @@ class Uploader {
             ]
             
             // Create request
-            guard let url = URL(string: "\(config.apiEndpoint)/api/ingest") else {
+            guard let url = URL(string: "\(config.apiEndpoint)/ingest") else {
                 print("Invalid API endpoint")
                 return (0, messages.count)
             }

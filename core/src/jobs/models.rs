@@ -12,6 +12,7 @@ use uuid::Uuid;
 pub enum JobType {
     Sync,
     Transform,
+    Archive,
 }
 
 impl fmt::Display for JobType {
@@ -19,6 +20,7 @@ impl fmt::Display for JobType {
         match self {
             JobType::Sync => write!(f, "sync"),
             JobType::Transform => write!(f, "transform"),
+            JobType::Archive => write!(f, "archive"),
         }
     }
 }
@@ -30,6 +32,7 @@ impl std::str::FromStr for JobType {
         match s {
             "sync" => Ok(JobType::Sync),
             "transform" => Ok(JobType::Transform),
+            "archive" => Ok(JobType::Archive),
             _ => Err(format!("Invalid job type: {}", s)),
         }
     }

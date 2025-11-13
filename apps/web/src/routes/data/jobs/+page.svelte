@@ -34,15 +34,24 @@
 			running: "bg-blue-50 text-blue-700 border border-blue-200",
 			pending: "bg-neutral-50 text-neutral-600 border border-neutral-200",
 		};
-		return classes[status] || "bg-neutral-50 text-neutral-600 border border-neutral-200";
+		return (
+			classes[status] ||
+			"bg-neutral-50 text-neutral-600 border border-neutral-200"
+		);
 	}
 
-	function getJobTypeLabel(jobType: Job["job_type"], streamName?: string): string {
+	function getJobTypeLabel(
+		jobType: Job["job_type"],
+		streamName?: string,
+	): string {
 		const baseLabel = jobType === "sync" ? "Sync" : "Transform";
 		return streamName ? `${baseLabel} · ${streamName}` : baseLabel;
 	}
 
-	function calculateDuration(startedAt: string, completedAt?: string): string {
+	function calculateDuration(
+		startedAt: string,
+		completedAt?: string,
+	): string {
 		const start = new Date(startedAt).getTime();
 		const end = completedAt ? new Date(completedAt).getTime() : Date.now();
 		const durationMs = end - start;
@@ -71,7 +80,9 @@
 		await invalidateAll();
 	}
 
-	$: hasActiveJobs = jobs.some((j) => j.status === "pending" || j.status === "running");
+	$: hasActiveJobs = jobs.some(
+		(j) => j.status === "pending" || j.status === "running",
+	);
 </script>
 
 <Page>
@@ -79,13 +90,19 @@
 		<!-- Header -->
 		<div class="mb-8 flex items-center justify-between">
 			<div>
-				<h1 class="text-3xl font-serif font-medium text-neutral-900 mb-2">Activity</h1>
+				<h1
+					class="text-3xl font-serif font-medium text-neutral-900 mb-2"
+				>
+					Activity
+				</h1>
 				<p class="text-neutral-600">
-					System activity including syncs, transformations, and configuration changes
+					System activity including syncs, transformations, and
+					configuration changes
 				</p>
 			</div>
 			<Button onclick={handleRefresh} variant="secondary">
-				<iconify-icon icon="ri:refresh-line" class="text-lg"></iconify-icon>
+				<iconify-icon icon="ri:refresh-line" class="text-lg"
+				></iconify-icon>
 				Refresh
 			</Button>
 		</div>
@@ -95,37 +112,56 @@
 			<div
 				class="border-2 border-dashed border-neutral-200 rounded-lg p-12 text-center bg-neutral-50"
 			>
-				<iconify-icon icon="ri:history-line" class="text-6xl text-neutral-300 mb-4"
+				<iconify-icon
+					icon="ri:history-line"
+					class="text-6xl text-neutral-300 mb-4"
 				></iconify-icon>
-				<h3 class="text-lg font-medium text-neutral-900 mb-2">No activity yet</h3>
+				<h3 class="text-lg font-medium text-neutral-900 mb-2">
+					No activity yet
+				</h3>
 				<p class="text-neutral-600">
-					System activity will appear here once your sources start syncing
+					System activity will appear here once your sources start
+					syncing
 				</p>
 			</div>
 		{:else}
-			<div class="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+			<div class=" border border-neutral-200 rounded-lg overflow-hidden">
 				<table class="w-full">
 					<thead class="bg-neutral-50 border-b border-neutral-200">
 						<tr>
-							<th class="px-6 py-4 text-left text-xs font-medium text-neutral-500 uppercase">
+							<th
+								class="px-6 py-4 text-left text-xs font-medium text-neutral-500 uppercase"
+							>
 								Type
 							</th>
-							<th class="px-6 py-4 text-left text-xs font-medium text-neutral-500 uppercase">
+							<th
+								class="px-6 py-4 text-left text-xs font-medium text-neutral-500 uppercase"
+							>
 								Source
 							</th>
-							<th class="px-6 py-4 text-left text-xs font-medium text-neutral-500 uppercase">
+							<th
+								class="px-6 py-4 text-left text-xs font-medium text-neutral-500 uppercase"
+							>
 								Status
 							</th>
-							<th class="px-6 py-4 text-right text-xs font-medium text-neutral-500 uppercase">
+							<th
+								class="px-6 py-4 text-right text-xs font-medium text-neutral-500 uppercase"
+							>
 								Duration
 							</th>
-							<th class="px-6 py-4 text-right text-xs font-medium text-neutral-500 uppercase">
+							<th
+								class="px-6 py-4 text-right text-xs font-medium text-neutral-500 uppercase"
+							>
 								Records
 							</th>
-							<th class="px-6 py-4 text-right text-xs font-medium text-neutral-500 uppercase">
+							<th
+								class="px-6 py-4 text-right text-xs font-medium text-neutral-500 uppercase"
+							>
 								Time
 							</th>
-							<th class="px-6 py-4 text-right text-xs font-medium text-neutral-500 uppercase">
+							<th
+								class="px-6 py-4 text-right text-xs font-medium text-neutral-500 uppercase"
+							>
 								Actions
 							</th>
 						</tr>
@@ -136,7 +172,10 @@
 								<!-- Type -->
 								<td class="px-6 py-4 whitespace-nowrap">
 									<span class="text-sm text-neutral-900">
-										{getJobTypeLabel(job.job_type, job.stream_name || undefined)}
+										{getJobTypeLabel(
+											job.job_type,
+											job.stream_name || undefined,
+										)}
 									</span>
 								</td>
 
@@ -147,10 +186,12 @@
 											href="/data/sources/{job.source_id}"
 											class="text-sm text-neutral-700 hover:text-neutral-900 hover:underline"
 										>
-											{job.source_id}
+											{job.source_name || job.source_id}
 										</a>
 									{:else}
-										<span class="text-sm text-neutral-400">—</span>
+										<span class="text-sm text-neutral-400"
+											>—</span
+										>
 									{/if}
 								</td>
 
@@ -158,15 +199,19 @@
 								<td class="px-6 py-4 whitespace-nowrap">
 									<span
 										class="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full capitalize {getStatusBadgeClass(
-											job.status
+											job.status,
 										)}"
 									>
 										{#if job.status === "failed" && job.error_message}
-											<iconify-icon icon="ri:error-warning-line" class="text-xs"
+											<iconify-icon
+												icon="ri:error-warning-line"
+												class="text-xs"
 											></iconify-icon>
 										{/if}
 										{#if job.status === "running"}
-											<iconify-icon icon="ri:loader-4-line" class="text-xs animate-spin"
+											<iconify-icon
+												icon="ri:loader-4-line"
+												class="text-xs animate-spin"
 											></iconify-icon>
 										{/if}
 										{job.status.replace("_", " ")}
@@ -174,36 +219,52 @@
 								</td>
 
 								<!-- Duration -->
-								<td class="px-6 py-4 whitespace-nowrap text-right">
+								<td
+									class="px-6 py-4 whitespace-nowrap text-right"
+								>
 									<span class="text-sm text-neutral-600">
-										{calculateDuration(job.started_at, job.completed_at)}
+										{calculateDuration(
+											job.started_at,
+											job.completed_at,
+										)}
 									</span>
 								</td>
 
 								<!-- Records -->
-								<td class="px-6 py-4 whitespace-nowrap text-right">
+								<td
+									class="px-6 py-4 whitespace-nowrap text-right"
+								>
 									{#if job.records_processed > 0}
 										<span class="text-sm text-neutral-700">
 											{job.records_processed.toLocaleString()}
 										</span>
 									{:else}
-										<span class="text-sm text-neutral-300">—</span>
+										<span class="text-sm text-neutral-300"
+											>—</span
+										>
 									{/if}
 								</td>
 
 								<!-- Time -->
-								<td class="px-6 py-4 whitespace-nowrap text-right">
+								<td
+									class="px-6 py-4 whitespace-nowrap text-right"
+								>
 									<span class="text-sm text-neutral-600">
 										{formatRelativeTime(job.started_at)}
 									</span>
 								</td>
 
 								<!-- Actions -->
-								<td class="px-6 py-4 whitespace-nowrap text-right">
-									<div class="flex items-center justify-end gap-2">
+								<td
+									class="px-6 py-4 whitespace-nowrap text-right"
+								>
+									<div
+										class="flex items-center justify-end gap-2"
+									>
 										{#if job.status === "pending" || job.status === "running"}
 											<button
-												on:click={() => handleCancelJob(job.id)}
+												on:click={() =>
+													handleCancelJob(job.id)}
 												class="text-xs text-red-600 hover:text-red-700 hover:underline"
 											>
 												Cancel
@@ -211,7 +272,10 @@
 										{/if}
 										{#if job.status === "failed" && job.error_message}
 											<button
-												on:click={() => alert(`Error: ${job.error_message}`)}
+												on:click={() =>
+													alert(
+														`Error: ${job.error_message}`,
+													)}
 												class="text-xs text-neutral-600 hover:text-neutral-700 hover:underline"
 												title={job.error_message}
 											>
@@ -232,7 +296,11 @@
 					Showing {jobs.length} job{jobs.length !== 1 ? "s" : ""}
 					{#if hasActiveJobs}
 						<span class="ml-2 text-blue-600">
-							· {jobs.filter((j) => j.status === "pending" || j.status === "running").length} active
+							· {jobs.filter(
+								(j) =>
+									j.status === "pending" ||
+									j.status === "running",
+							).length} active
 						</span>
 					{/if}
 				</div>

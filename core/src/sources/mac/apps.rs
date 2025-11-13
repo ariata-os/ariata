@@ -53,7 +53,7 @@ pub async fn process(
             "apps",
             record.clone(),
             Some(timestamp_dt),
-        ).await?;
+        )?;
     }
 
     tracing::debug!("Wrote app usage record to object storage for device {}", device_id);

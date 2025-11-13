@@ -6,12 +6,20 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::error::{Error, Result};
-use crate::storage::{Storage, stream_writer::StreamWriter, stream_reader::StreamReader};
+use crate::sources::base::TransformDataSource;
+use crate::storage::{Storage, stream_writer::StreamWriter};
 
 /// Context providing dependencies for transform jobs
 ///
 /// This context is passed to transform job executors and makes external
 /// dependencies available to transforms that need them.
+///
+/// # Data Source
+///
+/// The `memory_data_source` is optional because it's only set when creating
+/// transform jobs that use the hot path (direct memory access). For sync jobs
+/// and ingest endpoints, the initial context is created without a data source,
+/// and the transform trigger logic creates a new context with the actual data source.
 #[derive(Clone)]
 pub struct TransformContext {
     /// Object storage (S3/MinIO) for file access and presigned URLs
@@ -20,26 +28,63 @@ pub struct TransformContext {
     /// Stream writer for writing stream data to object storage
     pub stream_writer: Arc<Mutex<StreamWriter>>,
 
-    /// Stream reader for reading stream data from object storage with checkpoints
-    pub stream_reader: Arc<StreamReader>,
+    /// In-memory data source for direct transforms (hot path)
+    ///
+    /// This is `None` for initial contexts created by sync/ingest jobs,
+    /// and `Some(...)` when the transform job is actually executed.
+    pub memory_data_source: Option<Arc<dyn TransformDataSource>>,
 
     /// API keys for external services
     pub api_keys: ApiKeys,
 }
 
 impl TransformContext {
-    /// Create a new transform context
+    /// Create a new transform context without a data source
+    ///
+    /// Use this for sync jobs and ingest endpoints. The data source will be
+    /// set later by `create_transform_job_for_stream` when the transform is triggered.
     pub fn new(
-        storage: Storage,
+        storage: Arc<Storage>,
         stream_writer: Arc<Mutex<StreamWriter>>,
-        stream_reader: StreamReader,
         api_keys: ApiKeys,
     ) -> Self {
         Self {
-            storage: Arc::new(storage),
+            storage,
             stream_writer,
-            stream_reader: Arc::new(stream_reader),
+            memory_data_source: None,
             api_keys,
+        }
+    }
+
+    /// Create a context with an in-memory data source (hot path)
+    ///
+    /// Use this when you have records immediately available and want to
+    /// trigger a direct transform without S3 round-trip.
+    pub fn with_data_source(
+        storage: Arc<Storage>,
+        stream_writer: Arc<Mutex<StreamWriter>>,
+        memory_data_source: Arc<dyn TransformDataSource>,
+        api_keys: ApiKeys,
+    ) -> Self {
+        Self {
+            storage,
+            stream_writer,
+            memory_data_source: Some(memory_data_source),
+            api_keys,
+        }
+    }
+
+    /// Get the data source for transforms if available
+    ///
+    /// Returns `None` if no data source has been set (e.g., for cold path transforms
+    /// that need to read from S3).
+    pub fn get_data_source(&self) -> Option<Arc<dyn TransformDataSource>> {
+        if let Some(ref data_source) = self.memory_data_source {
+            tracing::info!("Using memory data source for direct transform (hot path)");
+            Some(data_source.clone())
+        } else {
+            tracing::debug!("No memory data source available (cold path or not set)");
+            None
         }
     }
 }

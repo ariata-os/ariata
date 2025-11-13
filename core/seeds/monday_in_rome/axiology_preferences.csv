@@ -1,0 +1,13 @@
+title,description,preference_domain,valence
+Quiet workspaces,Prefer low-noise environments for deep focus,work_environment,strong_preference
+Written communication,Prefer async written discussion over meetings,communication,strong_preference
+Solo lunches,Prefer eating alone to maintain energy during workday,work_environment,mild_preference
+Small gatherings,"Prefer intimate groups (2-6 people) over large parties",people,strong_preference
+Coffee shops for variety,Occasional change of scenery for creative work,work_environment,mild_preference
+Video calls,Strongly dislike video meetings that could be emails,communication,strong_aversion
+Open office spaces,Find them draining and distracting,work_environment,strong_aversion
+Small talk,Feel exhausted by surface-level chitchat,communication,mild_aversion
+Walking meetings,Prefer moving while discussing ideas,work_environment,mild_preference
+Late night social events,Feel drained by evening social commitments,activities,mild_aversion
+Historical sites,Feel energized exploring ancient places and artifacts,places,strong_preference
+Coastal environments,Feel most at peace near the ocean or sea,places,strong_preference

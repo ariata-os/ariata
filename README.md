@@ -4,7 +4,7 @@
 
 Personal data ELT platform. Extract data from Google, iOS, Mac, Notion, Strava → Store in PostgreSQL + MinIO → Query with SQL.
 
-> **Status**: Active development.
+> **Status**: Active development, beware. Things will break.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white)](https://discord.gg/sSQKzDWqgv)
@@ -52,13 +52,21 @@ See [CLAUDE.md](CLAUDE.md) for full implementation details and architecture docu
 ## Quick Start
 
 ```bash
+# Clone and setup
 git clone https://github.com/ariata-os/ariata
-cd ariata/core
-cargo build --release
-cargo run -- server
+cd ariata
+
+# Start everything (infrastructure + migrations + servers)
+make dev
+
+# In separate terminals, run:
+cd core && cargo run -- server       # Terminal 1: API server
+cd apps/web && npm run dev           # Terminal 2: Web UI
 ```
 
-Access: `http://localhost:3000`
+Access: `http://localhost:5173` (web) | `http://localhost:8000` (API)
+
+**First time setup**: `make dev` handles everything - Docker containers, database migrations, and SQLx cache generation.
 
 ## Architecture
 
@@ -93,16 +101,56 @@ Query with SQL
 ## Development
 
 ```bash
-cd core
+# Start development environment
+make dev              # Starts Postgres + MinIO + runs migrations
 
 # Run tests
-cargo test
+make test-rust        # Rust tests
+make test-web         # Web tests
 
-# Start server
-cargo run -- server --port 3000
+# Database commands
+make migrate          # Run migrations
+make prepare          # Regenerate SQLx cache (after schema changes)
+make db-reset         # Reset database (WARNING: deletes data)
+
+# View all commands
+make help
 ```
 
-**Requirements**: Rust 1.70+, PostgreSQL 14+, MinIO (for audio/video storage)
+**Requirements**:
+
+- Docker & Docker Compose (for infrastructure)
+- Rust 1.70+ (for core server)
+- Node.js 18+ (for web UI)
+- Make (for build commands)
+
+## iOS/Mac Development with ngrok
+
+iOS apps require HTTPS connections for production use. For local development, use ngrok to expose your Rust backend via a secure HTTPS tunnel:
+
+```bash
+# Install ngrok (one-time setup)
+brew install ngrok
+
+# Sign up for free account and add your authtoken
+ngrok config add-authtoken YOUR_TOKEN
+
+# Start Rust server with ngrok tunnel
+make core-ngrok
+```
+
+**Get your HTTPS URL:**
+1. Open http://localhost:4040 (ngrok dashboard)
+2. Copy the HTTPS URL (e.g., `https://abc123.ngrok-free.app`)
+3. Use this URL in your iOS/Mac app settings
+
+**Note:** Free ngrok URLs change each time you restart. For persistent URLs, upgrade to a paid ngrok plan.
+
+**What this does:**
+- Starts Rust backend on `localhost:8000`
+- Creates ngrok tunnel with valid SSL certificate
+- iOS/Mac apps can connect via HTTPS (resolves TLS errors)
+- Web app continues using `localhost:8000` directly
 
 ## License
 

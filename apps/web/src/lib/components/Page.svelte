@@ -1,9 +1,9 @@
 <script lang="ts">
     import { twMerge } from "tailwind-merge";
-    let { children, className = "" } = $props();
+    let { children, className = "", scrollable = true } = $props();
 </script>
 
-<div class={twMerge("page-container p-12", className)}>
+<div class={twMerge("page-container bg-paper p-12", scrollable && "overflow-y-auto h-full", className)}>
     {@render children()}
 </div>
 

@@ -17,31 +17,17 @@ use tokio::sync::Mutex;
 use self::ingest::AppState;
 use crate::error::{Result, Error};
 use crate::Ariata;
-use crate::storage::stream_writer::{StreamWriter, StreamWriterConfig};
+use crate::storage::stream_writer::StreamWriter;
 use crate::storage::encryption;
+use crate::mcp::{AriataMcpServer, http::add_mcp_routes};
 
 /// Run the HTTP ingestion server with integrated scheduler
 pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
-    // Initialize StreamWriter with encryption key from environment
-    // (Must be created BEFORE scheduler since scheduler needs it)
-    let master_key_hex = env::var("STREAM_ENCRYPTION_MASTER_KEY")
-        .map_err(|_| Error::Other(
-            "STREAM_ENCRYPTION_MASTER_KEY environment variable is required. Generate with: openssl rand -hex 32".into()
-        ))?;
+    // Validate required environment variables early
+    validate_environment()?;
 
-    let master_key = encryption::parse_master_key_hex(&master_key_hex)?;
-
-    let stream_writer_config = StreamWriterConfig {
-        max_buffer_records: 1000,
-        max_buffer_bytes: 10 * 1024 * 1024, // 10 MB
-        master_key,
-    };
-
-    let stream_writer = StreamWriter::new(
-        (*client.storage).clone(),
-        (*client.database).clone(),
-        stream_writer_config,
-    );
+    // Initialize StreamWriter (simple in-memory buffer)
+    let stream_writer = StreamWriter::new();
     let stream_writer_arc = Arc::new(Mutex::new(stream_writer));
 
     // Start the scheduler in the background
@@ -55,6 +41,11 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
                     tracing::warn!("Failed to start scheduler: {}", e);
                 } else {
                     tracing::info!("Scheduler started successfully");
+                    // Keep scheduler alive - it will be dropped when the server shuts down
+                    // The JobScheduler runs background tasks that need to stay active
+                    loop {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+                    }
                 }
             }
             Err(e) => {
@@ -158,6 +149,10 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
             "/api/ontologies/available",
             get(api::list_available_ontologies_handler),
         )
+        .route(
+            "/api/ontologies/overview",
+            get(api::get_ontologies_overview_handler),
+        )
         // Jobs API
         .route("/api/jobs/:id", get(api::get_job_handler))
         .route("/api/jobs", get(api::query_jobs_handler))
@@ -165,6 +160,12 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
         .with_state(state.clone())
         .layer(DefaultBodyLimit::disable())  // Disable default 2MB limit
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024));  // Set 20MB limit for audio files
+
+    // Add MCP routes to the same server
+    let mcp_server = AriataMcpServer::new(client.database.pool().clone());
+    let app = add_mcp_routes(app, mcp_server);
+
+    tracing::info!("MCP endpoint enabled at /mcp");
 
     let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -174,17 +175,58 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
     // Run the server (this blocks forever until shutdown)
     axum::serve(listener, app).await?;
 
-    // Flush any remaining buffered stream data before shutdown
-    let mut writer = state.stream_writer.lock().await;
-    if let Err(e) = writer.flush_all().await {
-        tracing::error!("Failed to flush stream buffers on shutdown: {}", e);
-    } else {
-        tracing::info!("Flushed all stream buffers on shutdown");
-    }
+    // Note: No flush needed on shutdown - StreamWriter is in-memory only now.
+    // Archive jobs handle S3 uploads asynchronously.
+    tracing::info!("Server shutting down gracefully");
 
     // Note: scheduler runs in background and will stop when the process exits
     // The handle is dropped here, but the task continues running
 
+    Ok(())
+}
+
+/// Validate required environment variables at startup
+fn validate_environment() -> Result<()> {
+    // Check encryption key
+    let master_key = env::var("STREAM_ENCRYPTION_MASTER_KEY")
+        .map_err(|_| Error::Configuration(
+            "STREAM_ENCRYPTION_MASTER_KEY environment variable is required. Generate with: openssl rand -hex 32".into()
+        ))?;
+
+    // Validate key format (should be 64 hex characters = 32 bytes)
+    if master_key.len() != 64 {
+        return Err(Error::Configuration(
+            format!("STREAM_ENCRYPTION_MASTER_KEY must be 64 hex characters (32 bytes), got {} characters", master_key.len())
+        ));
+    }
+
+    // Try to parse to ensure it's valid hex
+    encryption::parse_master_key_hex(&master_key)
+        .map_err(|e| Error::Configuration(format!("Invalid STREAM_ENCRYPTION_MASTER_KEY format: {}", e)))?;
+
+    // Check S3 config if S3_BUCKET is set
+    if let Ok(bucket) = env::var("S3_BUCKET") {
+        if bucket.is_empty() {
+            return Err(Error::Configuration("S3_BUCKET is set but empty".into()));
+        }
+
+        // Require credentials when using S3
+        if env::var("S3_ACCESS_KEY").is_err() {
+            return Err(Error::Configuration(
+                "S3_ACCESS_KEY is required when S3_BUCKET is set".into()
+            ));
+        }
+
+        if env::var("S3_SECRET_KEY").is_err() {
+            return Err(Error::Configuration(
+                "S3_SECRET_KEY is required when S3_BUCKET is set".into()
+            ));
+        }
+
+        tracing::info!("S3 configuration validated for bucket: {}", bucket);
+    }
+
+    tracing::info!("Environment validation passed");
     Ok(())
 }
 

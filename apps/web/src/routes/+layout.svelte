@@ -40,7 +40,7 @@
 			title: "Chat",
 			items: [
 				{
-					href: "/new",
+					href: "/",
 					icon: "ri:message-3-line",
 					text: "Chat",
 					pagespace: "",
@@ -74,18 +74,33 @@
 				},
 			],
 		},
-		settings: {
-			id: "settings",
-			name: "Settings",
-			icon: "ri:settings-3-line",
-			iconFilled: "ri:settings-3-fill",
-			title: "Settings",
+		profile: {
+			id: "profile",
+			name: "Profile",
+			icon: "ri:user-line",
+			iconFilled: "ri:user-fill",
+			title: "Profile",
 			items: [
 				{
-					href: "/settings/account",
+					href: "/profile/account",
 					icon: "ri:user-line",
 					text: "Account",
 					pagespace: "account",
+				},
+			],
+		},
+		values: {
+			id: "values",
+			name: "Values",
+			icon: "ri:triangle-line",
+			iconFilled: "ri:triangle-fill",
+			title: "Values",
+			items: [
+				{
+					href: "/values",
+					icon: "ri:triangle-line",
+					text: "My Values",
+					pagespace: "values",
 				},
 			],
 		},
@@ -96,9 +111,12 @@
 
 		// Special handling for root-level chat routes
 		// Root (/) and /[conversationId] are chat
-		if (path === '' || !['data', 'settings', 'api', 'oauth'].includes(path)) {
+		if (
+			path === "" ||
+			!["data", "profile", "values", "api", "oauth"].includes(path)
+		) {
 			// If it's not one of the known modules, assume it's a conversation ID (chat)
-			return 'chat';
+			return "chat";
 		}
 
 		// Find which module contains this path
@@ -148,47 +166,36 @@
 
 	// Create dynamic chat items from loaded sessions
 	const chatItems = $derived.by(() => {
-		const items: Module['items'] = [
+		const items: Module["items"] = [
 			{
 				text: "New Chat",
 				icon: "ri:add-line",
-				onclick: () => goto('/'),
-				type: "action" as const
-			}
+				onclick: () => {
+					goto("/");
+				},
+				type: "action" as const,
+			},
 		];
 
 		// Add loaded sessions as navigation items
 		for (const session of chatSessions.sessions) {
 			items.push({
-				href: `/${session.conversation_id}`,
-				text: session.title || 'Untitled',
+				href: `/?conversationId=${session.conversation_id}`,
+				text: session.title || "Untitled",
 				pagespace: session.conversation_id,
-				icon: "ri:message-3-line"
+				icon: "ri:message-3-line",
 			});
 		}
 
 		return items;
 	});
-
-	onNavigate((navigation) => {
-		// @ts-ignore
-		if (!document.startViewTransition) return;
-
-		return new Promise((resolve) => {
-			// @ts-ignore
-			document.startViewTransition(async () => {
-				resolve();
-				await navigation.complete;
-			});
-		});
-	});
 </script>
 
 <Toaster position="top-center" />
 
-<div class="flex h-screen w-full bg-white">
+<div class="flex h-screen w-full">
 	<!-- Module Navigation (Left Sidebar) -->
-	<div id="module-nav" class="z-20 h-full border-r border-neutral-200">
+	<div id="module-nav" class="z-20 h-full border-r border-stone-200">
 		<Modules
 			modules={Object.values(modules)}
 			{activeModule}
@@ -205,29 +212,32 @@
 		style="width: {isSideNavOpen ? '14rem' : '0'}"
 	>
 		<Sidebar
-			items={activeModule === 'chat' ? chatItems : (modules[activeModule as keyof typeof modules]?.items || [])}
-			moduleTitle={modules[activeModule as keyof typeof modules]?.title || ""}
+			items={activeModule === "chat"
+				? chatItems
+				: modules[activeModule as keyof typeof modules]?.items || []}
+			moduleTitle={modules[activeModule as keyof typeof modules]?.title ||
+				""}
 			class="h-full w-56"
 		></Sidebar>
 	</div>
 
 	<!-- Main Content -->
 	<main
-		class="flex-1 flex flex-col z-0 bg-neutral-100 text-neutral-900 transition-all duration-300 min-w-0"
+		class="flex-1 flex flex-col z-0 transition-all duration-300 min-w-0 bg-paper-dark text-stone-800"
 	>
 		<header
 			class="{isSideNavOpen
 				? 'h-16 opacity-100'
-				: 'h-0 opacity-0'} bg-neutral-100 w-full transition-all duration-300 flex items-center px-6"
+				: 'h-0 opacity-0'} w-full transition-all duration-300 flex items-center px-6 bg-paper-dark"
 		>
 			<Breadcrumbs />
 		</header>
 		<div
 			class="border-t border-r border-b {!isSideNavOpen
 				? ''
-				: 'border-l'} flex-1 bg-white border-neutral-200 transition-all duration-300 {isSideNavOpen
+				: 'border-l'} flex-1 transition-all duration-300 {isSideNavOpen
 				? 'rounded-tl-3xl'
-				: 'rounded-none'} min-w-0 overflow-y-auto"
+				: 'rounded-none'} min-w-0 overflow-hidden border-stone-200"
 		>
 			{@render children()}
 		</div>

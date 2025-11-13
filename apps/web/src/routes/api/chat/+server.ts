@@ -1,28 +1,30 @@
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { streamText, stepCountIs, type StreamTextResult } from 'ai';
 import type { RequestHandler } from './$types';
+import type { Config } from '@sveltejs/adapter-vercel';
 import { env } from '$env/dynamic/private';
-import { createQueryOntologiesTool } from '$lib/tools/query-ontologies';
+import { orchestrateChat } from '$lib/server/agent-orchestrator';
 import { getDb, getPool } from '$lib/server/db';
-import { chatSessions, type ChatMessage } from '$lib/server/schema';
+import { chatSessions, preferences, type ChatMessage } from '$lib/server/schema';
 import { eq, sql } from 'drizzle-orm';
-import type { CoreMessage } from 'ai';
+import { convertToModelMessages, type UIMessage } from 'ai';
 
 // Constants
 const MAX_TITLE_LENGTH = 50;
+// Anthropic model strings
 const ALLOWED_MODELS = [
-	'claude-sonnet-4-20250514',
-	'claude-opus-4-20250514',
-	'claude-haiku-4-20250514'
+	'claude-sonnet-4-20250514', // Claude Sonnet 4
+	'claude-opus-4-20250514', // Claude Opus 4
+	'claude-haiku-4-20250514' // Claude Haiku 4
 ];
 
-// Get Anthropic instance with runtime env
-const getAnthropic = () => {
-	const apiKey = env.ANTHROPIC_API_KEY;
-	if (!apiKey) {
-		throw new Error('ANTHROPIC_API_KEY environment variable is not set');
-	}
-	return createAnthropic({ apiKey });
+// Verify Anthropic API key is set
+if (!env.ANTHROPIC_API_KEY) {
+	console.warn('ANTHROPIC_API_KEY environment variable is not set');
+}
+
+// Vercel serverless function configuration
+// Increase timeout for complex multi-step queries (default is 10s on Hobby, 15s on Pro)
+export const config: Config = {
+	maxDuration: 60 // seconds - adjust based on Vercel plan
 };
 
 /**
@@ -38,6 +40,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		const { messages, sessionId, model = 'claude-sonnet-4-20250514' } = body;
 
 		console.log('[API] Received request with model:', model, 'sessionId:', sessionId);
+		console.log('[API] Messages format:', messages?.[0]); // Log first message to see format
 
 		// Validate messages
 		if (!messages || !Array.isArray(messages)) {
@@ -79,7 +82,6 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		const db = getDb();
-		const pool = getPool();
 
 		// Get or create session
 		let session = await db.query.chatSessions.findFirst({
@@ -105,30 +107,37 @@ export const POST: RequestHandler = async ({ request }) => {
 			console.log('[API] Created new session:', sessionId, 'with title:', autoTitle);
 		}
 
-		// Create dynamic tool based on enabled streams/ontologies
-		const queryOntologiesTool = await createQueryOntologiesTool(pool);
+		// Load user preferences for personalization
+		const prefs = await db.select().from(preferences);
+		const userName = prefs.find((p) => p.key === 'user_name')?.value || 'the user';
 
-		// Call Claude API with streaming
-		const anthropic = getAnthropic();
-		const result = streamText({
-			model: anthropic(model),
-			messages: messages as CoreMessage[],
-			temperature: 0.7,
-			tools: {
-				queryOntologies: queryOntologiesTool
-			},
-			maxSteps: 5 // Allow multi-step tool calls up to 5 steps
+		// Get database pool for tools
+		const pool = getPool();
+
+		// Convert UIMessages to ModelMessages
+		const modelMessages = convertToModelMessages(messages as UIMessage[]);
+		console.log('[API] Converted to ModelMessages:', modelMessages.length, 'messages');
+
+		// Run agent with custom tools (queryOntologies, queryLocationMap)
+		// Uses @ai-sdk/anthropic provider with ANTHROPIC_API_KEY
+		const result = await orchestrateChat({
+			messages: modelMessages,
+			model,
+			pool,
+			sessionId,
+			userName,
+			onFinish: async (event) => {
+				try {
+					await saveMessagesToSession(sessionId, messages as UIMessage[], event, model);
+				} catch (error) {
+					console.error('[API] Failed to save messages to session:', error);
+				}
+			}
 		});
 
-		// Convert to Response stream
-		const stream = result.toTextStreamResponse();
-
-		// CRITICAL: Save messages synchronously to prevent data loss
-		// We must wait for the AI response to complete and save before returning
-		// This ensures messages are persisted even if client disconnects
-		await saveMessagesToSession(sessionId, messages as CoreMessage[], result, model);
-
-		return stream;
+		// toUIMessageStreamResponse() streams tool calls in real-time (compatible with useChat)
+		// Tool calls are saved to DB in the onFinish callback
+		return result.toUIMessageStreamResponse();
 	} catch (error) {
 		console.error('Chat API error:', error);
 		return new Response(JSON.stringify({ error: 'Internal server error' }), {
@@ -146,24 +155,23 @@ export const POST: RequestHandler = async ({ request }) => {
  */
 async function saveMessagesToSession(
 	sessionId: string,
-	userMessages: CoreMessage[],
-	result: StreamTextResult<any, any>,
+	userMessages: UIMessage[],
+	event: any, // onFinish event containing text, toolCalls, toolResults, etc.
 	model: string
 ) {
 	const db = getDb();
 
-	// Wait for assistant response to complete
-	const assistantContent = await result.text;
-
-	// Extract tool calls from the result
-	const toolCalls = await result.toolCalls;
-	const toolResults = await result.toolResults;
+	// Extract data from the onFinish event
+	const assistantContent = event.text;
+	const toolCalls = event.toolCalls;
+	const toolResults = event.toolResults;
 
 	console.log('[saveMessages] Tool calls:', toolCalls?.length || 0);
 	console.log('[saveMessages] Tool results:', toolResults?.length || 0);
 	if (toolCalls && toolCalls.length > 0) {
 		console.log('[saveMessages] First tool call:', JSON.stringify(toolCalls[0], null, 2));
 		console.log('[saveMessages] First tool result:', JSON.stringify(toolResults?.[0], null, 2));
+		console.log('[saveMessages] First tool result.result:', JSON.stringify(toolResults?.[0]?.result, null, 2));
 	}
 
 	// Build new messages array with accurate timestamps
@@ -174,7 +182,7 @@ async function saveMessagesToSession(
 			.filter((m) => m.role === 'user')
 			.map((m, idx) => ({
 				role: 'user' as const,
-				content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+				content: m.parts.find(p => p.type === 'text')?.text || '',
 				timestamp: new Date(now.getTime() + idx).toISOString(), // Offset by 1ms per message
 				model: null
 			})),
@@ -190,7 +198,7 @@ async function saveMessagesToSession(
 					? toolCalls.map((call, idx) => ({
 							tool_name: call.toolName,
 							arguments: call.args,
-							result: toolResults?.[idx]?.result,
+							result: toolResults?.[idx]?.output || toolResults?.[idx]?.result,
 							timestamp: new Date().toISOString()
 						}))
 					: undefined

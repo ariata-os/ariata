@@ -165,6 +165,8 @@ impl GoogleCalendarStream {
             next_cursor,
             started_at,
             completed_at,
+            records: None, // Google Calendar uses database, not direct transform
+            archive_job_id: None,
         })
     }
 
@@ -392,7 +394,7 @@ impl GoogleCalendarStream {
                 "calendar",
                 record,
                 Some(start_time),
-            ).await?;
+            )?;
         }
 
         tracing::debug!(event_id = %event.id, "Wrote calendar event to object storage");

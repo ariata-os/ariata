@@ -11,6 +11,9 @@ use crate::database::Database;
 use crate::error::Result;
 use crate::sources::base::{OntologyTransform, TransformResult};
 
+/// Batch size for bulk inserts
+const BATCH_SIZE: usize = 500;
+
 /// Transform Notion pages to knowledge_document ontology
 pub struct NotionPageTransform;
 
@@ -35,6 +38,8 @@ impl OntologyTransform for NotionPageTransform {
         let mut records_failed = 0;
         let mut last_processed_id: Option<Uuid> = None;
 
+        let transform_start = std::time::Instant::now();
+
         tracing::info!(
             source_id = %source_id,
             "Starting Notion pages to knowledge_document transformation"
@@ -42,16 +47,32 @@ impl OntologyTransform for NotionPageTransform {
 
         // Read stream data from S3 using checkpoint
         let checkpoint_key = "notion_to_knowledge_note";
-        let batches = context.stream_reader
+        let read_start = std::time::Instant::now();
+        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let batches = data_source
             .read_with_checkpoint(source_id, "notion", checkpoint_key)
             .await?;
+        let read_duration = read_start.elapsed();
 
         tracing::debug!(
             batch_count = batches.len(),
+            read_duration_ms = read_duration.as_millis(),
             "Fetched Notion batches from S3"
         );
 
+        // Batch insert configuration
+        let mut pending_records: Vec<(String, Option<String>, String, String, String, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut batch_insert_total_ms = 0u128;
+        let mut batch_insert_count = 0;
+
+        let processing_start = std::time::Instant::now();
+
         for batch in batches {
+            tracing::debug!(
+                batch_record_count = batch.records.len(),
+                "Processing batch"
+            );
+
             for record in &batch.records {
                 records_read += 1;
 
@@ -127,55 +148,55 @@ impl OntologyTransform for NotionPageTransform {
                     "properties": properties,
                 });
 
-                // Insert into knowledge_document
-                let result = sqlx::query(
-                    r#"
-                    INSERT INTO elt.knowledge_document (
-                        title, content, document_type,
-                        external_id, external_url,
-                        created_time, last_modified_time,
-                        source_stream_id, source_table, source_provider,
-                        metadata
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-                    )
-                    ON CONFLICT (source_stream_id) DO NOTHING
-                    "#,
-                )
-                .bind(&title) // title
-                .bind(&content_markdown) // content
-                .bind(document_type) // document_type
-                .bind(page_id) // external_id
-                .bind(url) // external_url
-                .bind(created_time) // created_time
-                .bind(last_edited_time) // last_modified_time
-                .bind(stream_id) // source_stream_id
-                .bind("stream_notion_pages") // source_table
-                .bind("notion") // source_provider
-                .bind(&metadata) // metadata
-                .execute(db.pool())
-                .await;
+                // Add to pending batch
+                pending_records.push((
+                    title,
+                    content_markdown,
+                    document_type.to_string(),
+                    page_id.to_string(),
+                    url.to_string(),
+                    created_time,
+                    last_edited_time,
+                    stream_id,
+                    metadata,
+                ));
 
-                match result {
-                    Ok(_) => {
-                        records_written += 1;
-                        last_processed_id = Some(stream_id);
+                last_processed_id = Some(stream_id);
+
+                // Execute batch insert when we reach batch size
+                if pending_records.len() >= BATCH_SIZE {
+                    let insert_start = std::time::Instant::now();
+                    let batch_result = execute_notion_page_batch_insert(db, &pending_records).await;
+                    let insert_duration = insert_start.elapsed();
+                    batch_insert_total_ms += insert_duration.as_millis();
+                    batch_insert_count += 1;
+
+                    tracing::info!(
+                        batch_size = pending_records.len(),
+                        insert_duration_ms = insert_duration.as_millis(),
+                        "Executed batch insert"
+                    );
+
+                    match batch_result {
+                        Ok(written) => {
+                            records_written += written;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                batch_size = pending_records.len(),
+                                "Batch insert failed"
+                            );
+                            records_failed += pending_records.len();
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            page_id = %page_id,
-                            stream_id = %stream_id,
-                            error = %e,
-                            "Failed to transform Notion page"
-                        );
-                        records_failed += 1;
-                    }
+                    pending_records.clear();
                 }
             }
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                context.stream_reader.update_checkpoint(
+                data_source.update_checkpoint(
                     source_id,
                     "notion",
                     checkpoint_key,
@@ -184,11 +205,49 @@ impl OntologyTransform for NotionPageTransform {
             }
         }
 
+        // Insert any remaining records
+        if !pending_records.is_empty() {
+            let insert_start = std::time::Instant::now();
+            let batch_result = execute_notion_page_batch_insert(db, &pending_records).await;
+            let insert_duration = insert_start.elapsed();
+            batch_insert_total_ms += insert_duration.as_millis();
+            batch_insert_count += 1;
+
+            tracing::info!(
+                batch_size = pending_records.len(),
+                insert_duration_ms = insert_duration.as_millis(),
+                "Executed final batch insert"
+            );
+
+            match batch_result {
+                Ok(written) => {
+                    records_written += written;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        batch_size = pending_records.len(),
+                        "Final batch insert failed"
+                    );
+                    records_failed += pending_records.len();
+                }
+            }
+        }
+
+        let processing_duration = processing_start.elapsed();
+        let total_duration = transform_start.elapsed();
+
         tracing::info!(
             source_id = %source_id,
             records_read,
             records_written,
             records_failed,
+            total_duration_ms = total_duration.as_millis(),
+            processing_duration_ms = processing_duration.as_millis(),
+            read_duration_ms = read_duration.as_millis(),
+            batch_insert_total_ms,
+            batch_insert_count,
+            avg_batch_insert_ms = if batch_insert_count > 0 { batch_insert_total_ms / batch_insert_count as u128 } else { 0 },
             "Notion pages to knowledge_document transformation completed"
         );
 
@@ -200,6 +259,46 @@ impl OntologyTransform for NotionPageTransform {
             chained_transforms: vec![], // Notion transform doesn't chain to other transforms
         })
     }
+}
+
+/// Execute batch insert for Notion page records
+///
+/// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
+async fn execute_notion_page_batch_insert(
+    db: &Database,
+    records: &[(String, Option<String>, String, String, String, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)],
+) -> Result<usize> {
+    if records.is_empty() {
+        return Ok(0);
+    }
+
+    let query_str = Database::build_batch_insert_query(
+        "elt.knowledge_document",
+        &["title", "content", "document_type", "external_id", "external_url", "created_time", "last_modified_time", "source_stream_id", "metadata", "source_table", "source_provider"],
+        "source_stream_id",
+        records.len(),
+    );
+
+    let mut query = sqlx::query(&query_str);
+
+    // Bind all parameters row by row
+    for (title, content, document_type, external_id, external_url, created_time, last_modified_time, stream_id, metadata) in records {
+        query = query
+            .bind(title)
+            .bind(content)
+            .bind(document_type)
+            .bind(external_id)
+            .bind(external_url)
+            .bind(created_time)
+            .bind(last_modified_time)
+            .bind(stream_id)
+            .bind(metadata)
+            .bind("stream_notion_pages")
+            .bind("notion");
+    }
+
+    let result = query.execute(db.pool()).await?;
+    Ok(result.rows_affected() as usize)
 }
 
 /// Extract title from Notion page properties

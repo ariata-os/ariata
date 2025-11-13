@@ -96,7 +96,7 @@ pub async fn process(
             "healthkit",
             record.clone(),
             Some(timestamp_dt),
-        ).await?;
+        )?;
     }
 
     tracing::debug!("Wrote healthkit record to object storage for device {}", device_id);
