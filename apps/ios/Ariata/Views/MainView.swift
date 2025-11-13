@@ -11,7 +11,8 @@ struct MainView: View {
     @StateObject private var deviceManager = DeviceManager.shared
     @StateObject private var healthKitManager = HealthKitManager.shared
     @StateObject private var uploadCoordinator = BatchUploadCoordinator.shared
-    
+    @StateObject private var lowPowerModeMonitor = LowPowerModeMonitor.shared
+
     @State private var showingSettings = false
     @State private var isManualSyncing = false
     
@@ -22,7 +23,13 @@ struct MainView: View {
                     // Status Card
                     StatusCard()
                         .padding(.horizontal)
-                    
+
+                    // Low Power Mode Warning
+                    if lowPowerModeMonitor.isLowPowerModeEnabled {
+                        LowPowerModeWarningBanner()
+                            .padding(.horizontal)
+                    }
+
                     // Quick Stats
                     QuickStatsView()
                         .padding(.horizontal)
@@ -335,6 +342,38 @@ struct DataStreamRow: View {
                     .foregroundColor(.secondary)
             }
         }
+    }
+}
+
+// MARK: - Low Power Mode Warning
+
+struct LowPowerModeWarningBanner: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "bolt.slash.fill")
+                .font(.title2)
+                .foregroundColor(.orange)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Low Power Mode Active")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                Text("Uploads paused to save battery. Disable Low Power Mode to resume syncing.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+        }
+        .padding()
+        .background(Color.orange.opacity(0.15))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
     }
 }
 
