@@ -45,6 +45,7 @@ class BatchUploadCoordinator: ObservableObject {
         loadLastSuccessfulSyncDate()
         registerBackgroundTasks()
         updateUploadStats()
+        setupLowPowerModeObserver()
     }
 
     /// Legacy singleton initializer - uses default dependencies
@@ -103,7 +104,15 @@ class BatchUploadCoordinator: ObservableObject {
         #if DEBUG
         print("🚀 Starting upload process...")
         #endif
-        
+
+        // Check if Low Power Mode is enabled - pause uploads to save battery
+        if ProcessInfo.processInfo.isLowPowerModeEnabled {
+            #if DEBUG
+            print("⚡️ Low Power Mode enabled - skipping upload to save battery")
+            #endif
+            return
+        }
+
         // Small delay to ensure any pending saves complete
         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
 
@@ -372,8 +381,36 @@ class BatchUploadCoordinator: ObservableObject {
         UserDefaults.standard.set(date.timeIntervalSince1970, forKey: lastSuccessfulSyncKey)
     }
     
+    // MARK: - Low Power Mode Monitoring
+
+    private func setupLowPowerModeObserver() {
+        // Observe Low Power Mode changes
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name.NSProcessInfoPowerStateDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            let isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
+
+            #if DEBUG
+            print("⚡️ Low Power Mode changed: \(isLowPowerModeEnabled ? "ENABLED" : "DISABLED")")
+            #endif
+
+            // When Low Power Mode is disabled, trigger immediate upload
+            if !isLowPowerModeEnabled, let self = self {
+                #if DEBUG
+                print("⚡️ Low Power Mode disabled - triggering queued uploads")
+                #endif
+
+                Task {
+                    await self.performUpload()
+                }
+            }
+        }
+    }
+
     // MARK: - Network Monitoring
-    
+
     func handleNetworkChange(isConnected: Bool) {
         if isConnected && configProvider.isConfigured {
             // Network restored, trigger upload

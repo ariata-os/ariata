@@ -18,7 +18,9 @@
             <false/>
             <key>NSPrivacyCollectedDataTypePurposes</key>
             <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
                 <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+                <string>NSPrivacyCollectedDataTypePurposePersonalization</string>
             </array>
         </dict>
         <dict>
@@ -30,7 +32,9 @@
             <false/>
             <key>NSPrivacyCollectedDataTypePurposes</key>
             <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
                 <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+                <string>NSPrivacyCollectedDataTypePurposePersonalization</string>
             </array>
         </dict>
         <dict>
@@ -42,7 +46,9 @@
             <false/>
             <key>NSPrivacyCollectedDataTypePurposes</key>
             <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
                 <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+                <string>NSPrivacyCollectedDataTypePurposePersonalization</string>
             </array>
         </dict>
         <dict>
@@ -54,7 +60,9 @@
             <false/>
             <key>NSPrivacyCollectedDataTypePurposes</key>
             <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
                 <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+                <string>NSPrivacyCollectedDataTypePurposePersonalization</string>
             </array>
         </dict>
     </array>

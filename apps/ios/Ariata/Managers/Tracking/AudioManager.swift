@@ -131,15 +131,69 @@ class AudioManager: NSObject, ObservableObject {
             return
         }
 
+        #if DEBUG
+        print("🎙️ Audio interruption: \(type == .began ? "BEGAN" : "ENDED")")
+        #endif
+
         switch type {
         case .began:
-            // Health check will handle recovery automatically
-            break
+            // Interruption started (phone call, Siri, etc.)
+            // Recording will be automatically stopped by the system
+            #if DEBUG
+            print("🎙️ Audio interruption began - recording paused by system")
+            #endif
 
         case .ended:
-            // Trigger immediate health check to recover quickly
-            DispatchQueue.main.asyncAfter(deadline: .now() + interruptionRecoveryDelay) { [weak self] in
-                self?.performHealthCheck()
+            // Interruption ended - check if we should resume
+            guard let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt else {
+                // No options provided - trigger health check as fallback
+                DispatchQueue.main.asyncAfter(deadline: .now() + interruptionRecoveryDelay) { [weak self] in
+                    _ = self?.performHealthCheck()
+                }
+                return
+            }
+
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+
+            if options.contains(.shouldResume) {
+                // System says we should resume - do it immediately
+                #if DEBUG
+                print("🎙️ Audio interruption ended - resuming recording immediately")
+                #endif
+
+                // Resume recording with minimal delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                    guard let self = self else { return }
+
+                    // Reactivate audio session
+                    do {
+                        try self.audioSession.setActive(true)
+
+                        // Check if we should be recording (stream enabled and has permission)
+                        let shouldBeRecording = self.configProvider.isStreamEnabled("microphone") && self.hasPermission
+
+                        // If we should be recording but aren't, restart
+                        if shouldBeRecording && !self.isRecording {
+                            self.startRecording()
+                        }
+                    } catch {
+                        #if DEBUG
+                        print("❌ Failed to reactivate audio session: \(error)")
+                        #endif
+
+                        // Fallback to health check
+                        _ = self.performHealthCheck()
+                    }
+                }
+            } else {
+                // System says don't resume - wait for health check
+                #if DEBUG
+                print("🎙️ Audio interruption ended - waiting for health check")
+                #endif
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + interruptionRecoveryDelay) { [weak self] in
+                    _ = self?.performHealthCheck()
+                }
             }
 
         @unknown default:
@@ -246,8 +300,15 @@ class AudioManager: NSObject, ObservableObject {
         }
 
         // Check if audio is enabled in configuration
-        let isEnabled = configProvider.isStreamEnabled("mic")
+        let isEnabled = configProvider.isStreamEnabled("microphone")
+        #if DEBUG
+        print("🎙️ startRecording() called: hasPermission=\(hasPermission), isEnabled=\(isEnabled), isRecording=\(isRecording)")
+        #endif
+
         guard isEnabled else {
+            #if DEBUG
+            print("❌ Audio stream 'microphone' is disabled in configuration")
+            #endif
             return
         }
 
@@ -260,6 +321,9 @@ class AudioManager: NSObject, ObservableObject {
             try setupAudioSession()
             startRecordingChunk()
             isRecording = true
+            #if DEBUG
+            print("✅ Audio recording started successfully")
+            #endif
         } catch {
             print("❌ Failed to start recording: \(error)")
             isRecording = false
@@ -491,7 +555,7 @@ extension AudioManager: HealthCheckable {
 
     func performHealthCheck() -> HealthStatus {
         // Check if stream is enabled
-        guard configProvider.isStreamEnabled("mic") else {
+        guard configProvider.isStreamEnabled("microphone") else {
             return .disabled
         }
 
@@ -501,7 +565,7 @@ extension AudioManager: HealthCheckable {
         }
 
         // Check recording state
-        let shouldBeRecording = true
+        let shouldBeRecording = configProvider.isStreamEnabled("microphone") && hasPermission
         let actuallyRecording = audioRecorder?.isRecording ?? false
 
         if shouldBeRecording && !actuallyRecording {

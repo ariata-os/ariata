@@ -161,9 +161,7 @@ Each run queries fresh data from Axiology + Ontology, sends to Claude for curati
 
 ---
 
-## Implementation Status
-
-### Core Data Pipeline (Implemented)
+## Current Focus
 
 **Data Ingestion:**
 
@@ -195,7 +193,7 @@ Each run queries fresh data from Axiology + Ontology, sends to Claude for curati
 
 - ✅ SQL Agent (query ontologies for facts & time ranges)
 - ✅ RAG+Rerank Agent (semantic search on narrative)
-- ✅ MCP Server (prudent context retrieval)
+- ✅ Value Agent (should/telos queries)
 
 **UI/UX:**
 
@@ -221,16 +219,3 @@ Each run queries fresh data from Axiology + Ontology, sends to Claude for curati
 - ❌ Entity Resolution (fuzzy matching/deduplication)
 
 ---
-
-## Key Design Documents
-
-- **[CHANGEPOINT.md](CHANGEPOINT.md)**: Detailed specification for event boundary detection and narrative segmentation
-- **[ONTOLOGIES.md](ONTOLOGIES.md)**: Complete ontology schema (47 primitives across 9 domains)
-- **[ENTITY_RESOLUTION.md](ENTITY_RESOLUTION.md)**: Entity deduplication strategy (deferred for MVP)
-
----
-
-**Legend:**
-
-- **Layers without asterisk**: 3-week MVP implementation
-- **Layers with `**`**: Post-MVP future development
