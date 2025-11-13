@@ -166,13 +166,6 @@
 						<!-- Header with Icon/Title -->
 						<div class="flex items-center justify-between mb-3">
 							<div class="flex items-center gap-3">
-								<iconify-icon
-									icon={catalogSource.icon ||
-										getCatalogIcon(catalogSource.name)}
-									class="text-3xl {getCatalogColor(
-										catalogSource.name,
-									)}"
-								></iconify-icon>
 								<h3
 									class="font-medium text-neutral-900 capitalize"
 								>

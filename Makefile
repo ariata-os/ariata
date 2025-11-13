@@ -30,6 +30,7 @@ STUDIO_PORT := 4983
 .PHONY: env-check minio-setup
 .PHONY: test test-rust test-web
 .PHONY: mac-build mac-install mac-run
+.PHONY: core-ngrok
 
 # === HELP ===
 help:
@@ -43,6 +44,7 @@ help:
 	@echo "                      Terminal 1: cd core && cargo run -- server"
 	@echo "                      Terminal 2: cd apps/web && npm run dev"
 	@echo "  make dev-servers  Auto-run both servers in background"
+	@echo "  make core-ngrok   Start Rust API with ngrok tunnel (for iOS dev)"
 	@echo "  make stop         Stop all development services"
 	@echo "  make logs         View infrastructure logs"
 	@echo "  make ps           Show running services"
@@ -166,6 +168,42 @@ dev-core:
 dev-web:
 	@echo "⚡ Starting SvelteKit dev server on localhost:5173..."
 	@cd apps/web && npm run dev
+
+# Run Rust API with ngrok tunnel (for iOS development)
+core-ngrok:
+	@echo "🦀 Starting Rust API server with ngrok tunnel..."
+	@echo ""
+	@if ! command -v ngrok > /dev/null 2>&1; then \
+		echo "❌ ngrok not found!"; \
+		echo ""; \
+		echo "Install with: brew install ngrok"; \
+		echo "Or download from: https://ngrok.com/download"; \
+		exit 1; \
+	fi
+	@echo "🚀 Starting Rust server on localhost:$(API_PORT)..."
+	@cd core && cargo run -- server & \
+	SERVER_PID=$$!; \
+	echo "⏳ Waiting for server to start..."; \
+	sleep 3; \
+	echo "🌐 Starting ngrok tunnel..."; \
+	ngrok http $(API_PORT) --log=stdout & \
+	NGROK_PID=$$!; \
+	sleep 2; \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "✅ ngrok tunnel established!"; \
+	echo ""; \
+	echo "📱 Get your HTTPS URL from:"; \
+	echo "   http://localhost:4040"; \
+	echo ""; \
+	echo "🔍 Or run this command:"; \
+	echo "   curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'"; \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo ""; \
+	echo "📋 Press Ctrl+C to stop server and tunnel"; \
+	trap "echo ''; echo '🛑 Stopping...'; kill $$SERVER_PID $$NGROK_PID 2>/dev/null; exit 0" INT TERM; \
+	wait
 
 # === MIGRATION COMMANDS ===
 
