@@ -124,6 +124,34 @@ make help
 - Node.js 18+ (for web UI)
 - Make (for build commands)
 
+## iOS/Mac Development with ngrok
+
+iOS apps require HTTPS connections for production use. For local development, use ngrok to expose your Rust backend via a secure HTTPS tunnel:
+
+```bash
+# Install ngrok (one-time setup)
+brew install ngrok
+
+# Sign up for free account and add your authtoken
+ngrok config add-authtoken YOUR_TOKEN
+
+# Start Rust server with ngrok tunnel
+make core-ngrok
+```
+
+**Get your HTTPS URL:**
+1. Open http://localhost:4040 (ngrok dashboard)
+2. Copy the HTTPS URL (e.g., `https://abc123.ngrok-free.app`)
+3. Use this URL in your iOS/Mac app settings
+
+**Note:** Free ngrok URLs change each time you restart. For persistent URLs, upgrade to a paid ngrok plan.
+
+**What this does:**
+- Starts Rust backend on `localhost:8000`
+- Creates ngrok tunnel with valid SSL certificate
+- iOS/Mac apps can connect via HTTPS (resolves TLS errors)
+- Web app continues using `localhost:8000` directly
+
 ## License
 
 MIT (core library) + Elastic License v2 (ML modules)
