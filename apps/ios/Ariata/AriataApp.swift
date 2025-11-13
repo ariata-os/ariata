@@ -44,9 +44,9 @@ struct AriataApp: App {
                     // Delay slightly to ensure system is ready after returning to foreground
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         // Audio health check will handle any needed recovery
-                        audioManager.performHealthCheck()
+                        _ = audioManager.performHealthCheck()
                         // Location health check ensures tracking continues (especially important after network changes)
-                        locationManager.performHealthCheck()
+                        _ = locationManager.performHealthCheck()
                     }
                 }
             }
@@ -120,9 +120,12 @@ struct AriataApp: App {
     }
     
     private func startAllServices() {
+        // Schedule background refresh task (required for background execution)
+        scheduleBackgroundRefresh()
+
         // Start periodic uploads (this now handles all data collection)
         uploadCoordinator.startPeriodicUploads()
-        
+
         let config = deviceManager.configuration
         
         #if DEBUG
@@ -139,7 +142,7 @@ struct AriataApp: App {
         }
         
         // Start audio recording if authorized AND enabled
-        if audioManager.hasPermission && config.isStreamEnabled("mic") {
+        if audioManager.hasPermission && config.isStreamEnabled("microphone") {
             audioManager.startRecording()
         }
         
