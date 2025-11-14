@@ -41,7 +41,12 @@ pub struct GoogleGmailStream {
 
 impl GoogleGmailStream {
     /// Create a new Gmail stream with SourceAuth and StreamWriter
-    pub fn new(source_id: Uuid, db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>, auth: SourceAuth) -> Self {
+    pub fn new(
+        source_id: Uuid,
+        db: PgPool,
+        stream_writer: Arc<Mutex<StreamWriter>>,
+        auth: SourceAuth,
+    ) -> Self {
         // Extract token manager from auth
         let token_manager = auth
             .token_manager()
@@ -227,7 +232,8 @@ impl GoogleGmailStream {
                 params.push(("pageToken", token.clone()));
             }
 
-            let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            let param_refs: Vec<(&str, &str)> =
+                params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
             // List messages
             let response: MessagesListResponse = self
@@ -319,7 +325,8 @@ impl GoogleGmailStream {
                 params.push(("pageToken", token.clone()));
             }
 
-            let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            let param_refs: Vec<(&str, &str)> =
+                params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
             // List threads
             let response: ThreadsListResponse = self
@@ -523,12 +530,7 @@ impl GoogleGmailStream {
         // Write to S3/object storage via StreamWriter
         {
             let mut writer = self.stream_writer.lock().await;
-            writer.write_record(
-                self.source_id,
-                "gmail",
-                record,
-                Some(date),
-            )?;
+            writer.write_record(self.source_id, "gmail", record, Some(date))?;
         }
 
         tracing::debug!(message_id = %message.id, "Wrote Gmail message to object storage");

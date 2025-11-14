@@ -26,12 +26,26 @@ pub struct EncryptionKey {
 pub trait StorageBackend: Send + Sync {
     async fn initialize(&self) -> Result<()>;
     async fn upload(&self, key: &str, data: Vec<u8>) -> Result<()>;
-    async fn upload_encrypted(&self, key: &str, data: Vec<u8>, encryption_key: &EncryptionKey) -> Result<()>;
+    async fn upload_encrypted(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        encryption_key: &EncryptionKey,
+    ) -> Result<()>;
     async fn download(&self, key: &str) -> Result<Vec<u8>>;
-    async fn download_encrypted(&self, key: &str, encryption_key: &EncryptionKey) -> Result<Vec<u8>>;
+    async fn download_encrypted(
+        &self,
+        key: &str,
+        encryption_key: &EncryptionKey,
+    ) -> Result<Vec<u8>>;
     async fn delete(&self, key: &str) -> Result<()>;
     async fn list(&self, prefix: &str) -> Result<Vec<String>>;
-    async fn list_with_pagination(&self, prefix: &str, max_keys: Option<i32>, continuation_token: Option<String>) -> Result<ListResult>;
+    async fn list_with_pagination(
+        &self,
+        prefix: &str,
+        max_keys: Option<i32>,
+        continuation_token: Option<String>,
+    ) -> Result<ListResult>;
     async fn health_check(&self) -> Result<HealthStatus>;
 
     /// Generate a presigned URL for temporary public access to an object
@@ -123,18 +137,36 @@ impl Storage {
     }
 
     /// Upload with SSE-C encryption
-    pub async fn upload_encrypted(&self, key: &str, data: Vec<u8>, encryption_key: &EncryptionKey) -> Result<()> {
-        self.backend.upload_encrypted(key, data, encryption_key).await
+    pub async fn upload_encrypted(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        encryption_key: &EncryptionKey,
+    ) -> Result<()> {
+        self.backend
+            .upload_encrypted(key, data, encryption_key)
+            .await
     }
 
     /// Download with SSE-C encryption
-    pub async fn download_encrypted(&self, key: &str, encryption_key: &EncryptionKey) -> Result<Vec<u8>> {
+    pub async fn download_encrypted(
+        &self,
+        key: &str,
+        encryption_key: &EncryptionKey,
+    ) -> Result<Vec<u8>> {
         self.backend.download_encrypted(key, encryption_key).await
     }
 
     /// List objects with pagination support
-    pub async fn list_with_pagination(&self, prefix: &str, max_keys: Option<i32>, continuation_token: Option<String>) -> Result<ListResult> {
-        self.backend.list_with_pagination(prefix, max_keys, continuation_token).await
+    pub async fn list_with_pagination(
+        &self,
+        prefix: &str,
+        max_keys: Option<i32>,
+        continuation_token: Option<String>,
+    ) -> Result<ListResult> {
+        self.backend
+            .list_with_pagination(prefix, max_keys, continuation_token)
+            .await
     }
 
     /// Upload JSON object
@@ -145,7 +177,12 @@ impl Storage {
     }
 
     /// Upload JSON object with encryption
-    pub async fn upload_json_encrypted<T: Serialize>(&self, key: &str, data: &T, encryption_key: &EncryptionKey) -> Result<()> {
+    pub async fn upload_json_encrypted<T: Serialize>(
+        &self,
+        key: &str,
+        data: &T,
+        encryption_key: &EncryptionKey,
+    ) -> Result<()> {
         let json_bytes = serde_json::to_vec(data)
             .map_err(|e| Error::Other(format!("Failed to serialize JSON: {}", e)))?;
         self.upload_encrypted(key, json_bytes, encryption_key).await
@@ -159,7 +196,11 @@ impl Storage {
     }
 
     /// Download and deserialize JSON object with encryption
-    pub async fn download_json_encrypted<T: for<'de> Deserialize<'de>>(&self, key: &str, encryption_key: &EncryptionKey) -> Result<T> {
+    pub async fn download_json_encrypted<T: for<'de> Deserialize<'de>>(
+        &self,
+        key: &str,
+        encryption_key: &EncryptionKey,
+    ) -> Result<T> {
         let bytes = self.download_encrypted(key, encryption_key).await?;
         serde_json::from_slice(&bytes)
             .map_err(|e| Error::Other(format!("Failed to deserialize JSON: {}", e)))
@@ -178,7 +219,12 @@ impl Storage {
     }
 
     /// Upload JSONL with encryption
-    pub async fn upload_jsonl_encrypted<T: Serialize>(&self, key: &str, records: &[T], encryption_key: &EncryptionKey) -> Result<()> {
+    pub async fn upload_jsonl_encrypted<T: Serialize>(
+        &self,
+        key: &str,
+        records: &[T],
+        encryption_key: &EncryptionKey,
+    ) -> Result<()> {
         let mut jsonl = Vec::new();
         for record in records {
             let json = serde_json::to_string(record)
@@ -200,15 +246,24 @@ impl Storage {
             if line.trim().is_empty() {
                 continue;
             }
-            let record = serde_json::from_str(line)
-                .map_err(|e| Error::Other(format!("Failed to parse JSONL line {}: {}", line_num + 1, e)))?;
+            let record = serde_json::from_str(line).map_err(|e| {
+                Error::Other(format!(
+                    "Failed to parse JSONL line {}: {}",
+                    line_num + 1,
+                    e
+                ))
+            })?;
             records.push(record);
         }
         Ok(records)
     }
 
     /// Download and parse JSONL with encryption
-    pub async fn download_jsonl_encrypted<T: for<'de> Deserialize<'de>>(&self, key: &str, encryption_key: &EncryptionKey) -> Result<Vec<T>> {
+    pub async fn download_jsonl_encrypted<T: for<'de> Deserialize<'de>>(
+        &self,
+        key: &str,
+        encryption_key: &EncryptionKey,
+    ) -> Result<Vec<T>> {
         let bytes = self.download_encrypted(key, encryption_key).await?;
         let text = String::from_utf8(bytes)
             .map_err(|e| Error::Other(format!("Invalid UTF-8 in JSONL: {}", e)))?;
@@ -218,8 +273,13 @@ impl Storage {
             if line.trim().is_empty() {
                 continue;
             }
-            let record = serde_json::from_str(line)
-                .map_err(|e| Error::Other(format!("Failed to parse JSONL line {}: {}", line_num + 1, e)))?;
+            let record = serde_json::from_str(line).map_err(|e| {
+                Error::Other(format!(
+                    "Failed to parse JSONL line {}: {}",
+                    line_num + 1,
+                    e
+                ))
+            })?;
             records.push(record);
         }
         Ok(records)
@@ -289,7 +349,10 @@ impl S3Storage {
             "Unknown"
         };
 
-        Error::S3(format!("{} failed: {} [code: {}]", operation, error_msg, error_info))
+        Error::S3(format!(
+            "{} failed: {} [code: {}]",
+            operation, error_msg, error_info
+        ))
     }
 
     pub async fn new(
@@ -299,7 +362,8 @@ impl S3Storage {
         secret_key: Option<String>,
     ) -> Result<Self> {
         // Detect if endpoint uses HTTPS (required for SSE-C encryption)
-        let is_https = endpoint.as_ref()
+        let is_https = endpoint
+            .as_ref()
             .map(|url| url.starts_with("https://"))
             .unwrap_or(true); // AWS S3 always uses HTTPS
 
@@ -315,13 +379,8 @@ impl S3Storage {
 
         // Configure credentials if provided
         if let (Some(access_key), Some(secret_key)) = (access_key, secret_key) {
-            let creds = aws_sdk_s3::config::Credentials::new(
-                access_key,
-                secret_key,
-                None,
-                None,
-                "manual",
-            );
+            let creds =
+                aws_sdk_s3::config::Credentials::new(access_key, secret_key, None, None, "manual");
             config_loader = config_loader.credentials_provider(creds);
         }
 
@@ -349,7 +408,11 @@ impl S3Storage {
             );
         }
 
-        Ok(Self { bucket, client, is_https })
+        Ok(Self {
+            bucket,
+            client,
+            is_https,
+        })
     }
 }
 
@@ -373,7 +436,12 @@ impl StorageBackend for S3Storage {
         Ok(())
     }
 
-    async fn upload_encrypted(&self, key: &str, data: Vec<u8>, encryption_key: &EncryptionKey) -> Result<()> {
+    async fn upload_encrypted(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        encryption_key: &EncryptionKey,
+    ) -> Result<()> {
         // SSE-C encryption requires HTTPS - fall back to unencrypted upload for HTTP endpoints
         if !self.is_https {
             tracing::debug!(
@@ -386,8 +454,9 @@ impl StorageBackend for S3Storage {
         // Decode the base64 key to compute MD5 hash
         let key_bytes = base64::Engine::decode(
             &base64::engine::general_purpose::STANDARD,
-            &encryption_key.key_base64
-        ).map_err(|e| Error::Other(format!("Failed to decode encryption key: {}", e)))?;
+            &encryption_key.key_base64,
+        )
+        .map_err(|e| Error::Other(format!("Failed to decode encryption key: {}", e)))?;
 
         // Compute MD5 hash of the key and encode as base64 (required by S3 SSE-C)
         let key_md5_bytes = md5::compute(&key_bytes);
@@ -409,7 +478,8 @@ impl StorageBackend for S3Storage {
     }
 
     async fn download(&self, key: &str) -> Result<Vec<u8>> {
-        let response = self.client
+        let response = self
+            .client
             .get_object()
             .bucket(&self.bucket)
             .key(key)
@@ -427,7 +497,11 @@ impl StorageBackend for S3Storage {
         Ok(bytes.to_vec())
     }
 
-    async fn download_encrypted(&self, key: &str, encryption_key: &EncryptionKey) -> Result<Vec<u8>> {
+    async fn download_encrypted(
+        &self,
+        key: &str,
+        encryption_key: &EncryptionKey,
+    ) -> Result<Vec<u8>> {
         // SSE-C encryption requires HTTPS - fall back to unencrypted download for HTTP endpoints
         if !self.is_https {
             tracing::debug!(
@@ -440,14 +514,16 @@ impl StorageBackend for S3Storage {
         // Decode the base64 key to compute MD5 hash
         let key_bytes = base64::Engine::decode(
             &base64::engine::general_purpose::STANDARD,
-            &encryption_key.key_base64
-        ).map_err(|e| Error::Other(format!("Failed to decode encryption key: {}", e)))?;
+            &encryption_key.key_base64,
+        )
+        .map_err(|e| Error::Other(format!("Failed to decode encryption key: {}", e)))?;
 
         // Compute MD5 hash of the key and encode as base64 (required by S3 SSE-C)
         let key_md5_bytes = md5::compute(&key_bytes);
         let key_md5 = base64::engine::general_purpose::STANDARD.encode(key_md5_bytes.as_ref());
 
-        let response = self.client
+        let response = self
+            .client
             .get_object()
             .bucket(&self.bucket)
             .key(key)
@@ -481,7 +557,8 @@ impl StorageBackend for S3Storage {
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<String>> {
-        let response = self.client
+        let response = self
+            .client
             .list_objects_v2()
             .bucket(&self.bucket)
             .prefix(prefix)
@@ -499,8 +576,14 @@ impl StorageBackend for S3Storage {
         Ok(keys)
     }
 
-    async fn list_with_pagination(&self, prefix: &str, max_keys: Option<i32>, continuation_token: Option<String>) -> Result<ListResult> {
-        let mut request = self.client
+    async fn list_with_pagination(
+        &self,
+        prefix: &str,
+        max_keys: Option<i32>,
+        continuation_token: Option<String>,
+    ) -> Result<ListResult> {
+        let mut request = self
+            .client
             .list_objects_v2()
             .bucket(&self.bucket)
             .prefix(prefix);
@@ -534,12 +617,7 @@ impl StorageBackend for S3Storage {
 
     async fn health_check(&self) -> Result<HealthStatus> {
         // Try to list bucket
-        match self.client
-            .head_bucket()
-            .bucket(&self.bucket)
-            .send()
-            .await
-        {
+        match self.client.head_bucket().bucket(&self.bucket).send().await {
             Ok(_) => Ok(HealthStatus {
                 is_healthy: true,
                 message: format!("S3 bucket '{}' accessible", self.bucket),
@@ -557,7 +635,8 @@ impl StorageBackend for S3Storage {
             .map_err(|e| Error::S3(format!("Failed to create presigning config: {}", e)))?;
 
         // Generate presigned URL
-        let presigned_request = self.client
+        let presigned_request = self
+            .client
             .get_object()
             .bucket(&self.bucket)
             .key(key)
@@ -602,7 +681,12 @@ impl StorageBackend for LocalStorage {
         Ok(())
     }
 
-    async fn upload_encrypted(&self, key: &str, data: Vec<u8>, _encryption_key: &EncryptionKey) -> Result<()> {
+    async fn upload_encrypted(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        _encryption_key: &EncryptionKey,
+    ) -> Result<()> {
         // Local storage doesn't support encryption at rest
         // Just do a regular upload (encryption would need to be done at application level)
         self.upload(key, data).await
@@ -613,7 +697,11 @@ impl StorageBackend for LocalStorage {
         Ok(tokio::fs::read(path).await?)
     }
 
-    async fn download_encrypted(&self, key: &str, _encryption_key: &EncryptionKey) -> Result<Vec<u8>> {
+    async fn download_encrypted(
+        &self,
+        key: &str,
+        _encryption_key: &EncryptionKey,
+    ) -> Result<Vec<u8>> {
         // Local storage doesn't support encryption at rest
         // Just do a regular download
         self.download(key).await
@@ -641,7 +729,12 @@ impl StorageBackend for LocalStorage {
         Ok(files)
     }
 
-    async fn list_with_pagination(&self, prefix: &str, max_keys: Option<i32>, _continuation_token: Option<String>) -> Result<ListResult> {
+    async fn list_with_pagination(
+        &self,
+        prefix: &str,
+        max_keys: Option<i32>,
+        _continuation_token: Option<String>,
+    ) -> Result<ListResult> {
         // Local storage doesn't support pagination, so we just return all files
         // and truncate if max_keys is specified
         let keys = self.list(prefix).await?;
@@ -683,7 +776,7 @@ impl StorageBackend for LocalStorage {
         // In a real implementation, you might set up a local HTTP server
         // For now, return an error
         Err(Error::Other(
-            "Presigned URLs not supported for local storage".into()
+            "Presigned URLs not supported for local storage".into(),
         ))
     }
 }
@@ -739,12 +832,14 @@ mod tests {
         let encryption_key = EncryptionKey { key_base64 };
 
         // Test upload with encryption
-        storage.upload_encrypted("encrypted_test.bin", original_data.clone(), &encryption_key)
+        storage
+            .upload_encrypted("encrypted_test.bin", original_data.clone(), &encryption_key)
             .await
             .unwrap();
 
         // Test download with encryption
-        let decrypted_data = storage.download_encrypted("encrypted_test.bin", &encryption_key)
+        let decrypted_data = storage
+            .download_encrypted("encrypted_test.bin", &encryption_key)
             .await
             .unwrap();
 
@@ -759,13 +854,23 @@ mod tests {
         }
 
         let records = vec![
-            TestRecord { id: 1, name: "Alice".to_string() },
-            TestRecord { id: 2, name: "Bob".to_string() },
-            TestRecord { id: 3, name: "Charlie".to_string() },
+            TestRecord {
+                id: 1,
+                name: "Alice".to_string(),
+            },
+            TestRecord {
+                id: 2,
+                name: "Bob".to_string(),
+            },
+            TestRecord {
+                id: 3,
+                name: "Charlie".to_string(),
+            },
         ];
 
         // Upload JSONL with encryption
-        storage.upload_jsonl_encrypted("encrypted_records.jsonl", &records, &encryption_key)
+        storage
+            .upload_jsonl_encrypted("encrypted_records.jsonl", &records, &encryption_key)
             .await
             .unwrap();
 
@@ -784,10 +889,11 @@ mod tests {
         // Test that MD5 hashes are properly base64 encoded (not hex)
         // This is a regression test for the bug where MD5 was hex-encoded
 
-        let key_bytes = [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-                        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-                        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11,
-                        0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99];
+        let key_bytes = [
+            0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+            0x77, 0x88, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+            0x66, 0x77, 0x88, 0x99,
+        ];
 
         // Compute MD5 hash
         let md5_hash = md5::compute(&key_bytes);
@@ -796,7 +902,9 @@ mod tests {
         let md5_base64 = base64::engine::general_purpose::STANDARD.encode(md5_hash.as_ref());
 
         // Verify it's base64 (contains typical base64 characters)
-        assert!(md5_base64.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='));
+        assert!(md5_base64
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='));
 
         // Verify it's NOT hex format (should not be 32 hex characters)
         let md5_hex = format!("{:x}", md5_hash);

@@ -89,35 +89,27 @@ struct AnyCodable: Codable {
 }
 
 struct HealthKitStreamData: Codable {
-    let streamName: String = "ios_healthkit"
+    let source: String = "ios"
+    let stream: String = "healthkit"
     let deviceId: String
-    let data: [HealthKitMetric]
-    let batchMetadata: BatchMetadata
-    
+    let records: [HealthKitMetric]
+    let timestamp: String
+    let checkpoint: String?
+
     private enum CodingKeys: String, CodingKey {
-        case streamName = "stream_name"
+        case source
+        case stream
         case deviceId = "device_id"
-        case data
-        case batchMetadata = "batch_metadata"
+        case records
+        case timestamp
+        case checkpoint
     }
-    
-    struct BatchMetadata: Codable {
-        let totalRecords: Int
-        let appVersion: String
-        
-        private enum CodingKeys: String, CodingKey {
-            case totalRecords = "total_records"
-            case appVersion = "app_version"
-        }
-    }
-    
-    init(deviceId: String, metrics: [HealthKitMetric]) {
+
+    init(deviceId: String, metrics: [HealthKitMetric], checkpoint: String? = nil) {
         self.deviceId = deviceId
-        self.data = metrics
-        self.batchMetadata = BatchMetadata(
-            totalRecords: metrics.count,
-            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        )
+        self.records = metrics
+        self.timestamp = ISO8601DateFormatter().string(from: Date())
+        self.checkpoint = checkpoint
     }
 }
 

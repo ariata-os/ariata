@@ -1,5 +1,3 @@
-
-
 //! Ontology transformation trait and types
 //!
 //! Defines the interface for transforming raw stream data into normalized ontology tables.

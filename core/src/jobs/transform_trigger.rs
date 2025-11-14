@@ -113,7 +113,8 @@ pub async fn create_transform_job_for_stream(
         ));
 
         // Create a new executor with the memory-enabled context
-        let memory_executor = JobExecutor::new(db.clone(), (*transform_context_with_memory).clone());
+        let memory_executor =
+            JobExecutor::new(db.clone(), (*transform_context_with_memory).clone());
 
         // Execute with memory data source
         memory_executor.execute_async(job.id);

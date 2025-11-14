@@ -72,7 +72,7 @@ class NetworkManager: ObservableObject {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(deviceToken, forHTTPHeaderField: "X-Device-Token")
+        request.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
         
         // Encode data
         let encoder = JSONEncoder()

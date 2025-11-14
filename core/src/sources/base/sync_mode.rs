@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn test_sync_mode_serialization() {
         let mode = SyncMode::Incremental {
-            cursor: Some("abc123".to_string())
+            cursor: Some("abc123".to_string()),
         };
 
         let json = serde_json::to_string(&mode).unwrap();

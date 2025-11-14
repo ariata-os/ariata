@@ -10,16 +10,16 @@ use axum::{
     Json, Router,
 };
 
-use std::sync::Arc;
 use std::env;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use self::ingest::AppState;
-use crate::error::{Result, Error};
-use crate::Ariata;
-use crate::storage::stream_writer::StreamWriter;
+use crate::error::{Error, Result};
+use crate::mcp::{http::add_mcp_routes, AriataMcpServer};
 use crate::storage::encryption;
-use crate::mcp::{AriataMcpServer, http::add_mcp_routes};
+use crate::storage::stream_writer::StreamWriter;
+use crate::Ariata;
 
 /// Run the HTTP ingestion server with integrated scheduler
 pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
@@ -96,10 +96,7 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
             "/api/devices/pending-pairings",
             get(api::list_pending_pairings_handler),
         )
-        .route(
-            "/api/devices/verify",
-            post(api::verify_device_handler),
-        )
+        .route("/api/devices/verify", post(api::verify_device_handler))
         .route("/api/sources/:id", get(api::get_source_handler))
         .route("/api/sources/:id", delete(api::delete_source_handler))
         .route("/api/sources/:id/pause", post(api::pause_source_handler))
@@ -143,7 +140,10 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
             post(api::trigger_transform_handler),
         )
         // Catalog/Registry API
-        .route("/api/catalog/sources", get(api::list_catalog_sources_handler))
+        .route(
+            "/api/catalog/sources",
+            get(api::list_catalog_sources_handler),
+        )
         // Ontologies API
         .route(
             "/api/ontologies/available",
@@ -158,8 +158,8 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
         .route("/api/jobs", get(api::query_jobs_handler))
         .route("/api/jobs/:id/cancel", post(api::cancel_job_handler))
         .with_state(state.clone())
-        .layer(DefaultBodyLimit::disable())  // Disable default 2MB limit
-        .layer(DefaultBodyLimit::max(20 * 1024 * 1024));  // Set 20MB limit for audio files
+        .layer(DefaultBodyLimit::disable()) // Disable default 2MB limit
+        .layer(DefaultBodyLimit::max(20 * 1024 * 1024)); // Set 20MB limit for audio files
 
     // Add MCP routes to the same server
     let mcp_server = AriataMcpServer::new(client.database.pool().clone());
@@ -195,14 +195,19 @@ fn validate_environment() -> Result<()> {
 
     // Validate key format (should be 64 hex characters = 32 bytes)
     if master_key.len() != 64 {
-        return Err(Error::Configuration(
-            format!("STREAM_ENCRYPTION_MASTER_KEY must be 64 hex characters (32 bytes), got {} characters", master_key.len())
-        ));
+        return Err(Error::Configuration(format!(
+            "STREAM_ENCRYPTION_MASTER_KEY must be 64 hex characters (32 bytes), got {} characters",
+            master_key.len()
+        )));
     }
 
     // Try to parse to ensure it's valid hex
-    encryption::parse_master_key_hex(&master_key)
-        .map_err(|e| Error::Configuration(format!("Invalid STREAM_ENCRYPTION_MASTER_KEY format: {}", e)))?;
+    encryption::parse_master_key_hex(&master_key).map_err(|e| {
+        Error::Configuration(format!(
+            "Invalid STREAM_ENCRYPTION_MASTER_KEY format: {}",
+            e
+        ))
+    })?;
 
     // Check S3 config if S3_BUCKET is set
     if let Ok(bucket) = env::var("S3_BUCKET") {
@@ -213,13 +218,13 @@ fn validate_environment() -> Result<()> {
         // Require credentials when using S3
         if env::var("S3_ACCESS_KEY").is_err() {
             return Err(Error::Configuration(
-                "S3_ACCESS_KEY is required when S3_BUCKET is set".into()
+                "S3_ACCESS_KEY is required when S3_BUCKET is set".into(),
             ));
         }
 
         if env::var("S3_SECRET_KEY").is_err() {
             return Err(Error::Configuration(
-                "S3_SECRET_KEY is required when S3_BUCKET is set".into()
+                "S3_SECRET_KEY is required when S3_BUCKET is set".into(),
             ));
         }
 

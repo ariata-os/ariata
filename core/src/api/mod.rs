@@ -35,6 +35,10 @@ pub use device_pairing::{
     update_last_seen, validate_device_token, verify_device, DeviceInfo, DeviceVerified,
     PairingCompleted, PairingInitiated, PairingStatus, PendingPairing,
 };
+pub use jobs::{
+    cancel_job, get_job_history, get_job_status, query_jobs, trigger_stream_sync,
+    CreateJobResponse, QueryJobsRequest,
+};
 pub use oauth::{
     create_source, handle_oauth_callback, initiate_oauth_flow, register_device,
     CreateSourceRequest, OAuthAuthorizeRequest, OAuthAuthorizeResponse, OAuthCallbackParams,
@@ -43,13 +47,11 @@ pub use oauth::{
 pub use registry::{
     get_source_info, get_stream_descriptor, list_all_streams, list_available_sources,
 };
-pub use sources::{delete_source, get_source, get_source_status, list_sources, pause_source, resume_source};
+pub use sources::{
+    delete_source, get_source, get_source_status, list_sources, pause_source, resume_source,
+};
 pub use streams::{
     disable_stream, enable_stream, get_stream_info, list_source_streams, update_stream_config,
     update_stream_schedule, EnableStreamRequest, UpdateStreamConfigRequest,
     UpdateStreamScheduleRequest,
-};
-pub use jobs::{
-    cancel_job, get_job_history, get_job_status, query_jobs, trigger_stream_sync, CreateJobResponse,
-    QueryJobsRequest,
 };

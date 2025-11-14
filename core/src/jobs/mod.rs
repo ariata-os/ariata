@@ -12,7 +12,10 @@ pub mod transform_context;
 pub mod transform_job;
 pub mod transform_trigger;
 
-pub use archive_job::{ArchiveContext, create_archive_job, execute_archive_job, fetch_pending_archive_jobs, spawn_archive_job_async};
+pub use archive_job::{
+    create_archive_job, execute_archive_job, fetch_pending_archive_jobs, spawn_archive_job_async,
+    ArchiveContext,
+};
 pub use executor::JobExecutor;
 pub use models::{CreateJobRequest, Job, JobStatus, JobType, SyncJobMetadata};
 pub use prudent_context_job::PrudentContextJob;
@@ -29,8 +32,14 @@ fn job_from_row(row: &sqlx::postgres::PgRow) -> Result<Job> {
 
     Ok(Job {
         id: row.try_get("id")?,
-        job_type: row.try_get::<String, _>("job_type")?.parse().map_err(|e: String| Error::Other(e))?,
-        status: row.try_get::<String, _>("status")?.parse().map_err(|e: String| Error::Other(e))?,
+        job_type: row
+            .try_get::<String, _>("job_type")?
+            .parse()
+            .map_err(|e: String| Error::Other(e))?,
+        status: row
+            .try_get::<String, _>("status")?
+            .parse()
+            .map_err(|e: String| Error::Other(e))?,
         source_id: row.try_get("source_id")?,
         stream_name: row.try_get("stream_name")?,
         sync_mode: row.try_get("sync_mode")?,
@@ -50,11 +59,7 @@ fn job_from_row(row: &sqlx::postgres::PgRow) -> Result<Job> {
 }
 
 /// Check if a stream has an active (pending or running) sync job
-pub async fn has_active_sync_job(
-    db: &PgPool,
-    source_id: Uuid,
-    stream_name: &str,
-) -> Result<bool> {
+pub async fn has_active_sync_job(db: &PgPool, source_id: Uuid, stream_name: &str) -> Result<bool> {
     let result = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
@@ -368,7 +373,10 @@ pub async fn wait_for_job_completion(
                 return Ok(job);
             }
             JobStatus::Failed => {
-                let error_msg = job.error_message.clone().unwrap_or_else(|| "Unknown error".to_string());
+                let error_msg = job
+                    .error_message
+                    .clone()
+                    .unwrap_or_else(|| "Unknown error".to_string());
                 tracing::error!(
                     job_id = %job_id,
                     error = %error_msg,

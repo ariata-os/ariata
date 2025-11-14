@@ -9,8 +9,11 @@ use tokio::sync::Mutex;
 use crate::{
     database::Database,
     error::{Error, Result},
-    sources::base::{get_or_create_device_source, validate_latitude, validate_longitude, validate_timestamp_reasonable},
-    storage::{Storage, stream_writer::StreamWriter},
+    sources::base::{
+        get_or_create_device_source, validate_latitude, validate_longitude,
+        validate_timestamp_reasonable,
+    },
+    storage::{stream_writer::StreamWriter, Storage},
 };
 
 pub use transform::IosLocationTransform;
@@ -24,28 +27,35 @@ pub use transform::IosLocationTransform;
 /// * `_storage` - Storage layer (unused for location, but kept for API consistency)
 /// * `stream_writer` - StreamWriter for writing to S3/object storage
 /// * `record` - JSON record from the device
-#[tracing::instrument(skip(db, _storage, stream_writer, record), fields(source = "ios", stream = "location"))]
+#[tracing::instrument(
+    skip(db, _storage, stream_writer, record),
+    fields(source = "ios", stream = "location")
+)]
 pub async fn process(
     db: &Database,
     _storage: &Arc<Storage>,
     stream_writer: &Arc<Mutex<StreamWriter>>,
     record: &Value,
 ) -> Result<()> {
-    let device_id = record.get("device_id")
+    let device_id = record
+        .get("device_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing device_id".into()))?;
 
     let source_id = get_or_create_device_source(db, "ios", device_id).await?;
 
-    let timestamp = record.get("timestamp")
+    let timestamp = record
+        .get("timestamp")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing timestamp".into()))?;
 
-    let latitude = record.get("latitude")
+    let latitude = record
+        .get("latitude")
         .and_then(|v| v.as_f64())
         .ok_or_else(|| Error::Other("Missing latitude".into()))?;
 
-    let longitude = record.get("longitude")
+    let longitude = record
+        .get("longitude")
         .and_then(|v| v.as_f64())
         .ok_or_else(|| Error::Other("Missing longitude".into()))?;
 
@@ -64,14 +74,12 @@ pub async fn process(
     {
         let mut writer = stream_writer.lock().await;
 
-        writer.write_record(
-            source_id,
-            "location",
-            record.clone(),
-            Some(timestamp_dt),
-        )?;
+        writer.write_record(source_id, "location", record.clone(), Some(timestamp_dt))?;
     }
 
-    tracing::debug!("Wrote location record to object storage for device {}", device_id);
+    tracing::debug!(
+        "Wrote location record to object storage for device {}",
+        device_id
+    );
     Ok(())
 }

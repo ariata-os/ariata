@@ -4,8 +4,8 @@ pub mod commands;
 pub mod display;
 pub mod types;
 
-use crate::Ariata;
 use crate::storage::stream_writer::StreamWriter;
+use crate::Ariata;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use types::{Cli, Commands};
@@ -59,7 +59,10 @@ pub async fn run(cli: Cli, ariata: Ariata) -> Result<(), Box<dyn std::error::Err
 
             if enabled_streams.is_empty() {
                 println!("⚠️  No enabled streams for this source");
-                println!("Enable streams with: ariata stream enable {} <stream_name>", source_id);
+                println!(
+                    "Enable streams with: ariata stream enable {} <stream_name>",
+                    source_id
+                );
                 return Ok(());
             }
 
@@ -78,11 +81,16 @@ pub async fn run(cli: Cli, ariata: Ariata) -> Result<(), Box<dyn std::error::Err
                     stream_writer_arc.clone(),
                     source_id,
                     &stream.stream_name,
-                    Some(sync_mode.clone())
-                ).await {
+                    Some(sync_mode.clone()),
+                )
+                .await
+                {
                     Ok(response) => {
                         jobs_created += 1;
-                        println!("    ✅ Job created: {} (status: {})", response.job_id, response.status);
+                        println!(
+                            "    ✅ Job created: {} (status: {})",
+                            response.job_id, response.status
+                        );
                     }
                     Err(e) => {
                         failed_count += 1;

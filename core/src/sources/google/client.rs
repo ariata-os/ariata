@@ -3,15 +3,15 @@
 //! This client delegates all OAuth HTTP operations to the base OAuthHttpClient,
 //! providing Google-specific configuration and error handling.
 
-use std::sync::Arc;
 use serde::de::DeserializeOwned;
+use std::sync::Arc;
 use uuid::Uuid;
 
+use super::error_handler::GoogleErrorHandler;
 use crate::{
     error::{Error, Result},
     sources::base::{OAuthHttpClient, RetryConfig, TokenManager},
 };
-use super::error_handler::GoogleErrorHandler;
 
 /// Google API client with automatic token refresh and retry logic
 ///
@@ -39,7 +39,12 @@ impl GoogleClient {
     /// let client = GoogleClient::with_api(source_id, token_manager, "calendar", "v3");
     /// // Base URL: https://www.googleapis.com/calendar/v3
     /// ```
-    pub fn with_api(source_id: Uuid, token_manager: Arc<TokenManager>, api: &str, version: &str) -> Self {
+    pub fn with_api(
+        source_id: Uuid,
+        token_manager: Arc<TokenManager>,
+        api: &str,
+        version: &str,
+    ) -> Self {
         Self {
             http: OAuthHttpClient::new(source_id, token_manager)
                 .with_base_url(&format!("https://www.googleapis.com/{api}/{version}"))
@@ -57,11 +62,7 @@ impl GoogleClient {
     }
 
     /// Make an authenticated GET request with query parameters
-    pub async fn get_with_params<T>(
-        &self,
-        path: &str,
-        params: &[(&str, &str)]
-    ) -> Result<T>
+    pub async fn get_with_params<T>(&self, path: &str, params: &[(&str, &str)]) -> Result<T>
     where
         T: DeserializeOwned,
     {
@@ -74,7 +75,7 @@ impl GoogleClient {
     pub fn is_sync_token_error(error: &Error) -> bool {
         match error {
             Error::Source(msg) => msg.contains("Sync token") || msg.contains("sync token"),
-            _ => false
+            _ => false,
         }
     }
 }

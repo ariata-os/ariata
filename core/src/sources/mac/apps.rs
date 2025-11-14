@@ -8,7 +8,7 @@ use crate::{
     database::Database,
     error::{Error, Result},
     sources::base::{get_or_create_device_source, validation::validate_timestamp_reasonable},
-    storage::{Storage, stream_writer::StreamWriter},
+    storage::{stream_writer::StreamWriter, Storage},
 };
 
 /// Process Mac application usage data
@@ -20,20 +20,25 @@ use crate::{
 /// * `_storage` - Storage layer (unused for apps, but kept for API consistency)
 /// * `stream_writer` - StreamWriter for writing to S3/object storage
 /// * `record` - JSON record from the device
-#[tracing::instrument(skip(db, _storage, stream_writer, record), fields(source = "mac", stream = "apps"))]
+#[tracing::instrument(
+    skip(db, _storage, stream_writer, record),
+    fields(source = "mac", stream = "apps")
+)]
 pub async fn process(
     db: &Database,
     _storage: &Arc<Storage>,
     stream_writer: &Arc<Mutex<StreamWriter>>,
     record: &Value,
 ) -> Result<()> {
-    let device_id = record.get("device_id")
+    let device_id = record
+        .get("device_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing device_id".into()))?;
 
     let source_id = get_or_create_device_source(db, "mac", device_id).await?;
 
-    let timestamp = record.get("timestamp")
+    let timestamp = record
+        .get("timestamp")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing timestamp".into()))?;
 
@@ -48,14 +53,12 @@ pub async fn process(
     {
         let mut writer = stream_writer.lock().await;
 
-        writer.write_record(
-            source_id,
-            "apps",
-            record.clone(),
-            Some(timestamp_dt),
-        )?;
+        writer.write_record(source_id, "apps", record.clone(), Some(timestamp_dt))?;
     }
 
-    tracing::debug!("Wrote app usage record to object storage for device {}", device_id);
+    tracing::debug!(
+        "Wrote app usage record to object storage for device {}",
+        device_id
+    );
     Ok(())
 }

@@ -32,7 +32,12 @@ impl OntologyTransform for HealthKitHeartRateTransform {
     }
 
     #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
+    async fn transform(
+        &self,
+        db: &Database,
+        context: &crate::jobs::transform_context::TransformContext,
+        source_id: Uuid,
+    ) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -48,7 +53,9 @@ impl OntologyTransform for HealthKitHeartRateTransform {
         // Read stream data from data source using checkpoint
         let checkpoint_key = "healthkit_to_heart_rate";
         let read_start = std::time::Instant::now();
-        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let data_source = context.get_data_source().ok_or_else(|| {
+            crate::Error::Other("No data source available for transform".to_string())
+        })?;
         let batches = data_source
             .read_with_checkpoint(source_id, "healthkit", checkpoint_key)
             .await?;
@@ -62,7 +69,13 @@ impl OntologyTransform for HealthKitHeartRateTransform {
         );
 
         // Batch insert configuration
-        let mut pending_records: Vec<(i32, Option<String>, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut pending_records: Vec<(
+            i32,
+            Option<String>,
+            DateTime<Utc>,
+            Uuid,
+            serde_json::Value,
+        )> = Vec::new();
         let mut batch_insert_total_ms = 0u128;
         let mut batch_insert_count = 0;
 
@@ -77,12 +90,14 @@ impl OntologyTransform for HealthKitHeartRateTransform {
                     continue; // Skip records without heart_rate
                 };
 
-                let timestamp = record.get("timestamp")
+                let timestamp = record
+                    .get("timestamp")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok())
                     .unwrap_or_else(|| Utc::now());
 
-                let stream_id = record.get("id")
+                let stream_id = record
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .unwrap_or_else(|| Uuid::new_v4());
@@ -145,12 +160,9 @@ impl OntologyTransform for HealthKitHeartRateTransform {
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                data_source.update_checkpoint(
-                    source_id,
-                    "healthkit",
-                    checkpoint_key,
-                    max_ts
-                ).await?;
+                data_source
+                    .update_checkpoint(source_id, "healthkit", checkpoint_key, max_ts)
+                    .await?;
             }
         }
 
@@ -228,7 +240,12 @@ impl OntologyTransform for HealthKitHRVTransform {
     }
 
     #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
+    async fn transform(
+        &self,
+        db: &Database,
+        context: &crate::jobs::transform_context::TransformContext,
+        source_id: Uuid,
+    ) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -244,7 +261,9 @@ impl OntologyTransform for HealthKitHRVTransform {
         // Read stream data from data source using checkpoint
         let checkpoint_key = "healthkit_to_hrv";
         let read_start = std::time::Instant::now();
-        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let data_source = context.get_data_source().ok_or_else(|| {
+            crate::Error::Other("No data source available for transform".to_string())
+        })?;
         let batches = data_source
             .read_with_checkpoint(source_id, "healthkit", checkpoint_key)
             .await?;
@@ -258,7 +277,8 @@ impl OntologyTransform for HealthKitHRVTransform {
         );
 
         // Batch insert configuration
-        let mut pending_records: Vec<(f64, String, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut pending_records: Vec<(f64, String, DateTime<Utc>, Uuid, serde_json::Value)> =
+            Vec::new();
         let mut batch_insert_total_ms = 0u128;
         let mut batch_insert_count = 0;
 
@@ -273,12 +293,14 @@ impl OntologyTransform for HealthKitHRVTransform {
                     continue; // Skip records without hrv
                 };
 
-                let timestamp = record.get("timestamp")
+                let timestamp = record
+                    .get("timestamp")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok())
                     .unwrap_or_else(|| Utc::now());
 
-                let stream_id = record.get("id")
+                let stream_id = record
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .unwrap_or_else(|| Uuid::new_v4());
@@ -340,12 +362,9 @@ impl OntologyTransform for HealthKitHRVTransform {
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                data_source.update_checkpoint(
-                    source_id,
-                    "healthkit",
-                    checkpoint_key,
-                    max_ts
-                ).await?;
+                data_source
+                    .update_checkpoint(source_id, "healthkit", checkpoint_key, max_ts)
+                    .await?;
             }
         }
 
@@ -423,7 +442,12 @@ impl OntologyTransform for HealthKitStepsTransform {
     }
 
     #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
+    async fn transform(
+        &self,
+        db: &Database,
+        context: &crate::jobs::transform_context::TransformContext,
+        source_id: Uuid,
+    ) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -439,7 +463,9 @@ impl OntologyTransform for HealthKitStepsTransform {
         // Read stream data from data source using checkpoint
         let checkpoint_key = "healthkit_to_steps";
         let read_start = std::time::Instant::now();
-        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let data_source = context.get_data_source().ok_or_else(|| {
+            crate::Error::Other("No data source available for transform".to_string())
+        })?;
         let batches = data_source
             .read_with_checkpoint(source_id, "healthkit", checkpoint_key)
             .await?;
@@ -468,12 +494,14 @@ impl OntologyTransform for HealthKitStepsTransform {
                     continue; // Skip records without steps
                 };
 
-                let timestamp = record.get("timestamp")
+                let timestamp = record
+                    .get("timestamp")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok())
                     .unwrap_or_else(|| Utc::now());
 
-                let stream_id = record.get("id")
+                let stream_id = record
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .unwrap_or_else(|| Uuid::new_v4());
@@ -485,12 +513,7 @@ impl OntologyTransform for HealthKitStepsTransform {
                 });
 
                 // Add to pending batch
-                pending_records.push((
-                    steps as i32,
-                    timestamp,
-                    stream_id,
-                    metadata,
-                ));
+                pending_records.push((steps as i32, timestamp, stream_id, metadata));
 
                 last_processed_id = Some(stream_id);
 
@@ -527,12 +550,9 @@ impl OntologyTransform for HealthKitStepsTransform {
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                data_source.update_checkpoint(
-                    source_id,
-                    "healthkit",
-                    checkpoint_key,
-                    max_ts
-                ).await?;
+                data_source
+                    .update_checkpoint(source_id, "healthkit", checkpoint_key, max_ts)
+                    .await?;
             }
         }
 
@@ -610,7 +630,12 @@ impl OntologyTransform for HealthKitSleepTransform {
     }
 
     #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
+    async fn transform(
+        &self,
+        db: &Database,
+        context: &crate::jobs::transform_context::TransformContext,
+        source_id: Uuid,
+    ) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -626,7 +651,9 @@ impl OntologyTransform for HealthKitSleepTransform {
         // Read stream data from data source using checkpoint
         let checkpoint_key = "healthkit_to_sleep";
         let read_start = std::time::Instant::now();
-        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let data_source = context.get_data_source().ok_or_else(|| {
+            crate::Error::Other("No data source available for transform".to_string())
+        })?;
         let batches = data_source
             .read_with_checkpoint(source_id, "healthkit", checkpoint_key)
             .await?;
@@ -640,7 +667,15 @@ impl OntologyTransform for HealthKitSleepTransform {
         );
 
         // Batch insert configuration
-        let mut pending_records: Vec<(Option<serde_json::Value>, i32, Option<f64>, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut pending_records: Vec<(
+            Option<serde_json::Value>,
+            i32,
+            Option<f64>,
+            DateTime<Utc>,
+            DateTime<Utc>,
+            Uuid,
+            serde_json::Value,
+        )> = Vec::new();
         let mut batch_insert_total_ms = 0u128;
         let mut batch_insert_count = 0;
 
@@ -651,21 +686,25 @@ impl OntologyTransform for HealthKitSleepTransform {
                 records_read += 1;
 
                 // Extract fields from JSONL record
-                let Some(sleep_duration) = record.get("sleep_duration").and_then(|v| v.as_i64()) else {
+                let Some(sleep_duration) = record.get("sleep_duration").and_then(|v| v.as_i64())
+                else {
                     continue; // Skip records without sleep_duration
                 };
 
-                let timestamp = record.get("timestamp")
+                let timestamp = record
+                    .get("timestamp")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok())
                     .unwrap_or_else(|| Utc::now());
 
-                let stream_id = record.get("id")
+                let stream_id = record
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .unwrap_or_else(|| Uuid::new_v4());
 
-                let sleep_stage = record.get("sleep_stage")
+                let sleep_stage = record
+                    .get("sleep_stage")
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
@@ -738,12 +777,9 @@ impl OntologyTransform for HealthKitSleepTransform {
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                data_source.update_checkpoint(
-                    source_id,
-                    "healthkit",
-                    checkpoint_key,
-                    max_ts
-                ).await?;
+                data_source
+                    .update_checkpoint(source_id, "healthkit", checkpoint_key, max_ts)
+                    .await?;
             }
         }
 
@@ -821,7 +857,12 @@ impl OntologyTransform for HealthKitWorkoutTransform {
     }
 
     #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
+    async fn transform(
+        &self,
+        db: &Database,
+        context: &crate::jobs::transform_context::TransformContext,
+        source_id: Uuid,
+    ) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -837,7 +878,9 @@ impl OntologyTransform for HealthKitWorkoutTransform {
         // Read stream data from data source using checkpoint
         let checkpoint_key = "healthkit_to_workout";
         let read_start = std::time::Instant::now();
-        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let data_source = context.get_data_source().ok_or_else(|| {
+            crate::Error::Other("No data source available for transform".to_string())
+        })?;
         let batches = data_source
             .read_with_checkpoint(source_id, "healthkit", checkpoint_key)
             .await?;
@@ -851,7 +894,19 @@ impl OntologyTransform for HealthKitWorkoutTransform {
         );
 
         // Batch insert configuration
-        let mut pending_records: Vec<(String, Option<String>, Option<i32>, Option<i32>, Option<i32>, Option<f64>, Option<Uuid>, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut pending_records: Vec<(
+            String,
+            Option<String>,
+            Option<i32>,
+            Option<i32>,
+            Option<i32>,
+            Option<f64>,
+            Option<Uuid>,
+            DateTime<Utc>,
+            DateTime<Utc>,
+            Uuid,
+            serde_json::Value,
+        )> = Vec::new();
         let mut batch_insert_total_ms = 0u128;
         let mut batch_insert_count = 0;
 
@@ -866,17 +921,20 @@ impl OntologyTransform for HealthKitWorkoutTransform {
                     continue; // Skip records without workout_type
                 };
 
-                let timestamp = record.get("timestamp")
+                let timestamp = record
+                    .get("timestamp")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok())
                     .unwrap_or_else(|| Utc::now());
 
-                let stream_id = record.get("id")
+                let stream_id = record
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .unwrap_or_else(|| Uuid::new_v4());
 
-                let workout_duration = record.get("workout_duration")
+                let workout_duration = record
+                    .get("workout_duration")
                     .and_then(|v| v.as_i64())
                     .map(|d| d as i32);
 
@@ -956,12 +1014,9 @@ impl OntologyTransform for HealthKitWorkoutTransform {
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                data_source.update_checkpoint(
-                    source_id,
-                    "healthkit",
-                    checkpoint_key,
-                    max_ts
-                ).await?;
+                data_source
+                    .update_checkpoint(source_id, "healthkit", checkpoint_key, max_ts)
+                    .await?;
             }
         }
 
@@ -1034,7 +1089,15 @@ async fn execute_heart_rate_batch_insert(
 
     let query_str = Database::build_batch_insert_query(
         "elt.health_heart_rate",
-        &["bpm", "measurement_context", "timestamp", "source_stream_id", "source_table", "source_provider", "metadata"],
+        &[
+            "bpm",
+            "measurement_context",
+            "timestamp",
+            "source_stream_id",
+            "source_table",
+            "source_provider",
+            "metadata",
+        ],
         "source_stream_id",
         records.len(),
     );
@@ -1070,7 +1133,15 @@ async fn execute_hrv_batch_insert(
 
     let query_str = Database::build_batch_insert_query(
         "elt.health_hrv",
-        &["hrv_ms", "measurement_type", "timestamp", "source_stream_id", "source_table", "source_provider", "metadata"],
+        &[
+            "hrv_ms",
+            "measurement_type",
+            "timestamp",
+            "source_stream_id",
+            "source_table",
+            "source_provider",
+            "metadata",
+        ],
         "source_stream_id",
         records.len(),
     );
@@ -1106,7 +1177,14 @@ async fn execute_steps_batch_insert(
 
     let query_str = Database::build_batch_insert_query(
         "elt.health_steps",
-        &["step_count", "timestamp", "source_stream_id", "source_table", "source_provider", "metadata"],
+        &[
+            "step_count",
+            "timestamp",
+            "source_stream_id",
+            "source_table",
+            "source_provider",
+            "metadata",
+        ],
         "source_stream_id",
         records.len(),
     );
@@ -1133,7 +1211,15 @@ async fn execute_steps_batch_insert(
 /// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
 async fn execute_sleep_batch_insert(
     db: &Database,
-    records: &[(Option<serde_json::Value>, i32, Option<f64>, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)],
+    records: &[(
+        Option<serde_json::Value>,
+        i32,
+        Option<f64>,
+        DateTime<Utc>,
+        DateTime<Utc>,
+        Uuid,
+        serde_json::Value,
+    )],
 ) -> Result<usize> {
     if records.is_empty() {
         return Ok(0);
@@ -1141,7 +1227,17 @@ async fn execute_sleep_batch_insert(
 
     let query_str = Database::build_batch_insert_query(
         "elt.health_sleep",
-        &["sleep_stages", "total_duration_minutes", "sleep_quality_score", "start_time", "end_time", "source_stream_id", "source_table", "source_provider", "metadata"],
+        &[
+            "sleep_stages",
+            "total_duration_minutes",
+            "sleep_quality_score",
+            "start_time",
+            "end_time",
+            "source_stream_id",
+            "source_table",
+            "source_provider",
+            "metadata",
+        ],
         "source_stream_id",
         records.len(),
     );
@@ -1149,7 +1245,16 @@ async fn execute_sleep_batch_insert(
     let mut query = sqlx::query(&query_str);
 
     // Bind all parameters row by row
-    for (sleep_stages, total_duration_minutes, sleep_quality_score, start_time, end_time, stream_id, metadata) in records {
+    for (
+        sleep_stages,
+        total_duration_minutes,
+        sleep_quality_score,
+        start_time,
+        end_time,
+        stream_id,
+        metadata,
+    ) in records
+    {
         query = query
             .bind(sleep_stages)
             .bind(total_duration_minutes)
@@ -1171,7 +1276,19 @@ async fn execute_sleep_batch_insert(
 /// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
 async fn execute_workout_batch_insert(
     db: &Database,
-    records: &[(String, Option<String>, Option<i32>, Option<i32>, Option<i32>, Option<f64>, Option<Uuid>, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)],
+    records: &[(
+        String,
+        Option<String>,
+        Option<i32>,
+        Option<i32>,
+        Option<i32>,
+        Option<f64>,
+        Option<Uuid>,
+        DateTime<Utc>,
+        DateTime<Utc>,
+        Uuid,
+        serde_json::Value,
+    )],
 ) -> Result<usize> {
     if records.is_empty() {
         return Ok(0);
@@ -1179,7 +1296,21 @@ async fn execute_workout_batch_insert(
 
     let query_str = Database::build_batch_insert_query(
         "elt.health_workout",
-        &["activity_type", "intensity", "calories_burned", "average_heart_rate", "max_heart_rate", "distance_meters", "place_id", "start_time", "end_time", "source_stream_id", "source_table", "source_provider", "metadata"],
+        &[
+            "activity_type",
+            "intensity",
+            "calories_burned",
+            "average_heart_rate",
+            "max_heart_rate",
+            "distance_meters",
+            "place_id",
+            "start_time",
+            "end_time",
+            "source_stream_id",
+            "source_table",
+            "source_provider",
+            "metadata",
+        ],
         "source_stream_id",
         records.len(),
     );
@@ -1187,7 +1318,20 @@ async fn execute_workout_batch_insert(
     let mut query = sqlx::query(&query_str);
 
     // Bind all parameters row by row
-    for (activity_type, intensity, calories_burned, average_heart_rate, max_heart_rate, distance_meters, place_id, start_time, end_time, stream_id, metadata) in records {
+    for (
+        activity_type,
+        intensity,
+        calories_burned,
+        average_heart_rate,
+        max_heart_rate,
+        distance_meters,
+        place_id,
+        start_time,
+        end_time,
+        stream_id,
+        metadata,
+    ) in records
+    {
         query = query
             .bind(activity_type)
             .bind(intensity)

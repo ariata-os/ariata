@@ -8,5 +8,5 @@ pub mod state;
 pub mod token_manager;
 
 // Re-export the main types
-pub use token_manager::{TokenManager, OAuthToken, OAuthProxyConfig};
 pub use encryption::TokenEncryptor;
+pub use token_manager::{OAuthProxyConfig, OAuthToken, TokenManager};

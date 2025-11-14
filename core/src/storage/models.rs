@@ -165,9 +165,7 @@ impl StreamKeyParser {
             return None;
         }
 
-        let timestamp_str = filename
-            .strip_prefix("records_")?
-            .strip_suffix(".jsonl")?;
+        let timestamp_str = filename.strip_prefix("records_")?.strip_suffix(".jsonl")?;
         timestamp_str.parse().ok()
     }
 

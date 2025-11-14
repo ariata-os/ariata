@@ -111,16 +111,13 @@ pub async fn initiate_oauth_flow(
 
 /// Handle OAuth callback and create source
 /// Supports both direct token flow and code exchange flow
-pub async fn handle_oauth_callback(
-    db: &PgPool,
-    params: &OAuthCallbackParams,
-) -> Result<Source> {
+pub async fn handle_oauth_callback(db: &PgPool, params: &OAuthCallbackParams) -> Result<Source> {
     // SECURITY: Validate state parameter to prevent CSRF attacks
     if let Some(ref state) = params.state {
         crate::sources::base::oauth::state::validate_state(state)?;
     } else {
         return Err(Error::InvalidInput(
-            "Missing state parameter - possible CSRF attempt".to_string()
+            "Missing state parameter - possible CSRF attempt".to_string(),
         ));
     }
 

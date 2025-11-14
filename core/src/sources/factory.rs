@@ -3,19 +3,16 @@
 //! This module provides a unified way to instantiate any stream based on
 //! source type and stream name, handling authentication and configuration loading.
 
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::base::TokenManager;
 use crate::error::{Error, Result};
 use crate::storage::stream_writer::StreamWriter;
-use super::base::TokenManager;
 
-use super::{
-    auth::SourceAuth,
-    stream::Stream,
-};
+use super::{auth::SourceAuth, stream::Stream};
 
 /// Factory for creating stream instances
 ///
@@ -82,7 +79,7 @@ impl StreamFactory {
     /// Load source information from the database
     async fn load_source(&self, source_id: Uuid) -> Result<SourceInfo> {
         let result = sqlx::query_as::<_, (String, String)>(
-            "SELECT provider, name FROM sources WHERE id = $1 AND is_active = true"
+            "SELECT provider, name FROM sources WHERE id = $1 AND is_active = true",
         )
         .bind(source_id)
         .fetch_optional(&self.db)
@@ -136,23 +133,42 @@ impl StreamFactory {
             // Internal streams
             ("ariata", "app_export") => {
                 use crate::sources::ariata::AppChatExportStream;
-                Ok(Box::new(AppChatExportStream::new(self.db.clone(), source_id, self.stream_writer.clone())))
+                Ok(Box::new(AppChatExportStream::new(
+                    self.db.clone(),
+                    source_id,
+                    self.stream_writer.clone(),
+                )))
             }
 
             // Google streams
             ("google", "calendar") => {
                 use crate::sources::google::calendar::GoogleCalendarStream;
-                Ok(Box::new(GoogleCalendarStream::new(source_id, self.db.clone(), self.stream_writer.clone(), auth)))
+                Ok(Box::new(GoogleCalendarStream::new(
+                    source_id,
+                    self.db.clone(),
+                    self.stream_writer.clone(),
+                    auth,
+                )))
             }
             ("google", "gmail") => {
                 use crate::sources::google::gmail::GoogleGmailStream;
-                Ok(Box::new(GoogleGmailStream::new(source_id, self.db.clone(), self.stream_writer.clone(), auth)))
+                Ok(Box::new(GoogleGmailStream::new(
+                    source_id,
+                    self.db.clone(),
+                    self.stream_writer.clone(),
+                    auth,
+                )))
             }
 
             // Notion streams
             ("notion", "pages") => {
                 use crate::sources::notion::NotionPagesStream;
-                Ok(Box::new(NotionPagesStream::new(source_id, self.db.clone(), self.stream_writer.clone(), auth)))
+                Ok(Box::new(NotionPagesStream::new(
+                    source_id,
+                    self.db.clone(),
+                    self.stream_writer.clone(),
+                    auth,
+                )))
             }
 
             // iOS streams
@@ -177,7 +193,6 @@ impl StreamFactory {
             ))),
         }
     }
-
 }
 
 impl Clone for StreamFactory {
@@ -198,17 +213,20 @@ struct SourceInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::stream_writer::StreamWriter;
 
     #[tokio::test]
     async fn test_factory_creation() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let _factory = StreamFactory::new(pool);
+        let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
+        let _factory = StreamFactory::new(pool, stream_writer);
     }
 
     #[tokio::test]
     async fn test_factory_clone() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let factory = StreamFactory::new(pool);
+        let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
+        let factory = StreamFactory::new(pool, stream_writer);
         let _factory2 = factory.clone();
     }
 
@@ -218,7 +236,8 @@ mod tests {
         std::env::set_var("ARIATA_ALLOW_INSECURE", "true");
 
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let factory = StreamFactory::new(pool);
+        let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
+        let factory = StreamFactory::new(pool, stream_writer);
 
         let auth = factory.create_auth(Uuid::new_v4(), "google").await;
         assert!(auth.is_ok());
@@ -234,7 +253,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_auth_device() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let factory = StreamFactory::new(pool);
+        let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
+        let factory = StreamFactory::new(pool, stream_writer);
 
         // Note: This will fail without a source in the database
         // That's expected - this tests the code path, not the database
@@ -247,7 +267,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_auth_unknown_source() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let factory = StreamFactory::new(pool);
+        let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
+        let factory = StreamFactory::new(pool, stream_writer);
 
         let result = factory.create_auth(Uuid::new_v4(), "unknown_source").await;
         assert!(result.is_err());
@@ -261,7 +282,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_stream_impl_google_calendar() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let factory = StreamFactory::new(pool.clone());
+        let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
+        let factory = StreamFactory::new(pool.clone(), stream_writer.clone());
 
         let source_id = Uuid::new_v4();
         let tm = Arc::new(TokenManager::new_insecure(pool));
@@ -281,7 +303,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_stream_impl_unknown_stream() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let factory = StreamFactory::new(pool.clone());
+        let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
+        let factory = StreamFactory::new(pool.clone(), stream_writer.clone());
 
         let source_id = Uuid::new_v4();
         let tm = Arc::new(TokenManager::new_insecure(pool));

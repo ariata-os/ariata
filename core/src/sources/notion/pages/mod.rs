@@ -20,7 +20,10 @@ use crate::{
     storage::stream_writer::StreamWriter,
 };
 
-use super::{client::NotionApiClient, types::{SearchResponse, Page, Parent, BlockChildrenResponse, Block}};
+use super::{
+    client::NotionApiClient,
+    types::{Block, BlockChildrenResponse, Page, Parent, SearchResponse},
+};
 
 /// Notion pages stream
 pub struct NotionPagesStream {
@@ -31,7 +34,12 @@ pub struct NotionPagesStream {
 
 impl NotionPagesStream {
     /// Create a new Notion pages stream with SourceAuth and StreamWriter
-    pub fn new(source_id: Uuid, _db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>, auth: SourceAuth) -> Self {
+    pub fn new(
+        source_id: Uuid,
+        _db: PgPool,
+        stream_writer: Arc<Mutex<StreamWriter>>,
+        auth: SourceAuth,
+    ) -> Self {
         // Extract token manager from auth
         let token_manager = auth
             .token_manager()
@@ -140,7 +148,10 @@ impl NotionPagesStream {
 
         loop {
             let path = if let Some(ref cursor_val) = cursor {
-                format!("blocks/{}/children?page_size=100&start_cursor={}", page_id, cursor_val)
+                format!(
+                    "blocks/{}/children?page_size=100&start_cursor={}",
+                    page_id, cursor_val
+                )
             } else {
                 format!("blocks/{}/children?page_size=100", page_id)
             };
@@ -227,7 +238,11 @@ impl NotionPagesStream {
                 "to_do" => {
                     if let Some(content) = &block.to_do {
                         let text = self.rich_text_to_string(&content.rich_text);
-                        let checkbox = if content.checked.unwrap_or(false) { "[x]" } else { "[ ]" };
+                        let checkbox = if content.checked.unwrap_or(false) {
+                            "[x]"
+                        } else {
+                            "[ ]"
+                        };
                         if !text.is_empty() {
                             markdown.push_str("- ");
                             markdown.push_str(checkbox);
@@ -377,12 +392,7 @@ impl NotionPagesStream {
         // Write to S3/object storage via StreamWriter
         {
             let mut writer = self.stream_writer.lock().await;
-            writer.write_record(
-                self.source_id,
-                "pages",
-                record,
-                Some(page.last_edited_time),
-            )?;
+            writer.write_record(self.source_id, "pages", record, Some(page.last_edited_time))?;
         }
 
         tracing::debug!(page_id = %page.id, "Wrote Notion page to object storage");

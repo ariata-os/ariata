@@ -162,11 +162,7 @@ pub async fn get_ontologies_overview(db: &PgPool) -> Result<Vec<OntologyOverview
     }
 
     // Sort by domain, then by name
-    overviews.sort_by(|a, b| {
-        a.domain
-            .cmp(&b.domain)
-            .then_with(|| a.name.cmp(&b.name))
-    });
+    overviews.sort_by(|a, b| a.domain.cmp(&b.domain).then_with(|| a.name.cmp(&b.name)));
 
     Ok(overviews)
 }

@@ -10,7 +10,7 @@ use crate::{
     database::Database,
     error::{Error, Result},
     sources::base::{get_or_create_device_source, validation::validate_timestamp_reasonable},
-    storage::{Storage, stream_writer::StreamWriter},
+    storage::{stream_writer::StreamWriter, Storage},
 };
 
 pub use transform::MicrophoneTranscriptionTransform;
@@ -25,20 +25,25 @@ pub use transform::MicrophoneTranscriptionTransform;
 /// * `storage` - Storage layer for audio file uploads
 /// * `stream_writer` - StreamWriter for writing to S3/object storage
 /// * `record` - JSON record from the device
-#[tracing::instrument(skip(db, storage, stream_writer, record), fields(source = "ios", stream = "microphone"))]
+#[tracing::instrument(
+    skip(db, storage, stream_writer, record),
+    fields(source = "ios", stream = "microphone")
+)]
 pub async fn process(
     db: &Database,
     storage: &Arc<Storage>,
     stream_writer: &Arc<Mutex<StreamWriter>>,
     record: &Value,
 ) -> Result<()> {
-    let device_id = record.get("device_id")
+    let device_id = record
+        .get("device_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing device_id".into()))?;
 
     let source_id = get_or_create_device_source(db, "ios", device_id).await?;
 
-    let timestamp = record.get("timestamp")
+    let timestamp = record
+        .get("timestamp")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing timestamp".into()))?;
 
@@ -57,7 +62,8 @@ pub async fn process(
         // Decode base64 audio data
         use base64::Engine;
         if let Ok(audio_bytes) = base64::engine::general_purpose::STANDARD.decode(audio_data_b64) {
-            let key = format!("ios/microphone/{}/{}.{}",
+            let key = format!(
+                "ios/microphone/{}/{}.{}",
                 device_id,
                 uuid::Uuid::new_v4(),
                 audio_format.unwrap_or("m4a")
@@ -74,8 +80,14 @@ pub async fn process(
     let mut record_with_audio = record.clone();
     if let Some(ref key) = audio_file_key {
         if let Some(obj) = record_with_audio.as_object_mut() {
-            obj.insert("uploaded_audio_file_key".to_string(), serde_json::json!(key));
-            obj.insert("uploaded_audio_file_size".to_string(), serde_json::json!(audio_file_size));
+            obj.insert(
+                "uploaded_audio_file_key".to_string(),
+                serde_json::json!(key),
+            );
+            obj.insert(
+                "uploaded_audio_file_size".to_string(),
+                serde_json::json!(audio_file_size),
+            );
         }
     }
 
@@ -92,6 +104,9 @@ pub async fn process(
         )?;
     }
 
-    tracing::debug!("Wrote microphone record to object storage for device {}", device_id);
+    tracing::debug!(
+        "Wrote microphone record to object storage for device {}",
+        device_id
+    );
     Ok(())
 }

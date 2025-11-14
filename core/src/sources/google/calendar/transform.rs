@@ -32,7 +32,12 @@ impl OntologyTransform for GoogleCalendarTransform {
     }
 
     #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
+    async fn transform(
+        &self,
+        db: &Database,
+        context: &crate::jobs::transform_context::TransformContext,
+        source_id: Uuid,
+    ) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -48,7 +53,9 @@ impl OntologyTransform for GoogleCalendarTransform {
         // Read stream data using data source (memory for hot path)
         let checkpoint_key = "calendar_to_activity_calendar_entry";
         let read_start = std::time::Instant::now();
-        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let data_source = context.get_data_source().ok_or_else(|| {
+            crate::Error::Other("No data source available for transform".to_string())
+        })?;
         let batches = data_source
             .read_with_checkpoint(source_id, "calendar", checkpoint_key)
             .await?;
@@ -62,17 +69,31 @@ impl OntologyTransform for GoogleCalendarTransform {
         );
 
         // Batch insert configuration
-        let mut pending_records: Vec<(Option<String>, Option<String>, String, Option<&'static str>, Option<String>, Vec<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>, DateTime<Utc>, bool, Option<String>, Option<String>, Uuid, serde_json::Value)> = Vec::new();
+        let mut pending_records: Vec<(
+            Option<String>,
+            Option<String>,
+            String,
+            Option<&'static str>,
+            Option<String>,
+            Vec<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            DateTime<Utc>,
+            DateTime<Utc>,
+            bool,
+            Option<String>,
+            Option<String>,
+            Uuid,
+            serde_json::Value,
+        )> = Vec::new();
         let mut batch_insert_total_ms = 0u128;
         let mut batch_insert_count = 0;
 
         let processing_start = std::time::Instant::now();
 
         for batch in batches {
-            tracing::debug!(
-                batch_record_count = batch.records.len(),
-                "Processing batch"
-            );
+            tracing::debug!(batch_record_count = batch.records.len(), "Processing batch");
 
             for record in &batch.records {
                 records_read += 1;
@@ -82,66 +103,80 @@ impl OntologyTransform for GoogleCalendarTransform {
                     continue; // Skip records without event_id
                 };
 
-                let stream_id = record.get("id")
+                let stream_id = record
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .unwrap_or_else(|| Uuid::new_v4());
 
-                let calendar_id = record.get("calendar_id")
+                let calendar_id = record
+                    .get("calendar_id")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
 
-                let summary = record.get("summary")
+                let summary = record
+                    .get("summary")
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
-                let description = record.get("description")
+                let description = record
+                    .get("description")
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
-                let location = record.get("location")
+                let location = record
+                    .get("location")
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
-                let status = record.get("status")
+                let status = record
+                    .get("status")
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
-                let start_time = record.get("start_time")
+                let start_time = record
+                    .get("start_time")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok())
                     .unwrap_or_else(|| Utc::now());
 
-                let end_time = record.get("end_time")
+                let end_time = record
+                    .get("end_time")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok())
                     .unwrap_or_else(|| Utc::now());
 
-                let all_day = record.get("all_day")
+                let all_day = record
+                    .get("all_day")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
 
-                let organizer_email = record.get("organizer_email")
+                let organizer_email = record
+                    .get("organizer_email")
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
-                let attendee_count = record.get("attendee_count")
+                let attendee_count = record
+                    .get("attendee_count")
                     .and_then(|v| v.as_i64())
                     .map(|c| c as i32);
 
-                let has_conferencing = record.get("has_conferencing")
-                    .and_then(|v| v.as_bool());
+                let has_conferencing = record.get("has_conferencing").and_then(|v| v.as_bool());
 
-                let conference_type = record.get("conference_type")
+                let conference_type = record
+                    .get("conference_type")
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
-                let conference_link = record.get("conference_link")
+                let conference_link = record
+                    .get("conference_link")
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
-                let raw_json = record.get("raw_json").cloned()
+                let raw_json = record
+                    .get("raw_json")
+                    .cloned()
                     .unwrap_or(serde_json::Value::Null);
 
                 // Extract attendee emails from raw_json if available
@@ -231,12 +266,9 @@ impl OntologyTransform for GoogleCalendarTransform {
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                data_source.update_checkpoint(
-                    source_id,
-                    "calendar",
-                    checkpoint_key,
-                    max_ts
-                ).await?;
+                data_source
+                    .update_checkpoint(source_id, "calendar", checkpoint_key, max_ts)
+                    .await?;
             }
         }
 
@@ -301,7 +333,24 @@ impl OntologyTransform for GoogleCalendarTransform {
 /// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
 async fn execute_calendar_batch_insert(
     db: &Database,
-    records: &[(Option<String>, Option<String>, String, Option<&str>, Option<String>, Vec<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>, DateTime<Utc>, bool, Option<String>, Option<String>, Uuid, serde_json::Value)],
+    records: &[(
+        Option<String>,
+        Option<String>,
+        String,
+        Option<&str>,
+        Option<String>,
+        Vec<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        DateTime<Utc>,
+        DateTime<Utc>,
+        bool,
+        Option<String>,
+        Option<String>,
+        Uuid,
+        serde_json::Value,
+    )],
 ) -> Result<usize> {
     if records.is_empty() {
         return Ok(0);
@@ -309,7 +358,26 @@ async fn execute_calendar_batch_insert(
 
     let query_str = Database::build_batch_insert_query(
         "elt.activity_calendar_entry",
-        &["title", "description", "calendar_name", "event_type", "organizer_identifier", "attendee_identifiers", "location_name", "conference_url", "conference_platform", "start_time", "end_time", "is_all_day", "status", "response_status", "source_stream_id", "metadata", "source_table", "source_provider"],
+        &[
+            "title",
+            "description",
+            "calendar_name",
+            "event_type",
+            "organizer_identifier",
+            "attendee_identifiers",
+            "location_name",
+            "conference_url",
+            "conference_platform",
+            "start_time",
+            "end_time",
+            "is_all_day",
+            "status",
+            "response_status",
+            "source_stream_id",
+            "metadata",
+            "source_table",
+            "source_provider",
+        ],
         "source_stream_id",
         records.len(),
     );
@@ -317,7 +385,25 @@ async fn execute_calendar_batch_insert(
     let mut query = sqlx::query(&query_str);
 
     // Bind all parameters row by row
-    for (title, description, calendar_name, event_type, organizer_identifier, attendee_identifiers, location_name, conference_url, conference_platform, start_time, end_time, is_all_day, status, response_status, stream_id, metadata) in records {
+    for (
+        title,
+        description,
+        calendar_name,
+        event_type,
+        organizer_identifier,
+        attendee_identifiers,
+        location_name,
+        conference_url,
+        conference_platform,
+        start_time,
+        end_time,
+        is_all_day,
+        status,
+        response_status,
+        stream_id,
+        metadata,
+    ) in records
+    {
         query = query
             .bind(title)
             .bind(description)

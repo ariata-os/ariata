@@ -5,7 +5,7 @@
 
 use axum::{routing::any_service, Router};
 use rmcp::transport::streamable_http_server::{
-    session::local::LocalSessionManager, StreamableHttpService, StreamableHttpServerConfig,
+    session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
 use std::sync::Arc;
 use std::time::Duration;

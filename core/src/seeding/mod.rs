@@ -8,7 +8,7 @@ pub mod narratives;
 pub mod ontologies;
 
 use crate::database::Database;
-use crate::storage::{Storage, stream_writer::StreamWriter};
+use crate::storage::{stream_writer::StreamWriter, Storage};
 use crate::Result;
 use std::sync::Arc;
 use tokio::sync::Mutex;

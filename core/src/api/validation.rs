@@ -6,7 +6,9 @@ use uuid::Uuid;
 /// Validate provider name exists in registry
 pub fn validate_provider_name(provider: &str) -> Result<()> {
     if provider.is_empty() {
-        return Err(Error::InvalidInput("Provider name cannot be empty".to_string()));
+        return Err(Error::InvalidInput(
+            "Provider name cannot be empty".to_string(),
+        ));
     }
 
     // Check if provider exists in registry
@@ -19,17 +21,20 @@ pub fn validate_provider_name(provider: &str) -> Result<()> {
 /// Validate redirect URI against allowed hosts
 pub fn validate_redirect_uri(uri: &str, allowed_hosts: &[&str]) -> Result<()> {
     if uri.is_empty() {
-        return Err(Error::InvalidInput("Redirect URI cannot be empty".to_string()));
+        return Err(Error::InvalidInput(
+            "Redirect URI cannot be empty".to_string(),
+        ));
     }
 
     // Parse URI
-    let parsed = uri.parse::<url::Url>()
+    let parsed = uri
+        .parse::<url::Url>()
         .map_err(|e| Error::InvalidInput(format!("Invalid redirect URI: {e}")))?;
 
     // Ensure HTTPS (except localhost for dev)
     if parsed.scheme() != "https" && parsed.host_str() != Some("localhost") {
         return Err(Error::InvalidInput(
-            "Redirect URI must use HTTPS (except localhost)".to_string()
+            "Redirect URI must use HTTPS (except localhost)".to_string(),
         ));
     }
 
@@ -58,10 +63,15 @@ pub fn validate_name(name: &str, field: &str) -> Result<()> {
     }
 
     if name.len() > 255 {
-        return Err(Error::InvalidInput(format!("{field} too long (max 255 chars)")));
+        return Err(Error::InvalidInput(format!(
+            "{field} too long (max 255 chars)"
+        )));
     }
 
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ' ') {
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ' ')
+    {
         return Err(Error::InvalidInput(format!(
             "{field} contains invalid characters (use alphanumeric, _, -, ., space)"
         )));

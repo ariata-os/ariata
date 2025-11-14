@@ -23,10 +23,11 @@ impl TokenEncryptor {
     ///
     /// Expects ARIATA_ENCRYPTION_KEY to be a 32-byte base64-encoded key
     pub fn from_env() -> Result<Self> {
-        let key_b64 = std::env::var("ARIATA_ENCRYPTION_KEY")
-            .map_err(|_| Error::Other(
-                "ARIATA_ENCRYPTION_KEY not set. Generate with: openssl rand -base64 32".to_string()
-            ))?;
+        let key_b64 = std::env::var("ARIATA_ENCRYPTION_KEY").map_err(|_| {
+            Error::Other(
+                "ARIATA_ENCRYPTION_KEY not set. Generate with: openssl rand -base64 32".to_string(),
+            )
+        })?;
 
         Self::from_base64_key(&key_b64)
     }
@@ -234,6 +235,9 @@ mod tests {
         assert_eq!(decrypt_optional(&encryptor, None).unwrap(), None);
 
         // Test empty string
-        assert_eq!(encrypt_optional(&encryptor, Some("")).unwrap(), Some(String::new()));
+        assert_eq!(
+            encrypt_optional(&encryptor, Some("")).unwrap(),
+            Some(String::new())
+        );
     }
 }

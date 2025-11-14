@@ -9,16 +9,16 @@ use tokio::sync::Mutex;
 use crate::{
     database::Database,
     error::{Error, Result},
-    sources::base::{get_or_create_device_source, validate_heart_rate, validate_positive, validate_percentage, validate_timestamp_reasonable},
-    storage::{Storage, stream_writer::StreamWriter},
+    sources::base::{
+        get_or_create_device_source, validate_heart_rate, validate_percentage, validate_positive,
+        validate_timestamp_reasonable,
+    },
+    storage::{stream_writer::StreamWriter, Storage},
 };
 
 pub use transform::{
-    HealthKitHeartRateTransform,
-    HealthKitHRVTransform,
-    HealthKitStepsTransform,
-    HealthKitSleepTransform,
-    HealthKitWorkoutTransform,
+    HealthKitHRVTransform, HealthKitHeartRateTransform, HealthKitSleepTransform,
+    HealthKitStepsTransform, HealthKitWorkoutTransform,
 };
 
 /// Process iOS HealthKit data
@@ -31,7 +31,10 @@ pub use transform::{
 /// * `_storage` - Storage layer (unused for HealthKit, but kept for API consistency)
 /// * `stream_writer` - StreamWriter for writing to S3/object storage
 /// * `record` - JSON record from the device
-#[tracing::instrument(skip(db, _storage, stream_writer, record), fields(source = "ios", stream = "healthkit"))]
+#[tracing::instrument(
+    skip(db, _storage, stream_writer, record),
+    fields(source = "ios", stream = "healthkit")
+)]
 pub async fn process(
     db: &Database,
     _storage: &Arc<Storage>,
@@ -39,14 +42,16 @@ pub async fn process(
     record: &Value,
 ) -> Result<()> {
     // Get source_id from device_id in the record
-    let device_id = record.get("device_id")
+    let device_id = record
+        .get("device_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing device_id".into()))?;
 
     let source_id = get_or_create_device_source(db, "ios", device_id).await?;
 
     // Parse timestamp
-    let timestamp = record.get("timestamp")
+    let timestamp = record
+        .get("timestamp")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing timestamp".into()))?;
 
@@ -54,7 +59,10 @@ pub async fn process(
     let heart_rate = record.get("heart_rate").and_then(|v| v.as_f64());
     let hrv = record.get("hrv").and_then(|v| v.as_f64());
     let resting_heart_rate = record.get("resting_heart_rate").and_then(|v| v.as_f64());
-    let steps = record.get("steps").and_then(|v| v.as_i64()).map(|v| v as i32);
+    let steps = record
+        .get("steps")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
     let distance = record.get("distance").and_then(|v| v.as_f64());
     let body_fat_percentage = record.get("body_fat_percentage").and_then(|v| v.as_f64());
 
@@ -91,14 +99,12 @@ pub async fn process(
     {
         let mut writer = stream_writer.lock().await;
 
-        writer.write_record(
-            source_id,
-            "healthkit",
-            record.clone(),
-            Some(timestamp_dt),
-        )?;
+        writer.write_record(source_id, "healthkit", record.clone(), Some(timestamp_dt))?;
     }
 
-    tracing::debug!("Wrote healthkit record to object storage for device {}", device_id);
+    tracing::debug!(
+        "Wrote healthkit record to object storage for device {}",
+        device_id
+    );
     Ok(())
 }

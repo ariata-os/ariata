@@ -3,8 +3,11 @@
 //! Provides shared helpers for iOS and Mac device sources that push data
 //! to the ingestion endpoint.
 
+use crate::{
+    database::Database,
+    error::{Error, Result},
+};
 use uuid::Uuid;
-use crate::{database::Database, error::{Error, Result}};
 
 /// Get or create a device source by device_id
 ///
@@ -31,14 +34,13 @@ pub async fn get_or_create_device_source(
     use sqlx;
 
     // Try to get existing source
-    let existing: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM sources WHERE provider = $1 AND name = $2"
-    )
-    .bind(provider)
-    .bind(device_id)
-    .fetch_optional(db.pool())
-    .await
-    .map_err(|e| Error::Database(format!("Failed to query source: {e}")))?;
+    let existing: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM sources WHERE provider = $1 AND name = $2")
+            .bind(provider)
+            .bind(device_id)
+            .fetch_optional(db.pool())
+            .await
+            .map_err(|e| Error::Database(format!("Failed to query source: {e}")))?;
 
     if let Some((id,)) = existing {
         return Ok(id);
@@ -49,7 +51,7 @@ pub async fn get_or_create_device_source(
     sqlx::query(
         "INSERT INTO sources (id, provider, name, is_active, is_internal)
          VALUES ($1, $2, $3, true, false)
-         ON CONFLICT (name) DO NOTHING"
+         ON CONFLICT (name) DO NOTHING",
     )
     .bind(new_id)
     .bind(provider)

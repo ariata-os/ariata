@@ -59,8 +59,8 @@ pub struct Event {
 #[derive(Debug, Deserialize, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventTime {
-    pub date: Option<String>,       // For all-day events
-    pub date_time: Option<String>,  // For timed events
+    pub date: Option<String>,      // For all-day events
+    pub date_time: Option<String>, // For timed events
     pub time_zone: Option<String>,
 }
 
@@ -80,7 +80,7 @@ pub struct Person {
 pub struct Attendee {
     pub email: String,
     pub display_name: Option<String>,
-    pub response_status: Option<String>,  // accepted, declined, tentative, needsAction
+    pub response_status: Option<String>, // accepted, declined, tentative, needsAction
     pub optional: Option<bool>,
     pub organizer: Option<bool>,
     #[serde(rename = "self")]
@@ -101,7 +101,7 @@ pub struct ConferenceData {
 #[serde(rename_all = "camelCase")]
 pub struct ConferenceSolution {
     pub key: Option<ConferenceKey>,
-    pub name: Option<String>,  // "Google Meet", "Zoom", etc
+    pub name: Option<String>, // "Google Meet", "Zoom", etc
     pub icon_uri: Option<String>,
 }
 
@@ -110,17 +110,17 @@ pub struct ConferenceSolution {
 #[serde(rename_all = "camelCase")]
 pub struct ConferenceKey {
     #[serde(rename = "type")]
-    pub key_type: String,  // "hangoutsMeet", etc
+    pub key_type: String, // "hangoutsMeet", etc
 }
 
 /// Conference entry point (URL, phone, etc)
 #[derive(Debug, Deserialize, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EntryPoint {
-    pub entry_point_type: String,  // "video", "phone", etc
-    pub uri: Option<String>,       // Meeting URL
-    pub label: Option<String>,     // Display label
-    pub pin: Option<String>,       // Meeting PIN if any
+    pub entry_point_type: String, // "video", "phone", etc
+    pub uri: Option<String>,      // Meeting URL
+    pub label: Option<String>,    // Display label
+    pub pin: Option<String>,      // Meeting PIN if any
 }
 
 // ============ Gmail Types ============
@@ -169,10 +169,10 @@ pub struct Message {
     pub label_ids: Option<Vec<String>>,
     pub snippet: Option<String>,
     pub history_id: Option<String>,
-    pub internal_date: Option<String>,  // Milliseconds since epoch as string
+    pub internal_date: Option<String>, // Milliseconds since epoch as string
     pub payload: Option<MessagePart>,
     pub size_estimate: Option<i32>,
-    pub raw: Option<String>,  // Base64 encoded raw message
+    pub raw: Option<String>, // Base64 encoded raw message
 }
 
 /// Message part (MIME structure)
@@ -184,7 +184,7 @@ pub struct MessagePart {
     pub filename: Option<String>,
     pub headers: Option<Vec<MessageHeader>>,
     pub body: Option<MessageBody>,
-    pub parts: Option<Vec<MessagePart>>,  // Recursive for multipart
+    pub parts: Option<Vec<MessagePart>>, // Recursive for multipart
 }
 
 /// Message header
@@ -201,7 +201,7 @@ pub struct MessageHeader {
 pub struct MessageBody {
     pub attachment_id: Option<String>,
     pub size: i32,
-    pub data: Option<String>,  // Base64url encoded
+    pub data: Option<String>, // Base64url encoded
 }
 
 /// Gmail thread with messages
@@ -222,7 +222,7 @@ pub struct Label {
     pub name: String,
     pub message_list_visibility: Option<String>,
     pub label_list_visibility: Option<String>,
-    pub r#type: Option<String>,  // "system" or "user"
+    pub r#type: Option<String>, // "system" or "user"
 }
 
 /// Gmail history record for incremental sync

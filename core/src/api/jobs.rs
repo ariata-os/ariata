@@ -2,9 +2,9 @@
 
 use crate::error::{Error, Result};
 use crate::jobs::{
-    self, CreateJobRequest, Job, JobExecutor, JobStatus, SyncJobMetadata, TransformContext, ApiKeys,
+    self, ApiKeys, CreateJobRequest, Job, JobExecutor, JobStatus, SyncJobMetadata, TransformContext,
 };
-use crate::storage::{Storage, stream_writer::StreamWriter};
+use crate::storage::{stream_writer::StreamWriter, Storage};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -62,11 +62,7 @@ pub async fn trigger_stream_sync(
     // Create context without data source
     // The sync_job executor will create its own context with the actual records after sync completes.
     let api_keys = ApiKeys::from_env();
-    let context = TransformContext::new(
-        Arc::new(storage.clone()),
-        stream_writer,
-        api_keys,
-    );
+    let context = TransformContext::new(Arc::new(storage.clone()), stream_writer, api_keys);
 
     // Start job execution in background
     let executor = JobExecutor::new(db.clone(), context);

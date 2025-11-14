@@ -1,8 +1,8 @@
 //! Stream command handlers - manage data streams for sources
 
 use crate::cli::types::StreamCommands;
-use crate::Ariata;
 use crate::storage::stream_writer::StreamWriter;
+use crate::Ariata;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -99,7 +99,15 @@ pub async fn handle_stream_command(
             println!("Enabling stream: {} / {}", source_id_uuid, stream_name);
 
             // Enable with default config (None = use defaults)
-            crate::enable_stream(ariata.database.pool(), &*ariata.storage, stream_writer.clone(), source_id_uuid, &stream_name, None).await?;
+            crate::enable_stream(
+                ariata.database.pool(),
+                &*ariata.storage,
+                stream_writer.clone(),
+                source_id_uuid,
+                &stream_name,
+                None,
+            )
+            .await?;
 
             println!("✅ Stream enabled successfully");
         }
@@ -156,14 +164,24 @@ pub async fn handle_stream_command(
         } => {
             let source_id_uuid = source_id.parse()?;
 
-            println!("Creating sync job for: {} / {}...", source_id_uuid, stream_name);
+            println!(
+                "Creating sync job for: {} / {}...",
+                source_id_uuid, stream_name
+            );
 
             // Use full refresh mode for all syncs
             // This ensures compatibility with streams that don't support incremental sync
             let sync_mode = crate::SyncMode::full_refresh();
 
-            let response =
-                crate::api::jobs::trigger_stream_sync(ariata.database.pool(), &*ariata.storage, stream_writer.clone(), source_id_uuid, &stream_name, Some(sync_mode)).await?;
+            let response = crate::api::jobs::trigger_stream_sync(
+                ariata.database.pool(),
+                &*ariata.storage,
+                stream_writer.clone(),
+                source_id_uuid,
+                &stream_name,
+                Some(sync_mode),
+            )
+            .await?;
 
             println!("\n✅ Sync job created!");
             println!("  Job ID: {}", response.job_id);
@@ -206,12 +224,13 @@ pub async fn handle_stream_command(
 
             for job in jobs {
                 let records = job.records_processed;
-                let duration = if let (Some(completed), started) = (job.completed_at, job.started_at) {
-                    let duration_ms = (completed - started).num_milliseconds();
-                    format!("{}ms", duration_ms)
-                } else {
-                    "-".to_string()
-                };
+                let duration =
+                    if let (Some(completed), started) = (job.completed_at, job.started_at) {
+                        let duration_ms = (completed - started).num_milliseconds();
+                        format!("{}ms", duration_ms)
+                    } else {
+                        "-".to_string()
+                    };
                 let error = job
                     .error_message
                     .map(|e| {
@@ -241,7 +260,10 @@ pub async fn handle_stream_command(
             // Manual transform triggers are deprecated in the direct transform architecture
             eprintln!("❌ Manual transform triggers are not supported.");
             eprintln!("   Transforms are automatically triggered after sync jobs complete.");
-            eprintln!("   To transform data for '{}', run a sync job instead:", stream_name);
+            eprintln!(
+                "   To transform data for '{}', run a sync job instead:",
+                stream_name
+            );
             eprintln!("   ariata sync {}", source_id);
             return Err("Manual transforms not supported".into());
         }

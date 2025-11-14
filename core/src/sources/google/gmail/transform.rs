@@ -32,7 +32,12 @@ impl OntologyTransform for GmailEmailTransform {
     }
 
     #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
+    async fn transform(
+        &self,
+        db: &Database,
+        context: &crate::jobs::transform_context::TransformContext,
+        source_id: Uuid,
+    ) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -48,7 +53,9 @@ impl OntologyTransform for GmailEmailTransform {
         // Read stream data using data source (memory for hot path)
         let checkpoint_key = "gmail_to_social_email";
         let read_start = std::time::Instant::now();
-        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let data_source = context.get_data_source().ok_or_else(|| {
+            crate::Error::Other("No data source available for transform".to_string())
+        })?;
         let batches = data_source
             .read_with_checkpoint(source_id, "gmail", checkpoint_key)
             .await?;
@@ -62,17 +69,37 @@ impl OntologyTransform for GmailEmailTransform {
         );
 
         // Batch insert configuration
-        let mut pending_records: Vec<(String, String, Option<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>, Option<String>, Option<String>, Vec<String>, Vec<String>, Vec<String>, Vec<String>, &'static str, Vec<String>, bool, bool, bool, i32, Option<i32>, Option<i32>, Uuid)> = Vec::new();
+        let mut pending_records: Vec<(
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            DateTime<Utc>,
+            Option<String>,
+            Option<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            &'static str,
+            Vec<String>,
+            bool,
+            bool,
+            bool,
+            i32,
+            Option<i32>,
+            Option<i32>,
+            Uuid,
+        )> = Vec::new();
         let mut batch_insert_total_ms = 0u128;
         let mut batch_insert_count = 0;
 
         let processing_start = std::time::Instant::now();
 
         for batch in batches {
-            tracing::debug!(
-                batch_record_count = batch.records.len(),
-                "Processing batch"
-            );
+            tracing::debug!(batch_record_count = batch.records.len(), "Processing batch");
 
             for record in &batch.records {
                 records_read += 1;
@@ -85,53 +112,119 @@ impl OntologyTransform for GmailEmailTransform {
                     continue; // Skip records without thread_id
                 };
 
-                let timestamp = record.get("date")
+                let timestamp = record
+                    .get("date")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok())
                     .unwrap_or_else(|| Utc::now());
 
-                let stream_id = record.get("id")
+                let stream_id = record
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .unwrap_or_else(|| Uuid::new_v4());
 
-                let subject = record.get("subject").and_then(|v| v.as_str()).map(String::from);
-                let snippet = record.get("snippet").and_then(|v| v.as_str()).map(String::from);
-                let body_plain = record.get("body_plain").and_then(|v| v.as_str()).map(String::from);
-                let body_html = record.get("body_html").and_then(|v| v.as_str()).map(String::from);
+                let subject = record
+                    .get("subject")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let snippet = record
+                    .get("snippet")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let body_plain = record
+                    .get("body_plain")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let body_html = record
+                    .get("body_html")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
 
-                let from_email = record.get("from_email").and_then(|v| v.as_str()).map(String::from);
-                let from_name = record.get("from_name").and_then(|v| v.as_str()).map(String::from);
+                let from_email = record
+                    .get("from_email")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let from_name = record
+                    .get("from_name")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
 
-                let to_emails: Vec<String> = record.get("to_emails")
+                let to_emails: Vec<String> = record
+                    .get("to_emails")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
-                let to_names: Vec<String> = record.get("to_names")
+                let to_names: Vec<String> = record
+                    .get("to_names")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
-                let cc_emails: Vec<String> = record.get("cc_emails")
+                let cc_emails: Vec<String> = record
+                    .get("cc_emails")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
-                let cc_names: Vec<String> = record.get("cc_names")
+                let cc_names: Vec<String> = record
+                    .get("cc_names")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
 
-                let labels: Vec<String> = record.get("labels")
+                let labels: Vec<String> = record
+                    .get("labels")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
 
-                let is_unread = record.get("is_unread").and_then(|v| v.as_bool()).unwrap_or(false);
-                let is_starred = record.get("is_starred").and_then(|v| v.as_bool()).unwrap_or(false);
-                let has_attachments = record.get("has_attachments").and_then(|v| v.as_bool()).unwrap_or(false);
-                let attachment_count = record.get("attachment_count").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                let thread_position = record.get("thread_position").and_then(|v| v.as_i64()).map(|v| v as i32);
-                let thread_message_count = record.get("thread_message_count").and_then(|v| v.as_i64()).map(|v| v as i32);
-                let is_sent = record.get("is_sent").and_then(|v| v.as_bool()).unwrap_or(false);
+                let is_unread = record
+                    .get("is_unread")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let is_starred = record
+                    .get("is_starred")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let has_attachments = record
+                    .get("has_attachments")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let attachment_count = record
+                    .get("attachment_count")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0) as i32;
+                let thread_position = record
+                    .get("thread_position")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v as i32);
+                let thread_message_count = record
+                    .get("thread_message_count")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v as i32);
+                let is_sent = record
+                    .get("is_sent")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
 
                 // Determine direction
                 let direction = if is_sent { "sent" } else { "received" };
@@ -197,12 +290,9 @@ impl OntologyTransform for GmailEmailTransform {
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                data_source.update_checkpoint(
-                    source_id,
-                    "gmail",
-                    checkpoint_key,
-                    max_ts
-                ).await?;
+                data_source
+                    .update_checkpoint(source_id, "gmail", checkpoint_key, max_ts)
+                    .await?;
             }
         }
 
@@ -267,7 +357,30 @@ impl OntologyTransform for GmailEmailTransform {
 /// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
 async fn execute_email_batch_insert(
     db: &Database,
-    records: &[(String, String, Option<String>, Option<String>, Option<String>, Option<String>, DateTime<Utc>, Option<String>, Option<String>, Vec<String>, Vec<String>, Vec<String>, Vec<String>, &str, Vec<String>, bool, bool, bool, i32, Option<i32>, Option<i32>, Uuid)],
+    records: &[(
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        DateTime<Utc>,
+        Option<String>,
+        Option<String>,
+        Vec<String>,
+        Vec<String>,
+        Vec<String>,
+        Vec<String>,
+        &str,
+        Vec<String>,
+        bool,
+        bool,
+        bool,
+        i32,
+        Option<i32>,
+        Option<i32>,
+        Uuid,
+    )],
 ) -> Result<usize> {
     if records.is_empty() {
         return Ok(0);
@@ -275,7 +388,32 @@ async fn execute_email_batch_insert(
 
     let query_str = Database::build_batch_insert_query(
         "elt.social_email",
-        &["message_id", "thread_id", "subject", "snippet", "body_plain", "body_html", "timestamp", "from_address", "from_name", "to_addresses", "to_names", "cc_addresses", "cc_names", "direction", "labels", "is_read", "is_starred", "has_attachments", "attachment_count", "thread_position", "thread_message_count", "source_stream_id", "source_table", "source_provider"],
+        &[
+            "message_id",
+            "thread_id",
+            "subject",
+            "snippet",
+            "body_plain",
+            "body_html",
+            "timestamp",
+            "from_address",
+            "from_name",
+            "to_addresses",
+            "to_names",
+            "cc_addresses",
+            "cc_names",
+            "direction",
+            "labels",
+            "is_read",
+            "is_starred",
+            "has_attachments",
+            "attachment_count",
+            "thread_position",
+            "thread_message_count",
+            "source_stream_id",
+            "source_table",
+            "source_provider",
+        ],
         "source_stream_id",
         records.len(),
     );
@@ -283,7 +421,31 @@ async fn execute_email_batch_insert(
     let mut query = sqlx::query(&query_str);
 
     // Bind all parameters row by row
-    for (message_id, thread_id, subject, snippet, body_plain, body_html, timestamp, from_address, from_name, to_addresses, to_names, cc_addresses, cc_names, direction, labels, is_read, is_starred, has_attachments, attachment_count, thread_position, thread_message_count, stream_id) in records {
+    for (
+        message_id,
+        thread_id,
+        subject,
+        snippet,
+        body_plain,
+        body_html,
+        timestamp,
+        from_address,
+        from_name,
+        to_addresses,
+        to_names,
+        cc_addresses,
+        cc_names,
+        direction,
+        labels,
+        is_read,
+        is_starred,
+        has_attachments,
+        attachment_count,
+        thread_position,
+        thread_message_count,
+        stream_id,
+    ) in records
+    {
         query = query
             .bind(message_id)
             .bind(thread_id)

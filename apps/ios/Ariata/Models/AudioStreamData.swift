@@ -38,35 +38,26 @@ struct AudioChunk: Codable {
 }
 
 struct AudioStreamData: Codable {
-    let streamName: String = "ios_mic"
+    let source: String = "ios"
+    let stream: String = "microphone"
     let deviceId: String
-    let data: [AudioChunk]
-    let batchMetadata: BatchMetadata
+    let records: [AudioChunk]
+    let timestamp: String
+    let checkpoint: String?
 
     private enum CodingKeys: String, CodingKey {
-        case streamName = "stream_name"
+        case source
+        case stream
         case deviceId = "device_id"
-        case data
-        case batchMetadata = "batch_metadata"
+        case records
+        case timestamp
+        case checkpoint
     }
 
-    struct BatchMetadata: Codable {
-        let totalRecords: Int
-        let appVersion: String
-
-        private enum CodingKeys: String, CodingKey {
-            case totalRecords = "total_records"
-            case appVersion = "app_version"
-        }
-    }
-
-    init(deviceId: String, chunks: [AudioChunk]) {
+    init(deviceId: String, chunks: [AudioChunk], checkpoint: String? = nil) {
         self.deviceId = deviceId
-        self.data = chunks
-        self.batchMetadata = BatchMetadata(
-            totalRecords: chunks.count,
-            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-                ?? "1.0"
-        )
+        self.records = chunks
+        self.timestamp = ISO8601DateFormatter().string(from: Date())
+        self.checkpoint = checkpoint
     }
 }

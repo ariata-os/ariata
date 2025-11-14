@@ -47,7 +47,8 @@ pub async fn handle_source_command(
             let source_id = id.parse()?;
 
             // Check if this is a pending pairing
-            let pairing_status = crate::check_pairing_status(ariata.database.pool(), source_id).await?;
+            let pairing_status =
+                crate::check_pairing_status(ariata.database.pool(), source_id).await?;
 
             match pairing_status {
                 crate::PairingStatus::Pending => {
@@ -70,8 +71,8 @@ pub async fn handle_source_command(
                         let seconds = duration.num_seconds() % 60;
                         println!("  Expires In:   {} minutes, {} seconds", minutes, seconds);
 
-                        let created_ago = chrono::Utc::now()
-                            .signed_duration_since(pairing.created_at);
+                        let created_ago =
+                            chrono::Utc::now().signed_duration_since(pairing.created_at);
                         println!("  Created:      {} minutes ago", created_ago.num_minutes());
                         println!();
                         println!("💡 Enter these details in your device app to complete pairing.");
@@ -193,12 +194,13 @@ pub async fn handle_source_command(
 
             for job in jobs {
                 let records = job.records_processed;
-                let duration = if let (Some(completed), started) = (job.completed_at, job.started_at) {
-                    let duration_ms = (completed - started).num_milliseconds();
-                    format!("{}ms", duration_ms)
-                } else {
-                    "-".to_string()
-                };
+                let duration =
+                    if let (Some(completed), started) = (job.completed_at, job.started_at) {
+                        let duration_ms = (completed - started).num_milliseconds();
+                        format!("{}ms", duration_ms)
+                    } else {
+                        "-".to_string()
+                    };
                 let error = job
                     .error_message
                     .map(|e| {

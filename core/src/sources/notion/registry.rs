@@ -14,9 +14,7 @@ impl SourceRegistry for NotionSource {
             description: "Sync pages, databases, and blocks from Notion workspaces",
             auth_type: AuthType::OAuth2,
             oauth_config: Some(OAuthConfig {
-                scopes: vec![
-                    "read_content",
-                ],
+                scopes: vec!["read_content"],
                 auth_url: "https://api.notion.com/v1/oauth/authorize",
                 token_url: "https://api.notion.com/v1/oauth/token",
             }),
@@ -25,13 +23,15 @@ impl SourceRegistry for NotionSource {
                 // Pages stream
                 StreamDescriptor::new("pages")
                     .display_name("Notion Pages")
-                    .description("Sync pages and their content from Notion databases and workspaces")
+                    .description(
+                        "Sync pages and their content from Notion databases and workspaces",
+                    )
                     .table_name("stream_notion_pages")
                     .config_schema(pages_config_schema())
                     .config_example(pages_config_example())
-                    .supports_incremental(false)  // Notion API doesn't provide incremental sync
+                    .supports_incremental(false) // Notion API doesn't provide incremental sync
                     .supports_full_refresh(true)
-                    .default_cron_schedule("0 */12 * * *")  // Every 12 hours (full refresh is expensive)
+                    .default_cron_schedule("0 */12 * * *") // Every 12 hours (full refresh is expensive)
                     .build(),
             ],
         }
@@ -120,7 +120,7 @@ mod tests {
 
         let p = pages.unwrap();
         assert_eq!(p.table_name, "stream_notion_pages");
-        assert!(!p.supports_incremental);  // Notion doesn't support incremental sync
+        assert!(!p.supports_incremental); // Notion doesn't support incremental sync
         assert!(p.supports_full_refresh);
     }
 }

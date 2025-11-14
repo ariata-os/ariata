@@ -22,15 +22,15 @@
 //! let response: MyApiResponse = client.get("endpoint").await?;
 //! ```
 
+use reqwest::{header::HeaderMap, Client, RequestBuilder, Response, StatusCode};
+use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use reqwest::{Client, RequestBuilder, Response, StatusCode, header::HeaderMap};
-use serde::{de::DeserializeOwned, Serialize};
 use uuid::Uuid;
 
-use crate::error::{Error, Result};
+use super::error_handler::{DefaultErrorHandler, ErrorClass, ErrorHandler};
 use super::oauth::TokenManager;
-use super::error_handler::{ErrorHandler, ErrorClass, DefaultErrorHandler};
+use crate::error::{Error, Result};
 
 /// Configuration for retry behavior
 #[derive(Debug, Clone)]
@@ -58,8 +58,8 @@ impl Default for RetryConfig {
     fn default() -> Self {
         Self {
             max_retries: 3,
-            initial_backoff_ms: 1000,  // 1 second
-            max_backoff_ms: 30000,      // 30 seconds
+            initial_backoff_ms: 1000, // 1 second
+            max_backoff_ms: 30000,    // 30 seconds
             retry_on_401: true,
             retry_on_429: true,
             retry_on_5xx: true,
@@ -107,8 +107,8 @@ impl OAuthHttpClient {
     pub fn new(source_id: Uuid, token_manager: Arc<TokenManager>) -> Self {
         // Configure HTTP client with timeouts to prevent infinite hangs
         let client = Client::builder()
-            .connect_timeout(Duration::from_secs(10))  // TCP connection timeout
-            .timeout(Duration::from_secs(60))           // Total request timeout
+            .connect_timeout(Duration::from_secs(10)) // TCP connection timeout
+            .timeout(Duration::from_secs(60)) // Total request timeout
             .build()
             .expect("Failed to build HTTP client");
 
@@ -163,11 +163,7 @@ impl OAuthHttpClient {
     }
 
     /// Make an authenticated GET request with query parameters
-    pub async fn get_with_params<T>(
-        &self,
-        path: &str,
-        params: &[(&str, &str)]
-    ) -> Result<T>
+    pub async fn get_with_params<T>(&self, path: &str, params: &[(&str, &str)]) -> Result<T>
     where
         T: DeserializeOwned,
     {
@@ -221,7 +217,11 @@ impl OAuthHttpClient {
             // Clone the request builder for this attempt
             let mut request = request_builder
                 .try_clone()
-                .ok_or_else(|| Error::Other("Request builder not cloneable - ensure body is cloneable".to_string()))?
+                .ok_or_else(|| {
+                    Error::Other(
+                        "Request builder not cloneable - ensure body is cloneable".to_string(),
+                    )
+                })?
                 .bearer_auth(&token);
 
             // Apply custom headers
@@ -251,7 +251,10 @@ impl OAuthHttpClient {
                     }
 
                     // Check if we should retry
-                    if self.error_handler.should_retry(status, attempt, self.config.max_retries) {
+                    if self
+                        .error_handler
+                        .should_retry(status, attempt, self.config.max_retries)
+                    {
                         match error_class {
                             ErrorClass::AuthError => {
                                 // Token might be invalid - TokenManager will refresh on next attempt
@@ -303,8 +306,7 @@ impl OAuthHttpClient {
         // All retries exhausted
         Err(Error::Network(format!(
             "Request failed after {} retries: {:?}",
-            self.config.max_retries,
-            last_error
+            self.config.max_retries, last_error
         )))
     }
 
@@ -313,7 +315,9 @@ impl OAuthHttpClient {
     where
         T: DeserializeOwned,
     {
-        response.json::<T>().await
+        response
+            .json::<T>()
+            .await
             .map_err(|e| Error::Other(format!("Failed to parse response: {e}")))
     }
 
@@ -322,14 +326,18 @@ impl OAuthHttpClient {
         if self.base_url.is_empty() {
             path.to_string()
         } else {
-            format!("{}/{}", self.base_url.trim_end_matches('/'), path.trim_start_matches('/'))
+            format!(
+                "{}/{}",
+                self.base_url.trim_end_matches('/'),
+                path.trim_start_matches('/')
+            )
         }
     }
 
     /// Calculate exponential backoff time
     fn calculate_backoff(&self, attempt: u32) -> Duration {
-        let backoff_ms = (self.config.initial_backoff_ms * 2_u64.pow(attempt))
-            .min(self.config.max_backoff_ms);
+        let backoff_ms =
+            (self.config.initial_backoff_ms * 2_u64.pow(attempt)).min(self.config.max_backoff_ms);
         Duration::from_millis(backoff_ms)
     }
 
@@ -365,9 +373,18 @@ mod tests {
         let client = OAuthHttpClient::new(Uuid::new_v4(), token_manager)
             .with_base_url("https://api.example.com/v1");
 
-        assert_eq!(client.build_url("users"), "https://api.example.com/v1/users");
-        assert_eq!(client.build_url("/users"), "https://api.example.com/v1/users");
-        assert_eq!(client.build_url("users/me"), "https://api.example.com/v1/users/me");
+        assert_eq!(
+            client.build_url("users"),
+            "https://api.example.com/v1/users"
+        );
+        assert_eq!(
+            client.build_url("/users"),
+            "https://api.example.com/v1/users"
+        );
+        assert_eq!(
+            client.build_url("users/me"),
+            "https://api.example.com/v1/users/me"
+        );
     }
 
     #[test]

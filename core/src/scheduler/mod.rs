@@ -17,17 +17,17 @@
 //! - `0 0 0 * * *` - Daily at midnight
 //! - `0 0 9 * * 1` - Every Monday at 9:00 AM
 
-use tokio_cron_scheduler::{Job, JobScheduler};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
 
 use crate::{
     error::{Error, Result},
     jobs::PrudentContextJob,
     llm::LLMClient,
-    storage::{Storage, stream_writer::StreamWriter},
+    storage::{stream_writer::StreamWriter, Storage},
 };
 
 /// Simplified scheduler using StreamFactory
@@ -40,7 +40,11 @@ pub struct Scheduler {
 
 impl Scheduler {
     /// Create a new scheduler
-    pub async fn new(db: PgPool, storage: Storage, stream_writer: Arc<Mutex<StreamWriter>>) -> Result<Self> {
+    pub async fn new(
+        db: PgPool,
+        storage: Storage,
+        stream_writer: Arc<Mutex<StreamWriter>>,
+    ) -> Result<Self> {
         let scheduler = JobScheduler::new()
             .await
             .map_err(|e| Error::Other(format!("Failed to create scheduler: {e}")))?;
@@ -72,7 +76,7 @@ impl Scheduler {
             WHERE st.is_enabled = true
               AND st.cron_schedule IS NOT NULL
               AND s.is_active = true
-            "#
+            "#,
         )
         .fetch_all(&self.db)
         .await?;
@@ -110,10 +114,23 @@ impl Scheduler {
                 let stream_name_str = stream_name.clone();
 
                 Box::pin(async move {
-                    tracing::info!("Running scheduled sync: {} ({})", stream_name_str, source_name);
+                    tracing::info!(
+                        "Running scheduled sync: {} ({})",
+                        stream_name_str,
+                        source_name
+                    );
 
                     // Use the job-based API
-                    match crate::api::jobs::trigger_stream_sync(&db, &storage, stream_writer, source_id, &stream_name, None).await {
+                    match crate::api::jobs::trigger_stream_sync(
+                        &db,
+                        &storage,
+                        stream_writer,
+                        source_id,
+                        &stream_name,
+                        None,
+                    )
+                    .await
+                    {
                         Ok(response) => {
                             tracing::info!(
                                 "Scheduled sync job created: {} - job_id={}, status={}",
@@ -123,7 +140,11 @@ impl Scheduler {
                             );
                         }
                         Err(e) => {
-                            tracing::error!("Failed to create scheduled sync job for {}: {}", stream_name_str, e);
+                            tracing::error!(
+                                "Failed to create scheduled sync job for {}: {}",
+                                stream_name_str,
+                                e
+                            );
                         }
                     }
                 })
@@ -186,7 +207,12 @@ impl Scheduler {
                     }
                 })
             })
-            .map_err(|e| Error::Other(format!("Failed to create PrudentContextJob for {}: {}", label, e)))?;
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create PrudentContextJob for {}: {}",
+                    label, e
+                ))
+            })?;
 
             self.scheduler
                 .add(job)
@@ -211,7 +237,16 @@ impl Scheduler {
 
     /// Get list of scheduled streams
     pub async fn list_scheduled(&self) -> Result<Vec<ScheduledStream>> {
-        let rows = sqlx::query_as::<_, (Uuid, String, String, String, Option<chrono::DateTime<chrono::Utc>>)>(
+        let rows = sqlx::query_as::<
+            _,
+            (
+                Uuid,
+                String,
+                String,
+                String,
+                Option<chrono::DateTime<chrono::Utc>>,
+            ),
+        >(
             r#"
             SELECT
                 s.id as source_id,
@@ -224,20 +259,25 @@ impl Scheduler {
             WHERE st.is_enabled = true
               AND st.cron_schedule IS NOT NULL
             ORDER BY s.name, st.stream_name
-            "#
+            "#,
         )
         .fetch_all(&self.db)
         .await?;
 
-        let streams = rows.into_iter().map(|(source_id, source_name, stream_name, cron_schedule, last_sync_at)| {
-            ScheduledStream {
-                source_id,
-                source_name,
-                stream_name,
-                cron_schedule,
-                last_sync_at,
-            }
-        }).collect();
+        let streams = rows
+            .into_iter()
+            .map(
+                |(source_id, source_name, stream_name, cron_schedule, last_sync_at)| {
+                    ScheduledStream {
+                        source_id,
+                        source_name,
+                        stream_name,
+                        cron_schedule,
+                        last_sync_at,
+                    }
+                },
+            )
+            .collect();
 
         Ok(streams)
     }
@@ -260,8 +300,9 @@ mod tests {
     #[tokio::test]
     async fn test_scheduler_creation() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
-        let storage = Storage::local("./test_data").unwrap();
-        let result = Scheduler::new(pool, storage).await;
+        let storage = Storage::local("./test_data".to_string()).unwrap();
+        let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
+        let result = Scheduler::new(pool, storage, stream_writer).await;
         assert!(result.is_ok());
     }
 }

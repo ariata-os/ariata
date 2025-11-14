@@ -2,10 +2,10 @@
 //!
 //! This module defines the tools exposed to AI assistants via the MCP protocol.
 
-use serde::{Deserialize, Serialize};
-use schemars::JsonSchema;
-use sqlx::{Column, PgPool, Row, TypeInfo};
 use crate::mcp::schema;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use sqlx::{Column, PgPool, Row, TypeInfo};
 
 // ============================================================================
 // Shared Utilities
@@ -150,7 +150,9 @@ pub async fn query_ontology(
     }
 
     // Check for dangerous keywords
-    let dangerous_keywords = ["insert", "update", "delete", "drop", "create", "alter", "truncate"];
+    let dangerous_keywords = [
+        "insert", "update", "delete", "drop", "create", "alter", "truncate",
+    ];
     for keyword in &dangerous_keywords {
         if query_lower.contains(keyword) {
             return Err(format!("Query contains forbidden keyword: {}", keyword));
@@ -247,7 +249,9 @@ pub async fn query_axiology(
     }
 
     // Check for dangerous keywords
-    let dangerous_keywords = ["insert", "update", "delete", "drop", "create", "alter", "truncate"];
+    let dangerous_keywords = [
+        "insert", "update", "delete", "drop", "create", "alter", "truncate",
+    ];
     for keyword in &dangerous_keywords {
         if query_lower.contains(keyword) {
             return Err(format!("Query contains forbidden keyword: {}", keyword));
@@ -404,18 +408,20 @@ pub async fn list_ontology_tables(pool: &PgPool) -> Result<ListOntologyTablesRes
             .map_err(|e| e.to_string())?;
 
         // Get row count
-        let row_count: Option<i64> = sqlx::query_scalar(&format!(
-            "SELECT COUNT(*) FROM elt.{}",
-            table_name
-        ))
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+        let row_count: Option<i64> =
+            sqlx::query_scalar(&format!("SELECT COUNT(*) FROM elt.{}", table_name))
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten();
 
         tables.push(OntologyTableInfo {
             table_name,
-            columns: table_schema.columns.iter().map(|c| c.name.clone()).collect(),
+            columns: table_schema
+                .columns
+                .iter()
+                .map(|c| c.name.clone())
+                .collect(),
             row_count,
         });
     }
@@ -470,7 +476,7 @@ pub async fn trigger_sync(
     // Get streams to sync
     let streams: Vec<(String,)> = if let Some(stream_name) = &request.stream_name {
         sqlx::query_as(
-            "SELECT name FROM elt.streams WHERE source_id = $1 AND name = $2 AND enabled = true"
+            "SELECT name FROM elt.streams WHERE source_id = $1 AND name = $2 AND enabled = true",
         )
         .bind(source_uuid)
         .bind(stream_name)
@@ -478,13 +484,11 @@ pub async fn trigger_sync(
         .await
         .map_err(|e| e.to_string())?
     } else {
-        sqlx::query_as(
-            "SELECT name FROM elt.streams WHERE source_id = $1 AND enabled = true"
-        )
-        .bind(source_uuid)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?
+        sqlx::query_as("SELECT name FROM elt.streams WHERE source_id = $1 AND enabled = true")
+            .bind(source_uuid)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?
     };
 
     if streams.is_empty() {
@@ -501,7 +505,7 @@ pub async fn trigger_sync(
             r#"
             INSERT INTO elt.jobs (id, source_id, stream_name, job_type, status, created_at)
             VALUES ($1, $2, $3, 'sync', 'pending', NOW())
-            "#
+            "#,
         )
         .bind(job_id)
         .bind(source_uuid)
@@ -568,7 +572,7 @@ pub async fn query_narratives(
     let mut query = String::from(
         "SELECT narrative_text, narrative_type, time_start, time_end, confidence_score \
          FROM elt.narrative_chunks \
-         WHERE time_start >= $1 AND time_end <= $2"
+         WHERE time_start >= $1 AND time_end <= $2",
     );
 
     // Add narrative_type filter if provided

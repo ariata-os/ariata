@@ -84,8 +84,8 @@ pub fn parse_master_key_hex(hex_str: &str) -> Result<[u8; 32]> {
         )));
     }
 
-    let bytes = hex::decode(hex_str)
-        .map_err(|e| Error::Other(format!("Invalid hex string: {}", e)))?;
+    let bytes =
+        hex::decode(hex_str).map_err(|e| Error::Other(format!("Invalid hex string: {}", e)))?;
 
     if bytes.len() != 32 {
         return Err(Error::Other(format!(
@@ -140,7 +140,9 @@ mod tests {
         assert!(result.is_err());
 
         // Invalid hex characters
-        let result = parse_master_key_hex("gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg");
+        let result = parse_master_key_hex(
+            "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+        );
         assert!(result.is_err());
     }
 

@@ -3,9 +3,9 @@
 //! Handles execution of transformation jobs that convert raw stream data
 //! into normalized ontology tables.
 
-use std::sync::Arc;
 use serde_json::json;
 use sqlx::PgPool;
+use std::sync::Arc;
 
 use crate::error::Result;
 use crate::jobs::models::Job;
@@ -25,7 +25,7 @@ use crate::transforms::TransformFactory;
 pub async fn execute_transform_job(
     db: &PgPool,
     context: &Arc<TransformContext>,
-    job: &Job
+    job: &Job,
 ) -> Result<()> {
     // Extract required metadata
     let source_table = job
@@ -44,9 +44,9 @@ pub async fn execute_transform_job(
             crate::Error::InvalidInput("Transform job missing target_table in metadata".into())
         })?;
 
-    let source_id = job.source_id.ok_or_else(|| {
-        crate::Error::InvalidInput("Transform job missing source_id".into())
-    })?;
+    let source_id = job
+        .source_id
+        .ok_or_else(|| crate::Error::InvalidInput("Transform job missing source_id".into()))?;
 
     tracing::info!(
         source_table,
@@ -115,7 +115,8 @@ pub async fn execute_transform_job(
                     &chained.domain,
                     chained.source_record_id,
                     &chained.transform_stage,
-                ).await;
+                )
+                .await;
 
                 match chained_job {
                     Ok(child_job) => {

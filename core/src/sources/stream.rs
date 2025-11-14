@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::Result;
 use super::base::{SyncMode, SyncResult};
+use crate::error::Result;
 
 /// Core trait for all data streams
 ///

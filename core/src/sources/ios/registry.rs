@@ -166,7 +166,9 @@ mod tests {
     #[test]
     fn test_healthkit_stream() {
         let desc = IosSource::descriptor();
-        let healthkit = desc.streams.iter()
+        let healthkit = desc
+            .streams
+            .iter()
             .find(|s| s.name == "healthkit")
             .expect("HealthKit stream not found");
 
@@ -178,7 +180,9 @@ mod tests {
     #[test]
     fn test_location_stream() {
         let desc = IosSource::descriptor();
-        let location = desc.streams.iter()
+        let location = desc
+            .streams
+            .iter()
             .find(|s| s.name == "location")
             .expect("Location stream not found");
 
@@ -189,7 +193,9 @@ mod tests {
     #[test]
     fn test_microphone_stream() {
         let desc = IosSource::descriptor();
-        let mic = desc.streams.iter()
+        let mic = desc
+            .streams
+            .iter()
             .find(|s| s.name == "microphone")
             .expect("Microphone stream not found");
 

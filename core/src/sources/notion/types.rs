@@ -1,7 +1,7 @@
 //! Notion API type definitions
 
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Search response

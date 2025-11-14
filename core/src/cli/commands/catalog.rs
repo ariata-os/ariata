@@ -73,7 +73,10 @@ pub fn handle_catalog_command(
             let streams = crate::list_all_streams();
 
             println!("Available Streams:\n");
-            println!("{:<15} {:<15} {:<45} {}", "Source", "Stream", "Description", "Sync Modes");
+            println!(
+                "{:<15} {:<15} {:<45} {}",
+                "Source", "Stream", "Description", "Sync Modes"
+            );
             println!("{}", "─".repeat(90));
 
             for (source_name, stream) in streams {
@@ -88,10 +91,7 @@ pub fn handle_catalog_command(
 
                 println!(
                     "{:<15} {:<15} {:<45} {}",
-                    source_name,
-                    stream.name,
-                    stream.description,
-                    modes_str
+                    source_name, stream.name, stream.description, modes_str
                 );
             }
 

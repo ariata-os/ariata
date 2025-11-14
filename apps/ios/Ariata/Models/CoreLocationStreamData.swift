@@ -49,34 +49,26 @@ struct LocationData: Codable {
 }
 
 struct CoreLocationStreamData: Codable {
-    let streamName: String = "ios_location"
+    let source: String = "ios"
+    let stream: String = "location"
     let deviceId: String
-    let data: [LocationData]
-    let batchMetadata: BatchMetadata
-    
+    let records: [LocationData]
+    let timestamp: String
+    let checkpoint: String?
+
     private enum CodingKeys: String, CodingKey {
-        case streamName = "stream_name"
+        case source
+        case stream
         case deviceId = "device_id"
-        case data
-        case batchMetadata = "batch_metadata"
+        case records
+        case timestamp
+        case checkpoint
     }
-    
-    struct BatchMetadata: Codable {
-        let totalRecords: Int
-        let appVersion: String
-        
-        private enum CodingKeys: String, CodingKey {
-            case totalRecords = "total_records"
-            case appVersion = "app_version"
-        }
-    }
-    
-    init(deviceId: String, locations: [LocationData]) {
+
+    init(deviceId: String, locations: [LocationData], checkpoint: String? = nil) {
         self.deviceId = deviceId
-        self.data = locations
-        self.batchMetadata = BatchMetadata(
-            totalRecords: locations.count,
-            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        )
+        self.records = locations
+        self.timestamp = ISO8601DateFormatter().string(from: Date())
+        self.checkpoint = checkpoint
     }
 }

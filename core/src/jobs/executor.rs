@@ -1,12 +1,12 @@
 //! Job executor for running async jobs in background tasks
 
-use std::sync::Arc;
 use crate::error::Result;
 use crate::jobs::models::{JobStatus, JobType};
 use crate::jobs::sync_job::execute_sync_job;
 use crate::jobs::transform_context::TransformContext;
 use crate::jobs::transform_job::execute_transform_job;
 use sqlx::PgPool;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// Job executor that spawns background tasks for async job execution
@@ -90,7 +90,7 @@ impl JobExecutor {
                     "Archive job execution via executor not yet implemented (records not available)"
                 );
                 Err(crate::error::Error::Other(
-                    "Archive job retry logic not yet implemented".to_string()
+                    "Archive job retry logic not yet implemented".to_string(),
                 ))
             }
         };

@@ -73,12 +73,11 @@ class Uploader {
             
             // Prepare payload
             let payload: [String: Any] = [
-                "stream_name": "mac_apps",
+                "source": "mac",
+                "stream": "apps",
                 "device_id": config.deviceId,
-                "data": events.map { $0.toDictionary },
-                "batch_metadata": [
-                    "total_records": events.count
-                ]
+                "records": events.map { $0.toDictionary },
+                "timestamp": ISO8601DateFormatter().string(from: Date())
             ]
             
             // Create request
@@ -145,12 +144,11 @@ class Uploader {
             
             // Prepare payload
             let payload: [String: Any] = [
-                "stream_name": "mac_messages",
+                "source": "mac",
+                "stream": "messages",
                 "device_id": config.deviceId,
-                "data": messages.map { $0.toDictionary },
-                "batch_metadata": [
-                    "total_records": messages.count
-                ]
+                "records": messages.map { $0.toDictionary },
+                "timestamp": ISO8601DateFormatter().string(from: Date())
             ]
             
             // Create request

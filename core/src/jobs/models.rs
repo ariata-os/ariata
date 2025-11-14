@@ -87,7 +87,7 @@ pub struct Job {
     // Sync job fields
     pub source_id: Option<Uuid>,
     pub stream_name: Option<String>,
-    pub sync_mode: Option<String>,  // 'full_refresh' or 'incremental'
+    pub sync_mode: Option<String>, // 'full_refresh' or 'incremental'
 
     // Transform job fields
     pub transform_id: Option<Uuid>,
@@ -138,7 +138,7 @@ pub struct CreateJobRequest {
     // Sync job fields
     pub source_id: Option<Uuid>,
     pub stream_name: Option<String>,
-    pub sync_mode: Option<String>,  // 'full_refresh' or 'incremental'
+    pub sync_mode: Option<String>, // 'full_refresh' or 'incremental'
 
     // Transform job fields
     pub transform_id: Option<Uuid>,
@@ -164,7 +164,7 @@ impl CreateJobRequest {
     pub fn new_sync_job(
         source_id: Uuid,
         stream_name: String,
-        sync_mode: String,  // 'full_refresh' or 'incremental'
+        sync_mode: String, // 'full_refresh' or 'incremental'
         metadata: SyncJobMetadata,
     ) -> Self {
         Self {

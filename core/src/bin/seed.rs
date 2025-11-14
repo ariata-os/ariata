@@ -3,8 +3,8 @@
 //! Seeds the database with Monday in Rome reference dataset
 
 use ariata::database::Database;
-use ariata::seeding::{seed_monday_in_rome_dataset, narratives::seed_rome_monday_narrative};
-use ariata::storage::{Storage, stream_writer::StreamWriter};
+use ariata::seeding::{narratives::seed_rome_monday_narrative, seed_monday_in_rome_dataset};
+use ariata::storage::{stream_writer::StreamWriter, Storage};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -79,7 +79,10 @@ async fn main() {
 
     match seed_monday_in_rome_dataset(&db, &storage, stream_writer).await {
         Ok(count) => {
-            info!("✅ Monday in Rome ontology seeding completed: {} records!", count);
+            info!(
+                "✅ Monday in Rome ontology seeding completed: {} records!",
+                count
+            );
         }
         Err(e) => {
             error!("❌ Monday in Rome seeding failed: {}", e);
@@ -91,7 +94,10 @@ async fn main() {
     info!("Seeding Rome Monday day narrative...");
     match seed_rome_monday_narrative(&db).await {
         Ok(count) => {
-            info!("✅ Rome Monday narrative seeding completed: {} narrative chunks!", count);
+            info!(
+                "✅ Rome Monday narrative seeding completed: {} narrative chunks!",
+                count
+            );
             std::process::exit(0);
         }
         Err(e) => {

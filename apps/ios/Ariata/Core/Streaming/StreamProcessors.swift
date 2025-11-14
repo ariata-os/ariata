@@ -39,7 +39,7 @@ struct HealthKitStreamProcessor: StreamDataProcessor {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let streamData = try decoder.decode(HealthKitStreamData.self, from: data)
-        return streamData.data
+        return streamData.records
     }
 
     func combine(_ items: [HealthKitMetric], deviceId: String) -> HealthKitStreamData {
@@ -59,7 +59,7 @@ struct LocationStreamProcessor: StreamDataProcessor {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let streamData = try decoder.decode(CoreLocationStreamData.self, from: data)
-        return streamData.data
+        return streamData.records
     }
 
     func combine(_ items: [LocationData], deviceId: String) -> CoreLocationStreamData {
@@ -79,7 +79,7 @@ struct AudioStreamProcessor: StreamDataProcessor {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let streamData = try decoder.decode(AudioStreamData.self, from: data)
-        return streamData.data
+        return streamData.records
     }
 
     func combine(_ items: [AudioChunk], deviceId: String) -> AudioStreamData {

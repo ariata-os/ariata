@@ -6,8 +6,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::sources::base::TokenEncryptor;
 use crate::registry::StreamDescriptor;
+use crate::sources::base::TokenEncryptor;
 
 /// Response when pairing is initiated
 #[derive(Debug, Clone)]
@@ -134,7 +134,8 @@ pub async fn complete_device_pairing(
     // Encrypt device token before storing
     let encryptor = TokenEncryptor::from_env()
         .map_err(|e| Error::Other(format!("Failed to initialize encryption: {e}")))?;
-    let encrypted_token = encryptor.encrypt(&device_token)
+    let encrypted_token = encryptor
+        .encrypt(&device_token)
         .map_err(|e| Error::Other(format!("Failed to encrypt device token: {e}")))?;
 
     // Update source with device info and activate
@@ -153,8 +154,7 @@ pub async fn complete_device_pairing(
         "#,
     )
     .bind(&device_info.device_id)
-    .bind(serde_json::to_value(&device_info)
-        .map_err(|e| Error::Serialization(e))?)
+    .bind(serde_json::to_value(&device_info).map_err(|e| Error::Serialization(e))?)
     .bind(&encrypted_token)
     .bind(source.id)
     .execute(db)
@@ -257,7 +257,9 @@ pub async fn validate_device_token(db: &PgPool, token: &str) -> Result<Uuid> {
     }
 
     // No match found
-    Err(Error::Unauthorized("Invalid or revoked device token".to_string()))
+    Err(Error::Unauthorized(
+        "Invalid or revoked device token".to_string(),
+    ))
 }
 
 /// Update the last seen timestamp for a device
@@ -300,10 +302,8 @@ pub async fn verify_device(db: &PgPool, token: &str) -> Result<DeviceVerified> {
     let all_streams = crate::api::list_source_streams(db, source_id).await?;
 
     // Filter to only enabled streams
-    let enabled_streams: Vec<crate::api::StreamInfo> = all_streams
-        .into_iter()
-        .filter(|s| s.is_enabled)
-        .collect();
+    let enabled_streams: Vec<crate::api::StreamInfo> =
+        all_streams.into_iter().filter(|s| s.is_enabled).collect();
 
     // Configuration is complete if at least one stream is enabled
     let configuration_complete = !enabled_streams.is_empty();
@@ -375,7 +375,10 @@ mod tests {
 
         // Should be base64 encoded 32 bytes (256 bits)
         // Base64 encoding of 32 bytes = 44 characters (with padding)
-        assert!(token.len() >= 43 && token.len() <= 44, "Token length should be 43-44 chars");
+        assert!(
+            token.len() >= 43 && token.len() <= 44,
+            "Token length should be 43-44 chars"
+        );
 
         // Should be valid base64
         let decoded = base64::engine::general_purpose::STANDARD
@@ -406,8 +409,7 @@ mod tests {
         assert_eq!(json["device_name"], "Adam's iPhone");
 
         // Should deserialize from JSON
-        let deserialized: DeviceInfo =
-            serde_json::from_value(json).expect("Should deserialize");
+        let deserialized: DeviceInfo = serde_json::from_value(json).expect("Should deserialize");
         assert_eq!(deserialized.device_id, info.device_id);
         assert_eq!(deserialized.device_name, info.device_name);
     }
@@ -425,9 +427,7 @@ mod tests {
         let original_token = generate_device_token();
 
         // Encrypt it
-        let encrypted = encryptor
-            .encrypt(&original_token)
-            .expect("Should encrypt");
+        let encrypted = encryptor.encrypt(&original_token).expect("Should encrypt");
 
         // Encrypted should be different from original
         assert_ne!(encrypted, original_token);

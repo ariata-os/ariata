@@ -69,14 +69,18 @@ pub fn validate_state(state_token: &str) -> Result<()> {
         .map_err(|_| Error::Configuration("Invalid signing secret".to_string()))?;
     mac.update(payload_bytes);
 
-    mac.verify_slice(signature)
-        .map_err(|_| Error::InvalidInput("State token signature invalid - possible tampering".to_string()))?;
+    mac.verify_slice(signature).map_err(|_| {
+        Error::InvalidInput("State token signature invalid - possible tampering".to_string())
+    })?;
 
     // Extract timestamp from payload (format: "timestamp" or "timestamp:session_data")
-    let timestamp_str = payload.split(':').next()
+    let timestamp_str = payload
+        .split(':')
+        .next()
         .ok_or_else(|| Error::InvalidInput("Invalid state payload format".to_string()))?;
 
-    let timestamp = timestamp_str.parse::<i64>()
+    let timestamp = timestamp_str
+        .parse::<i64>()
         .map_err(|_| Error::InvalidInput("Invalid timestamp in state".to_string()))?;
 
     // Check expiration (10 minutes)
@@ -96,20 +100,22 @@ pub fn validate_state(state_token: &str) -> Result<()> {
 fn get_signing_secret() -> Result<String> {
     // Reuse encryption key as signing secret for simplicity
     // In production, could use separate OAUTH_STATE_SECRET
-    std::env::var("ARIATA_ENCRYPTION_KEY")
-        .map_err(|_| Error::Configuration(
-            "ARIATA_ENCRYPTION_KEY required for OAuth state signing".to_string()
-        ))
+    std::env::var("ARIATA_ENCRYPTION_KEY").map_err(|_| {
+        Error::Configuration("ARIATA_ENCRYPTION_KEY required for OAuth state signing".to_string())
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
     use serial_test::serial;
+    use std::env;
 
     fn setup_test_key() {
-        env::set_var("ARIATA_ENCRYPTION_KEY", "dGVzdC1zZWNyZXQtZm9yLWhtYWMtc2lnbmluZw==");
+        env::set_var(
+            "ARIATA_ENCRYPTION_KEY",
+            "dGVzdC1zZWNyZXQtZm9yLWhtYWMtc2lnbmluZw==",
+        );
     }
 
     #[test]

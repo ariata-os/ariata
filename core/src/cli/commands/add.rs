@@ -110,9 +110,7 @@ fn parse_callback_url(
     let code = params.get("code").map(|s| s.to_string());
     let access_token = params.get("access_token").map(|s| s.to_string());
     let refresh_token = params.get("refresh_token").map(|s| s.to_string());
-    let expires_in = params
-        .get("expires_in")
-        .and_then(|s| s.parse::<i64>().ok());
+    let expires_in = params.get("expires_in").and_then(|s| s.parse::<i64>().ok());
     let state = params.get("state").map(|s| s.to_string());
 
     // Notion-specific fields
@@ -122,7 +120,9 @@ fn parse_callback_url(
 
     // Validate that we have either code or access_token
     if code.is_none() && access_token.is_none() {
-        return Err("OAuth callback URL must contain either 'code' or 'access_token' parameter".into());
+        return Err(
+            "OAuth callback URL must contain either 'code' or 'access_token' parameter".into(),
+        );
     }
 
     Ok(crate::OAuthCallbackParams {
@@ -156,13 +156,19 @@ async fn handle_device_pairing(
     display_pairing_code(&pairing.code, &server_url, &pairing.expires_at);
 
     println!("⏳ Waiting for device to connect...");
-    let result = wait_for_pairing(ariata.database.pool(), pairing.source_id, pairing.expires_at).await?;
+    let result = wait_for_pairing(
+        ariata.database.pool(),
+        pairing.source_id,
+        pairing.expires_at,
+    )
+    .await?;
 
     match result {
         PairingResult::Success(device_info) => {
             display_pairing_success(&device_info, pairing.source_id);
 
-            let streams = crate::list_source_streams(ariata.database.pool(), pairing.source_id).await?;
+            let streams =
+                crate::list_source_streams(ariata.database.pool(), pairing.source_id).await?;
             display_available_streams(&streams, pairing.source_id);
         }
         PairingResult::Timeout => {

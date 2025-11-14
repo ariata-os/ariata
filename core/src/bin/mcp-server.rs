@@ -15,7 +15,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser, Debug)]
 #[command(name = "ariata-mcp-server")]
-#[command(about = "Ariata MCP Server - Expose your personal data warehouse to AI assistants via stdio")]
+#[command(
+    about = "Ariata MCP Server - Expose your personal data warehouse to AI assistants via stdio"
+)]
 struct Args {}
 
 #[tokio::main]
@@ -29,8 +31,7 @@ async fn main() -> Result<()> {
     // Initialize tracing to stderr to avoid interfering with stdio transport
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
         .init();
@@ -38,8 +39,8 @@ async fn main() -> Result<()> {
     info!("Starting Ariata MCP Server (stdio transport)");
 
     // Get database URL from environment
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set in environment or .env file");
+    let database_url =
+        env::var("DATABASE_URL").expect("DATABASE_URL must be set in environment or .env file");
 
     // Create database connection pool
     let pool = PgPoolOptions::new()

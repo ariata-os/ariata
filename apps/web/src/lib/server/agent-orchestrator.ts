@@ -66,11 +66,17 @@ export async function orchestrateChat(params: OrchestrationParams) {
 				const result = await mcpClient.callTool(name, args);
 				const textResult = result.content.map(c => c.text).join('\n');
 
-				// Wrap in expected format for frontend ToolCall component
-				return JSON.stringify({
-					success: true,
-					rawOutput: textResult
-				});
+				// Parse the JSON response from MCP server
+				// The MCP server returns JSON as text, so we need to parse it
+				try {
+					return JSON.parse(textResult);
+				} catch (e) {
+					// If not JSON, return as plain text in a wrapper object
+					return {
+						success: true,
+						rawOutput: textResult
+					};
+				}
 			}
 		};
 	}

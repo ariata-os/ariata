@@ -52,7 +52,12 @@ impl GoogleCalendarConfig {
     }
 
     /// Calculate time bounds based on sync strategy
-    pub fn calculate_time_bounds(&self) -> (Option<chrono::DateTime<chrono::Utc>>, Option<chrono::DateTime<chrono::Utc>>) {
+    pub fn calculate_time_bounds(
+        &self,
+    ) -> (
+        Option<chrono::DateTime<chrono::Utc>>,
+        Option<chrono::DateTime<chrono::Utc>>,
+    ) {
         self.sync_strategy.calculate_time_bounds()
     }
 }
@@ -69,8 +74,8 @@ fn default_max_events() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GmailSyncMode {
-    Messages,  // Sync individual messages
-    Threads,   // Sync conversation threads
+    Messages, // Sync individual messages
+    Threads,  // Sync conversation threads
 }
 
 impl Default for GmailSyncMode {

@@ -3,8 +3,8 @@
 //! Implements custom error classification for Google APIs, including
 //! special handling for sync token errors (410) used in Calendar and Gmail APIs.
 
+use crate::sources::base::error_handler::{ErrorClass, ErrorHandler};
 use reqwest::StatusCode;
-use crate::sources::base::error_handler::{ErrorHandler, ErrorClass};
 
 /// Google API error handler
 ///
@@ -129,10 +129,9 @@ mod tests {
         assert!(handler.is_sync_token_error(StatusCode::GONE, "sync token invalid"));
 
         // 400 status code with sync token message (Google also returns this)
-        assert!(handler.is_sync_token_error(
-            StatusCode::BAD_REQUEST,
-            "Sync token is no longer valid"
-        ));
+        assert!(
+            handler.is_sync_token_error(StatusCode::BAD_REQUEST, "Sync token is no longer valid")
+        );
 
         // 400 with sync_token in body
         assert!(handler.is_sync_token_error(
@@ -141,16 +140,10 @@ mod tests {
         ));
 
         // Not a sync token error - 400 without sync token message
-        assert!(!handler.is_sync_token_error(
-            StatusCode::BAD_REQUEST,
-            "Invalid request"
-        ));
+        assert!(!handler.is_sync_token_error(StatusCode::BAD_REQUEST, "Invalid request"));
 
         // Not a sync token error - different status
-        assert!(!handler.is_sync_token_error(
-            StatusCode::FORBIDDEN,
-            "Permission denied"
-        ));
+        assert!(!handler.is_sync_token_error(StatusCode::FORBIDDEN, "Permission denied"));
     }
 
     #[test]
@@ -159,7 +152,10 @@ mod tests {
 
         // Quota errors should be classified as rate limits
         assert_eq!(
-            handler.classify_error(StatusCode::FORBIDDEN, "{\"error\":{\"errors\":[{\"reason\":\"quotaExceeded\"}]}}"),
+            handler.classify_error(
+                StatusCode::FORBIDDEN,
+                "{\"error\":{\"errors\":[{\"reason\":\"quotaExceeded\"}]}}"
+            ),
             ErrorClass::RateLimit
         );
 

@@ -37,7 +37,11 @@ fn error_response(error: Error) -> Response {
 
 /// Helper to create a success message response
 fn success_message(message: &str) -> Response {
-    (StatusCode::OK, Json(serde_json::json!({ "message": message }))).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "message": message })),
+    )
+        .into_response()
 }
 
 /// List all sources
@@ -205,7 +209,15 @@ pub async fn enable_stream_handler(
     Path((source_id, stream_name)): Path<(Uuid, String)>,
     Json(request): Json<crate::api::EnableStreamRequest>,
 ) -> Response {
-    match crate::api::enable_stream(state.db.pool(), &*state.storage, state.stream_writer.clone(), source_id, &stream_name, request.config).await
+    match crate::api::enable_stream(
+        state.db.pool(),
+        &*state.storage,
+        state.stream_writer.clone(),
+        source_id,
+        &stream_name,
+        request.config,
+    )
+    .await
     {
         Ok(stream) => (StatusCode::OK, Json(stream)).into_response(),
         Err(e) => (
@@ -293,13 +305,24 @@ pub async fn sync_stream_handler(
     Json(request): Json<Option<SyncStreamRequest>>,
 ) -> Response {
     // Parse sync mode from request (default to incremental)
-    let sync_mode = request.and_then(|r| r.sync_mode.map(|m| match m.as_str() {
-        "full_refresh" => crate::sources::base::SyncMode::FullRefresh,
-        _ => crate::sources::base::SyncMode::incremental(None),
-    }));
+    let sync_mode = request.and_then(|r| {
+        r.sync_mode.map(|m| match m.as_str() {
+            "full_refresh" => crate::sources::base::SyncMode::FullRefresh,
+            _ => crate::sources::base::SyncMode::incremental(None),
+        })
+    });
 
     // Use the new async job-based sync
-    match crate::api::trigger_stream_sync(state.db.pool(), &*state.storage, state.stream_writer.clone(), source_id, &stream_name, sync_mode).await {
+    match crate::api::trigger_stream_sync(
+        state.db.pool(),
+        &*state.storage,
+        state.stream_writer.clone(),
+        source_id,
+        &stream_name,
+        sync_mode,
+    )
+    .await
+    {
         Ok(response) => (StatusCode::CREATED, Json(response)).into_response(),
         Err(e) => {
             let status = if e.to_string().contains("already has an active sync") {
@@ -393,10 +416,7 @@ pub async fn get_ontologies_overview_handler(State(state): State<AppState>) -> R
 // ============================================================================
 
 /// Get job status by ID
-pub async fn get_job_handler(
-    State(state): State<AppState>,
-    Path(job_id): Path<Uuid>,
-) -> Response {
+pub async fn get_job_handler(State(state): State<AppState>, Path(job_id): Path<Uuid>) -> Response {
     match crate::api::get_job_status(state.db.pool(), job_id).await {
         Ok(job) => (StatusCode::OK, Json(job)).into_response(),
         Err(e) => (
@@ -413,7 +433,7 @@ pub async fn get_job_handler(
 #[derive(Debug, Deserialize)]
 pub struct QueryJobsParams {
     pub source_id: Option<Uuid>,
-    pub status: Option<String>,  // Comma-separated list
+    pub status: Option<String>, // Comma-separated list
     pub limit: Option<i64>,
 }
 
@@ -493,12 +513,8 @@ pub async fn initiate_device_pairing_handler(
     State(state): State<AppState>,
     Json(request): Json<InitiatePairingRequest>,
 ) -> Response {
-    match crate::api::initiate_device_pairing(
-        state.db.pool(),
-        &request.device_type,
-        &request.name,
-    )
-    .await
+    match crate::api::initiate_device_pairing(state.db.pool(), &request.device_type, &request.name)
+        .await
     {
         Ok(pairing) => (
             StatusCode::OK,
@@ -539,12 +555,8 @@ pub async fn complete_device_pairing_handler(
     State(state): State<AppState>,
     Json(request): Json<CompletePairingRequest>,
 ) -> Response {
-    match crate::api::complete_device_pairing(
-        state.db.pool(),
-        &request.code,
-        request.device_info,
-    )
-    .await
+    match crate::api::complete_device_pairing(state.db.pool(), &request.code, request.device_info)
+        .await
     {
         Ok(completed) => (
             StatusCode::OK,
@@ -583,9 +595,9 @@ pub async fn check_pairing_status_handler(
         Ok(status) => {
             let response = match status {
                 crate::PairingStatus::Pending => PairingStatusResponse::Pending,
-                crate::PairingStatus::Active(info) => PairingStatusResponse::Active {
-                    device_info: info,
-                },
+                crate::PairingStatus::Active(info) => {
+                    PairingStatusResponse::Active { device_info: info }
+                }
                 crate::PairingStatus::Revoked => PairingStatusResponse::Revoked,
             };
             (StatusCode::OK, Json(response)).into_response()

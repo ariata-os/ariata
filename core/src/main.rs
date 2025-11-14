@@ -1,7 +1,7 @@
 //! Ariata CLI - Command-line interface for the Ariata personal data platform
 
 use ariata::cli::types::Cli;
-use ariata::{AriataBuilder};
+use ariata::AriataBuilder;
 use clap::Parser;
 use std::env;
 

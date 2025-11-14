@@ -3,9 +3,9 @@
 //! Simplified writer that ONLY buffers records in memory.
 //! S3 archival is handled separately by async archive jobs.
 
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::error::Result;
@@ -73,7 +73,8 @@ impl StreamWriter {
     ) -> Result<()> {
         let buffer_key = format!("{}:{}", source_id, stream_name);
 
-        let buffer = self.buffers
+        let buffer = self
+            .buffers
             .entry(buffer_key)
             .or_insert_with(StreamBuffer::new);
 
@@ -125,19 +126,13 @@ mod tests {
         let stream_name = "test_stream";
 
         // Write records
-        writer.write_record(
-            source_id,
-            stream_name,
-            json!({"value": 1}),
-            None,
-        ).unwrap();
+        writer
+            .write_record(source_id, stream_name, json!({"value": 1}), None)
+            .unwrap();
 
-        writer.write_record(
-            source_id,
-            stream_name,
-            json!({"value": 2}),
-            None,
-        ).unwrap();
+        writer
+            .write_record(source_id, stream_name, json!({"value": 2}), None)
+            .unwrap();
 
         assert_eq!(writer.buffer_count(source_id, stream_name), 2);
 
@@ -161,8 +156,12 @@ mod tests {
         let ts1 = Utc::now();
         let ts2 = ts1 + chrono::Duration::hours(1);
 
-        writer.write_record(source_id, stream_name, json!({"value": 1}), Some(ts2)).unwrap();
-        writer.write_record(source_id, stream_name, json!({"value": 2}), Some(ts1)).unwrap();
+        writer
+            .write_record(source_id, stream_name, json!({"value": 1}), Some(ts2))
+            .unwrap();
+        writer
+            .write_record(source_id, stream_name, json!({"value": 2}), Some(ts1))
+            .unwrap();
 
         let result = writer.collect_records(source_id, stream_name).unwrap();
         assert_eq!(result.1, Some(ts1)); // min

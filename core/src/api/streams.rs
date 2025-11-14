@@ -1,14 +1,14 @@
 //! Stream management and configuration API
 
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
+use super::sources::get_source;
 use crate::error::{Error, Result};
 use crate::storage::stream_writer::StreamWriter;
-use super::sources::get_source;
 
 /// Information about a stream, including enablement status and configuration
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
@@ -208,7 +208,16 @@ pub async fn enable_stream(
         let stream_writer_clone = stream_writer.clone();
         let stream_name_clone = stream_name.to_string();
         tokio::spawn(async move {
-            match crate::api::jobs::trigger_stream_sync(&db_clone, &storage_clone, stream_writer_clone, source_id, &stream_name_clone, None).await {
+            match crate::api::jobs::trigger_stream_sync(
+                &db_clone,
+                &storage_clone,
+                stream_writer_clone,
+                source_id,
+                &stream_name_clone,
+                None,
+            )
+            .await
+            {
                 Ok(response) => {
                     tracing::info!(
                         "Initial sync job created for {}: job_id={}, status={}",
@@ -218,7 +227,11 @@ pub async fn enable_stream(
                     );
                 }
                 Err(e) => {
-                    tracing::error!("Failed to create initial sync job for {}: {}", stream_name_clone, e);
+                    tracing::error!(
+                        "Failed to create initial sync job for {}: {}",
+                        stream_name_clone,
+                        e
+                    );
                 }
             }
         });

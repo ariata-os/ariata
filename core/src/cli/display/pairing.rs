@@ -136,7 +136,11 @@ pub fn display_available_streams(streams: &[crate::StreamInfo], source_id: Uuid)
     );
 
     for stream in streams {
-        let status = if stream.is_enabled { "enabled" } else { "disabled" };
+        let status = if stream.is_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        };
         let _ = term.write_line(&format!(
             "   {} {}     {}",
             style("•").dim(),
@@ -202,7 +206,10 @@ pub fn display_pending_pairings(pairings: &[crate::PendingPairing]) {
 
     println!("Pending Device Pairings:");
     println!("┌────────────────────────────────────┬───────┬──────────┬─────────────┐");
-    println!("│ {:^34} │ {:^5} │ {:^8} │ {:^11} │", "Name", "Type", "Code", "Expires In");
+    println!(
+        "│ {:^34} │ {:^5} │ {:^8} │ {:^11} │",
+        "Name", "Type", "Code", "Expires In"
+    );
     println!("├────────────────────────────────────┼───────┼──────────┼─────────────┤");
 
     for pairing in pairings {
@@ -221,7 +228,10 @@ pub fn display_pending_pairings(pairings: &[crate::PendingPairing]) {
             pairing.name.clone()
         };
 
-        println!("│ {:<34} │ {:<5} │ {:<8} │ {:<11} │", name_truncated, pairing.device_type, pairing.code, expires_in);
+        println!(
+            "│ {:<34} │ {:<5} │ {:<8} │ {:<11} │",
+            name_truncated, pairing.device_type, pairing.code, expires_in
+        );
     }
 
     println!("└────────────────────────────────────┴───────┴──────────┴─────────────┘");

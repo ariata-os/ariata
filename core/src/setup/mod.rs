@@ -11,8 +11,15 @@ use validation::{display_error, display_info, display_success};
 /// Storage type for configuration
 #[derive(Debug, Clone)]
 pub enum StorageType {
-    Local { path: String },
-    S3 { endpoint: String, bucket: String, access_key: String, secret_key: String },
+    Local {
+        path: String,
+    },
+    S3 {
+        endpoint: String,
+        bucket: String,
+        access_key: String,
+        secret_key: String,
+    },
 }
 
 /// Configuration collected from the setup wizard
@@ -235,7 +242,9 @@ pub fn save_config(config: &SetupConfig) -> Result<()> {
         println!(
             "{} {}",
             style("⚠️").yellow().bold(),
-            style(".env already exists in this directory").yellow().bold()
+            style(".env already exists in this directory")
+                .yellow()
+                .bold()
         );
 
         let overwrite = Confirm::with_theme(&ColorfulTheme::default())
@@ -311,8 +320,17 @@ pub fn save_config(config: &SetupConfig) -> Result<()> {
 pub fn display_completion() {
     println!();
     println!("{}", style("Done! Try these commands:").bold().green());
-    println!("  {} - Browse available integrations", style("ariata catalog sources").cyan());
-    println!("  {} - Connect your Notion workspace", style("ariata add notion").cyan());
-    println!("  {} - List connected sources", style("ariata source list").cyan());
+    println!(
+        "  {} - Browse available integrations",
+        style("ariata catalog sources").cyan()
+    );
+    println!(
+        "  {} - Connect your Notion workspace",
+        style("ariata add notion").cyan()
+    );
+    println!(
+        "  {} - List connected sources",
+        style("ariata source list").cyan()
+    );
     println!();
 }

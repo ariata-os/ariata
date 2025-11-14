@@ -6,8 +6,8 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::error::Result;
 use super::base::TokenManager;
+use crate::error::Result;
 
 /// Unified authentication abstraction for all source types
 ///
@@ -25,14 +25,10 @@ pub enum SourceAuth {
     },
 
     /// Device-based authentication (iOS, Mac devices pushing data)
-    Device {
-        device_id: String,
-    },
+    Device { device_id: String },
 
     /// API Key authentication
-    ApiKey {
-        key: String,
-    },
+    ApiKey { key: String },
 
     /// No authentication required
     None,
@@ -129,11 +125,10 @@ impl SourceAuth {
 impl std::fmt::Debug for SourceAuth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::OAuth2 { source_id, .. } => {
-                f.debug_struct("OAuth2")
-                    .field("source_id", source_id)
-                    .finish()
-            }
+            Self::OAuth2 { source_id, .. } => f
+                .debug_struct("OAuth2")
+                .field("source_id", source_id)
+                .finish(),
             Self::Device { device_id } => f
                 .debug_struct("Device")
                 .field("device_id", device_id)

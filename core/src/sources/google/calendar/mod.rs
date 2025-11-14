@@ -37,7 +37,12 @@ pub struct GoogleCalendarStream {
 
 impl GoogleCalendarStream {
     /// Create a new calendar stream with SourceAuth and StreamWriter
-    pub fn new(source_id: Uuid, db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>, auth: SourceAuth) -> Self {
+    pub fn new(
+        source_id: Uuid,
+        db: PgPool,
+        stream_writer: Arc<Mutex<StreamWriter>>,
+        auth: SourceAuth,
+    ) -> Self {
         // Extract token manager from auth
         let token_manager = auth
             .token_manager()
@@ -223,9 +228,11 @@ impl GoogleCalendarStream {
                 params.push(("pageToken", token.clone()));
             }
 
-            let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            let param_refs: Vec<(&str, &str)> =
+                params.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
-            let response: EventsResponse = self.client
+            let response: EventsResponse = self
+                .client
                 .get_with_params(&format!("calendars/{calendar_id}/events"), &param_refs)
                 .await?;
 
@@ -389,12 +396,7 @@ impl GoogleCalendarStream {
         // Write to S3/object storage via StreamWriter
         {
             let mut writer = self.stream_writer.lock().await;
-            writer.write_record(
-                self.source_id,
-                "calendar",
-                record,
-                Some(start_time),
-            )?;
+            writer.write_record(self.source_id, "calendar", record, Some(start_time))?;
         }
 
         tracing::debug!(event_id = %event.id, "Wrote calendar event to object storage");

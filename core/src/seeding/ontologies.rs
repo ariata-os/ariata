@@ -112,7 +112,11 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
         }
 
         // Sleep records (1 per day = 30 total)
-        let sleep_start = base_time.date_naive().and_hms_opt(23, 0, 0).unwrap().and_utc();
+        let sleep_start = base_time
+            .date_naive()
+            .and_hms_opt(23, 0, 0)
+            .unwrap()
+            .and_utc();
         let sleep_duration = rng.gen_range(360..540); // 6-9 hours
         let sleep_end = sleep_start + Duration::minutes(sleep_duration);
 
@@ -137,7 +141,11 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 
         // Workout records (every 2-3 days = ~12 total)
         if day % 2 == 0 || day % 3 == 0 {
-            let workout_start = base_time.date_naive().and_hms_opt(18, 0, 0).unwrap().and_utc();
+            let workout_start = base_time
+                .date_naive()
+                .and_hms_opt(18, 0, 0)
+                .unwrap()
+                .and_utc();
             let workout_duration = rng.gen_range(30..90);
             let workout_end = workout_start + Duration::minutes(workout_duration);
 
@@ -167,7 +175,11 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
         }
 
         // Steps (1 per day = 30 total)
-        let steps_time = base_time.date_naive().and_hms_opt(23, 59, 0).unwrap().and_utc();
+        let steps_time = base_time
+            .date_naive()
+            .and_hms_opt(23, 59, 0)
+            .unwrap()
+            .and_utc();
         sqlx::query!(
             r#"
             INSERT INTO elt.health_steps

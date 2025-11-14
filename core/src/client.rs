@@ -6,8 +6,8 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::database::Database;
-use crate::storage::Storage;
 use crate::error::{Error, Result};
+use crate::storage::Storage;
 
 /// Main Ariata client for managing personal data
 pub struct Ariata {
@@ -34,13 +34,12 @@ impl Ariata {
         let storage_status = self.storage.health_check().await?;
 
         // Count active sources
-        let active_sources = sqlx::query_scalar!(
-            "SELECT COUNT(*) FROM sources WHERE is_active = true"
-        )
-        .fetch_one(self.database.pool())
-        .await
-        .unwrap_or(Some(0))
-        .unwrap_or(0) as usize;
+        let active_sources =
+            sqlx::query_scalar!("SELECT COUNT(*) FROM sources WHERE is_active = true")
+                .fetch_one(self.database.pool())
+                .await
+                .unwrap_or(Some(0))
+                .unwrap_or(0) as usize;
 
         Ok(Status {
             is_healthy: db_status.is_healthy && storage_status.is_healthy,
@@ -149,7 +148,8 @@ impl AriataBuilder {
 
     /// Build the Ariata client
     pub async fn build(self) -> Result<Ariata> {
-        let postgres_url = self.postgres_url
+        let postgres_url = self
+            .postgres_url
             .or_else(|| std::env::var("DATABASE_URL").ok())
             .ok_or_else(|| Error::Configuration("PostgreSQL URL required".to_string()))?;
 
@@ -161,7 +161,8 @@ impl AriataBuilder {
                 self.s3_endpoint,
                 self.s3_access_key,
                 self.s3_secret_key,
-            ).await?
+            )
+            .await?
         } else {
             let path = self.storage_path.unwrap_or_else(|| "./data".to_string());
             Storage::local(path)?

@@ -11,8 +11,11 @@
 use crate::{
     database::Database,
     error::{Error, Result},
-    jobs::{self, spawn_archive_job_async, transform_trigger::create_transform_job_for_stream, JobExecutor, TransformContext, ApiKeys},
-    storage::{Storage, stream_writer::StreamWriter},
+    jobs::{
+        self, spawn_archive_job_async, transform_trigger::create_transform_job_for_stream, ApiKeys,
+        JobExecutor, TransformContext,
+    },
+    storage::{stream_writer::StreamWriter, Storage},
 };
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
@@ -31,7 +34,7 @@ const RECORDING_TIMEZONE: &str = "Europe/Rome";
 async fn get_or_create_test_source(db: &Database) -> Result<Uuid> {
     // Check if test source already exists
     let existing = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM elt.sources WHERE name = 'monday-in-rome' LIMIT 1"
+        "SELECT id FROM elt.sources WHERE name = 'monday-in-rome' LIMIT 1",
     )
     .fetch_optional(db.pool())
     .await?;
@@ -45,7 +48,7 @@ async fn get_or_create_test_source(db: &Database) -> Result<Uuid> {
     let id = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO elt.sources (name, provider, auth_type, is_active)
          VALUES ('monday-in-rome', 'ios', 'device', true)
-         RETURNING id"
+         RETURNING id",
     )
     .fetch_one(db.pool())
     .await?;
@@ -60,15 +63,16 @@ fn load_csv_to_records(csv_path: &PathBuf, stream_name: &str) -> Result<Vec<Valu
         .map_err(|e| Error::Other(format!("Failed to read {}: {}", csv_path.display(), e)))?;
 
     let mut rdr = csv::Reader::from_reader(file_content.as_bytes());
-    let headers = rdr.headers()
+    let headers = rdr
+        .headers()
         .map_err(|e| Error::Other(format!("Failed to read CSV headers: {}", e)))?
         .clone();
 
     let mut records = Vec::new();
 
     for result in rdr.records() {
-        let record = result
-            .map_err(|e| Error::Other(format!("Failed to read CSV record: {}", e)))?;
+        let record =
+            result.map_err(|e| Error::Other(format!("Failed to read CSV record: {}", e)))?;
 
         // Convert CSV row to JSON
         let mut json_obj = serde_json::Map::new();
@@ -103,7 +107,8 @@ fn load_csv_to_records(csv_path: &PathBuf, stream_name: &str) -> Result<Vec<Valu
             let timestamp = DateTime::<Utc>::from_timestamp(
                 (time_nanos / 1_000_000_000.0) as i64,
                 (time_nanos % 1_000_000_000.0) as u32,
-            ).ok_or_else(|| Error::Other("Invalid timestamp".into()))?;
+            )
+            .ok_or_else(|| Error::Other("Invalid timestamp".into()))?;
 
             json_obj.insert("timestamp".to_string(), json!(timestamp.to_rfc3339()));
         }
@@ -164,7 +169,8 @@ async fn seed_stream_pipeline(
         stream_name,
         records.clone(),
         (min_ts, max_ts),
-    ).await?;
+    )
+    .await?;
 
     info!(
         stream = stream_name,
@@ -189,7 +195,8 @@ async fn seed_stream_pipeline(
         source_id,
         stream_name,
         Some(records),
-    ).await?;
+    )
+    .await?;
 
     info!(
         stream = stream_name,
@@ -243,50 +250,57 @@ async fn seed_microphone_transcriptions(
         "INSERT INTO elt.streams (source_id, stream_name, table_name, created_at, updated_at)
          VALUES ($1, 'microphone', 'stream_ios_microphone', NOW(), NOW())
          ON CONFLICT (source_id, stream_name) DO UPDATE SET updated_at = NOW()
-         RETURNING id"
+         RETURNING id",
     )
     .bind(source_id)
     .fetch_one(db.pool())
     .await?;
 
     for result in rdr.deserialize() {
-        let record: serde_json::Map<String, serde_json::Value> = result
-            .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
+        let record: serde_json::Map<String, serde_json::Value> =
+            result.map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
 
         // Extract fields from CSV
-        let time_ns = record.get("time")
+        let time_ns = record
+            .get("time")
             .and_then(|v| v.as_f64())
             .ok_or_else(|| Error::Other("Missing time field".into()))?;
 
         let timestamp = DateTime::<Utc>::from_timestamp(
             (time_ns / 1_000_000_000.0) as i64,
             (time_ns % 1_000_000_000.0) as u32,
-        ).ok_or_else(|| Error::Other("Invalid timestamp".into()))?;
+        )
+        .ok_or_else(|| Error::Other("Invalid timestamp".into()))?;
 
-        let duration_seconds = record.get("duration_seconds")
+        let duration_seconds = record
+            .get("duration_seconds")
             .and_then(|v| v.as_f64())
             .map(|d| d as i32);
 
-        let transcript_text = record.get("transcript_text")
+        let transcript_text = record
+            .get("transcript_text")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::Other("Missing transcript_text".into()))?;
 
-        let language = record.get("language")
-            .and_then(|v| v.as_str());
+        let language = record.get("language").and_then(|v| v.as_str());
 
-        let confidence_score = record.get("confidence_score")
+        let confidence_score = record
+            .get("confidence_score")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        let speaker_count = record.get("speaker_count")
+        let speaker_count = record
+            .get("speaker_count")
             .and_then(|v| v.as_i64())
             .map(|c| c as i32);
 
-        let speaker_labels_json = record.get("speaker_labels_json")
+        let speaker_labels_json = record
+            .get("speaker_labels_json")
             .and_then(|v| v.as_str())
             .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
 
-        let metadata_json = record.get("metadata_json")
+        let metadata_json = record
+            .get("metadata_json")
             .and_then(|v| v.as_str())
             .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
             .unwrap_or(json!({}));
@@ -339,10 +353,7 @@ async fn seed_microphone_transcriptions(
 ///
 /// Loads sleep.csv and directly inserts into health_sleep ontology table.
 /// CSV already contains the final ontology fields, so no transformation needed.
-async fn seed_sleep_data(
-    db: &Database,
-    csv_path: &PathBuf,
-) -> Result<usize> {
+async fn seed_sleep_data(db: &Database, csv_path: &PathBuf) -> Result<usize> {
     info!("Loading sleep CSV: {}", csv_path.display());
 
     let file_content = std::fs::read_to_string(csv_path)
@@ -352,46 +363,53 @@ async fn seed_sleep_data(
     let mut count = 0;
 
     for result in rdr.deserialize() {
-        let record: serde_json::Map<String, serde_json::Value> = result
-            .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
+        let record: serde_json::Map<String, serde_json::Value> =
+            result.map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
 
         // Extract fields from CSV
-        let start_time = record.get("start_time")
+        let start_time = record
+            .get("start_time")
             .and_then(|v| v.as_str())
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .ok_or_else(|| Error::Other("Missing or invalid start_time".into()))?
             .with_timezone(&Utc);
 
-        let end_time = record.get("end_time")
+        let end_time = record
+            .get("end_time")
             .and_then(|v| v.as_str())
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .ok_or_else(|| Error::Other("Missing or invalid end_time".into()))?
             .with_timezone(&Utc);
 
-        let total_duration_minutes = record.get("total_duration_minutes")
+        let total_duration_minutes = record
+            .get("total_duration_minutes")
             .and_then(|v| v.as_i64())
-            .ok_or_else(|| Error::Other("Missing total_duration_minutes".into()))? as i32;
+            .ok_or_else(|| Error::Other("Missing total_duration_minutes".into()))?
+            as i32;
 
-        let sleep_quality_score = record.get("sleep_quality_score")
-            .and_then(|v| v.as_f64());
+        let sleep_quality_score = record.get("sleep_quality_score").and_then(|v| v.as_f64());
 
-        let sleep_stages_str = record.get("sleep_stages")
+        let sleep_stages_str = record
+            .get("sleep_stages")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::Other("Missing sleep_stages".into()))?;
 
         let sleep_stages: serde_json::Value = serde_json::from_str(sleep_stages_str)
             .map_err(|e| Error::Other(format!("Invalid sleep_stages JSON: {}", e)))?;
 
-        let source_stream_id = record.get("source_stream_id")
+        let source_stream_id = record
+            .get("source_stream_id")
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok())
             .ok_or_else(|| Error::Other("Missing or invalid source_stream_id".into()))?;
 
-        let source_table = record.get("source_table")
+        let source_table = record
+            .get("source_table")
             .and_then(|v| v.as_str())
             .unwrap_or("stream_seed_health_sleep");
 
-        let source_provider = record.get("source_provider")
+        let source_provider = record
+            .get("source_provider")
             .and_then(|v| v.as_str())
             .unwrap_or("seed");
 
@@ -436,11 +454,7 @@ async fn seed_sleep_data(
 /// Seed iMessage data directly to social_message table
 ///
 /// Loads imessages.csv and directly inserts into social_message ontology table.
-async fn seed_imessage_data(
-    db: &Database,
-    _source_id: Uuid,
-    csv_path: &PathBuf,
-) -> Result<usize> {
+async fn seed_imessage_data(db: &Database, _source_id: Uuid, csv_path: &PathBuf) -> Result<usize> {
     info!("Loading iMessage CSV: {}", csv_path.display());
 
     let file_content = std::fs::read_to_string(csv_path)
@@ -450,35 +464,41 @@ async fn seed_imessage_data(
     let mut count = 0;
 
     for result in rdr.deserialize() {
-        let record: serde_json::Map<String, serde_json::Value> = result
-            .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
+        let record: serde_json::Map<String, serde_json::Value> =
+            result.map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
 
         // Extract fields from CSV (matches existing imessages.csv structure)
         // CSV fields: body, timestamp, channel, direction, from_name, to_names, thread_id, is_group_message
-        let message_text = record.get("body")
+        let message_text = record
+            .get("body")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::Other("Missing body field".into()))?;
 
-        let timestamp = record.get("timestamp")
+        let timestamp = record
+            .get("timestamp")
             .and_then(|v| v.as_str())
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .ok_or_else(|| Error::Other("Missing or invalid timestamp".into()))?
             .with_timezone(&Utc);
 
-        let platform = record.get("channel")
+        let platform = record
+            .get("channel")
             .and_then(|v| v.as_str())
             .unwrap_or("imessage");
 
-        let direction = record.get("direction")
+        let direction = record
+            .get("direction")
             .and_then(|v| v.as_str())
             .unwrap_or("sent");
 
-        let sender_name = record.get("from_name")
+        let sender_name = record
+            .get("from_name")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty());
 
         // to_names is like "{\"Me\"}" or "{\"Jimmy James\"}", extract first name
-        let receiver_name = record.get("to_names")
+        let receiver_name = record
+            .get("to_names")
             .and_then(|v| v.as_str())
             .and_then(|s| {
                 let cleaned = s.trim_matches(|c| c == '{' || c == '}' || c == '"');
@@ -489,10 +509,10 @@ async fn seed_imessage_data(
                 }
             });
 
-        let conversation_id = record.get("thread_id")
-            .and_then(|v| v.as_str());
+        let conversation_id = record.get("thread_id").and_then(|v| v.as_str());
 
-        let is_group_message = record.get("is_group_message")
+        let is_group_message = record
+            .get("is_group_message")
             .and_then(|v| {
                 if let Some(b) = v.as_bool() {
                     Some(b)
@@ -518,7 +538,8 @@ async fn seed_imessage_data(
         };
 
         // Generate a unique message_id
-        let message_id = record.get("message_id")
+        let message_id = record
+            .get("message_id")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("msg_seed_{}", Uuid::new_v4()));
@@ -581,7 +602,7 @@ async fn seed_imessage_data(
 async fn get_or_create_person(db: &Database, name: &str) -> Result<Uuid> {
     // Check if person already exists
     let existing = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM elt.entities_person WHERE canonical_name = $1 LIMIT 1"
+        "SELECT id FROM elt.entities_person WHERE canonical_name = $1 LIMIT 1",
     )
     .bind(name)
     .fetch_optional(db.pool())
@@ -595,7 +616,7 @@ async fn get_or_create_person(db: &Database, name: &str) -> Result<Uuid> {
     let id = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO elt.entities_person (canonical_name, metadata)
          VALUES ($1, '{}')
-         RETURNING id"
+         RETURNING id",
     )
     .bind(name)
     .fetch_one(db.pool())
@@ -607,11 +628,7 @@ async fn get_or_create_person(db: &Database, name: &str) -> Result<Uuid> {
 /// Seed email data directly to social_email table
 ///
 /// Loads emails.csv and directly inserts into social_email ontology table.
-async fn seed_email_data(
-    db: &Database,
-    _source_id: Uuid,
-    csv_path: &PathBuf,
-) -> Result<usize> {
+async fn seed_email_data(db: &Database, _source_id: Uuid, csv_path: &PathBuf) -> Result<usize> {
     info!("Loading email CSV: {}", csv_path.display());
 
     let file_content = std::fs::read_to_string(csv_path)
@@ -621,21 +638,24 @@ async fn seed_email_data(
     let mut count = 0;
 
     for result in rdr.deserialize() {
-        let record: serde_json::Map<String, serde_json::Value> = result
-            .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
+        let record: serde_json::Map<String, serde_json::Value> =
+            result.map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
 
         // Extract required fields
-        let message_id = record.get("message_id")
+        let message_id = record
+            .get("message_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::Other("Missing message_id".into()))?;
 
-        let timestamp = record.get("timestamp")
+        let timestamp = record
+            .get("timestamp")
             .and_then(|v| v.as_str())
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .ok_or_else(|| Error::Other("Missing or invalid timestamp".into()))?
             .with_timezone(&Utc);
 
-        let direction = record.get("direction")
+        let direction = record
+            .get("direction")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::Other("Missing direction".into()))?;
 
@@ -650,7 +670,8 @@ async fn seed_email_data(
 
         // Parse array fields (PostgreSQL array format: {value1,value2})
         let parse_pg_array = |field_name: &str| -> Vec<String> {
-            record.get(field_name)
+            record
+                .get(field_name)
                 .and_then(|v| v.as_str())
                 .map(|s| {
                     let cleaned = s.trim_matches(|c| c == '{' || c == '}');
@@ -672,7 +693,8 @@ async fn seed_email_data(
 
         // Parse boolean fields
         let parse_bool = |field_name: &str| -> bool {
-            record.get(field_name)
+            record
+                .get(field_name)
                 .and_then(|v| {
                     if let Some(b) = v.as_bool() {
                         Some(b)
@@ -690,30 +712,36 @@ async fn seed_email_data(
         let has_attachments = parse_bool("has_attachments");
 
         // Parse integer fields
-        let attachment_count = record.get("attachment_count")
+        let attachment_count = record
+            .get("attachment_count")
             .and_then(|v| v.as_i64())
             .map(|i| i as i32)
             .unwrap_or(0);
 
-        let thread_position = record.get("thread_position")
+        let thread_position = record
+            .get("thread_position")
             .and_then(|v| v.as_i64())
             .map(|i| i as i32);
 
-        let thread_message_count = record.get("thread_message_count")
+        let thread_message_count = record
+            .get("thread_message_count")
             .and_then(|v| v.as_i64())
             .map(|i| i as i32);
 
         // Parse source metadata
-        let source_stream_id = record.get("source_stream_id")
+        let source_stream_id = record
+            .get("source_stream_id")
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok())
             .ok_or_else(|| Error::Other("Missing or invalid source_stream_id".into()))?;
 
-        let source_table = record.get("source_table")
+        let source_table = record
+            .get("source_table")
             .and_then(|v| v.as_str())
             .unwrap_or("stream_seed_gmail");
 
-        let source_provider = record.get("source_provider")
+        let source_provider = record
+            .get("source_provider")
             .and_then(|v| v.as_str())
             .unwrap_or("seed");
 
@@ -818,10 +846,7 @@ async fn seed_email_data(
 /// Seed axiology data (values, telos, goals, virtues, vices, habits, temperaments, preferences)
 ///
 /// Loads all axiology CSV files and seeds them into respective tables.
-async fn seed_axiology_data(
-    db: &Database,
-    base_path: &PathBuf,
-) -> Result<usize> {
+async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize> {
     info!("🎯 Seeding axiology data (values, goals, virtues, habits, etc.)...");
     let mut total_count = 0;
 
@@ -835,13 +860,16 @@ async fn seed_axiology_data(
         for result in rdr.deserialize() {
             let record: serde_json::Map<String, serde_json::Value> = result
                 .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
-            let title = record.get("title").and_then(|v| v.as_str()).ok_or_else(|| Error::Other("Missing title".into()))?;
+            let title = record
+                .get("title")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Other("Missing title".into()))?;
             let description = record.get("description").and_then(|v| v.as_str());
 
             sqlx::query(
                 "INSERT INTO elt.axiology_value (title, description, is_active)
                  VALUES ($1, $2, true)
-                 ON CONFLICT DO NOTHING"
+                 ON CONFLICT DO NOTHING",
             )
             .bind(title)
             .bind(description)
@@ -863,13 +891,16 @@ async fn seed_axiology_data(
         for result in rdr.deserialize() {
             let record: serde_json::Map<String, serde_json::Value> = result
                 .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
-            let title = record.get("title").and_then(|v| v.as_str()).ok_or_else(|| Error::Other("Missing title".into()))?;
+            let title = record
+                .get("title")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Other("Missing title".into()))?;
             let description = record.get("description").and_then(|v| v.as_str());
 
             sqlx::query(
                 "INSERT INTO elt.axiology_telos (title, description, is_active)
                  VALUES ($1, $2, true)
-                 ON CONFLICT DO NOTHING"
+                 ON CONFLICT DO NOTHING",
             )
             .bind(title)
             .bind(description)
@@ -891,18 +922,29 @@ async fn seed_axiology_data(
         for result in rdr.deserialize() {
             let record: serde_json::Map<String, serde_json::Value> = result
                 .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
-            let title = record.get("title").and_then(|v| v.as_str()).ok_or_else(|| Error::Other("Missing title".into()))?;
+            let title = record
+                .get("title")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Other("Missing title".into()))?;
             let description = record.get("description").and_then(|v| v.as_str());
             let goal_type = record.get("goal_type").and_then(|v| v.as_str());
-            let status = record.get("status").and_then(|v| v.as_str()).unwrap_or("active");
-            let progress_percent = record.get("progress_percent").and_then(|v| v.as_i64()).map(|i| i as i32);
+            let status = record
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("active");
+            let progress_percent = record
+                .get("progress_percent")
+                .and_then(|v| v.as_i64())
+                .map(|i| i as i32);
 
-            let start_date = record.get("start_date")
+            let start_date = record
+                .get("start_date")
                 .and_then(|v| v.as_str())
                 .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&Utc));
 
-            let target_date = record.get("target_date")
+            let target_date = record
+                .get("target_date")
                 .and_then(|v| v.as_str())
                 .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&Utc));
@@ -937,13 +979,16 @@ async fn seed_axiology_data(
         for result in rdr.deserialize() {
             let record: serde_json::Map<String, serde_json::Value> = result
                 .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
-            let title = record.get("title").and_then(|v| v.as_str()).ok_or_else(|| Error::Other("Missing title".into()))?;
+            let title = record
+                .get("title")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Other("Missing title".into()))?;
             let description = record.get("description").and_then(|v| v.as_str());
 
             sqlx::query(
                 "INSERT INTO elt.axiology_virtue (title, description, is_active)
                  VALUES ($1, $2, true)
-                 ON CONFLICT DO NOTHING"
+                 ON CONFLICT DO NOTHING",
             )
             .bind(title)
             .bind(description)
@@ -965,13 +1010,16 @@ async fn seed_axiology_data(
         for result in rdr.deserialize() {
             let record: serde_json::Map<String, serde_json::Value> = result
                 .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
-            let title = record.get("title").and_then(|v| v.as_str()).ok_or_else(|| Error::Other("Missing title".into()))?;
+            let title = record
+                .get("title")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Other("Missing title".into()))?;
             let description = record.get("description").and_then(|v| v.as_str());
 
             sqlx::query(
                 "INSERT INTO elt.axiology_vice (title, description, is_active)
                  VALUES ($1, $2, true)
-                 ON CONFLICT DO NOTHING"
+                 ON CONFLICT DO NOTHING",
             )
             .bind(title)
             .bind(description)
@@ -993,13 +1041,21 @@ async fn seed_axiology_data(
         for result in rdr.deserialize() {
             let record: serde_json::Map<String, serde_json::Value> = result
                 .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
-            let title = record.get("title").and_then(|v| v.as_str()).ok_or_else(|| Error::Other("Missing title".into()))?;
+            let title = record
+                .get("title")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Other("Missing title".into()))?;
             let description = record.get("description").and_then(|v| v.as_str());
             let frequency = record.get("frequency").and_then(|v| v.as_str());
             let time_of_day = record.get("time_of_day").and_then(|v| v.as_str());
-            let streak_count = record.get("streak_count").and_then(|v| v.as_i64()).map(|i| i as i32).unwrap_or(0);
+            let streak_count = record
+                .get("streak_count")
+                .and_then(|v| v.as_i64())
+                .map(|i| i as i32)
+                .unwrap_or(0);
 
-            let last_completed_date = record.get("last_completed_date")
+            let last_completed_date = record
+                .get("last_completed_date")
                 .and_then(|v| v.as_str())
                 .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
 
@@ -1032,7 +1088,10 @@ async fn seed_axiology_data(
         for result in rdr.deserialize() {
             let record: serde_json::Map<String, serde_json::Value> = result
                 .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
-            let title = record.get("title").and_then(|v| v.as_str()).ok_or_else(|| Error::Other("Missing title".into()))?;
+            let title = record
+                .get("title")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Other("Missing title".into()))?;
             let description = record.get("description").and_then(|v| v.as_str());
             let temperament_type = record.get("temperament_type").and_then(|v| v.as_str());
 
@@ -1062,7 +1121,10 @@ async fn seed_axiology_data(
         for result in rdr.deserialize() {
             let record: serde_json::Map<String, serde_json::Value> = result
                 .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
-            let title = record.get("title").and_then(|v| v.as_str()).ok_or_else(|| Error::Other("Missing title".into()))?;
+            let title = record
+                .get("title")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Other("Missing title".into()))?;
             let description = record.get("description").and_then(|v| v.as_str());
             let preference_domain = record.get("preference_domain").and_then(|v| v.as_str());
             let valence = record.get("valence").and_then(|v| v.as_str());
@@ -1084,7 +1146,10 @@ async fn seed_axiology_data(
         info!("✅ Seeded preferences");
     }
 
-    info!("✅ Axiology seeding completed: {} total records", total_count);
+    info!(
+        "✅ Axiology seeding completed: {} total records",
+        total_count
+    );
     Ok(total_count)
 }
 
@@ -1100,8 +1165,7 @@ pub async fn seed_monday_in_rome(
     let source_id = get_or_create_test_source(db).await?;
 
     // Define CSV paths (relative to core/ directory)
-    let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("seeds/monday_in_rome");
+    let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("seeds/monday_in_rome");
 
     // Stream mappings: (csv_filename, stream_name)
     let streams = vec![
@@ -1150,7 +1214,9 @@ pub async fn seed_monday_in_rome(
             source_id,
             stream_name,
             records,
-        ).await {
+        )
+        .await
+        {
             warn!(
                 stream = stream_name,
                 error = %e,

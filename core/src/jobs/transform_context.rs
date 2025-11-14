@@ -3,11 +3,11 @@
 //! This module defines the TransformContext which bundles all external dependencies
 //! (storage, API keys, stream reader) needed by transform jobs.
 
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use crate::error::{Error, Result};
 use crate::sources::base::TransformDataSource;
-use crate::storage::{Storage, stream_writer::StreamWriter};
+use crate::storage::{stream_writer::StreamWriter, Storage};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Context providing dependencies for transform jobs
 ///
@@ -126,22 +126,20 @@ impl ApiKeys {
     /// let client = AssemblyAIClient::new(api_key.to_string());
     /// ```
     pub fn assemblyai_required(&self) -> Result<&str> {
-        self.assemblyai
-            .as_deref()
-            .ok_or_else(|| Error::Configuration(
-                "ASSEMBLYAI_API_KEY not set - required for audio transcription".into()
-            ))
+        self.assemblyai.as_deref().ok_or_else(|| {
+            Error::Configuration(
+                "ASSEMBLYAI_API_KEY not set - required for audio transcription".into(),
+            )
+        })
     }
 
     /// Get Anthropic API key or return error if not configured
     ///
     /// Use this in transforms that require Claude API access.
     pub fn anthropic_required(&self) -> Result<&str> {
-        self.anthropic
-            .as_deref()
-            .ok_or_else(|| Error::Configuration(
-                "ANTHROPIC_API_KEY not set - required for semantic parsing".into()
-            ))
+        self.anthropic.as_deref().ok_or_else(|| {
+            Error::Configuration("ANTHROPIC_API_KEY not set - required for semantic parsing".into())
+        })
     }
 }
 

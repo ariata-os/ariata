@@ -91,9 +91,7 @@ pub fn validate_email(email: &str) -> Result<()> {
 
     let parts: Vec<&str> = email.split('@').collect();
     if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
-        return Err(Error::Other(format!(
-            "Invalid email format: {email}"
-        )));
+        return Err(Error::Other(format!("Invalid email format: {email}")));
     }
 
     if !parts[1].contains('.') {

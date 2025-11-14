@@ -162,7 +162,10 @@ mod tests {
     #[test]
     fn test_default_strategy() {
         let strategy = SyncStrategy::default();
-        assert!(matches!(strategy, SyncStrategy::TimeWindow { days_back: 365 }));
+        assert!(matches!(
+            strategy,
+            SyncStrategy::TimeWindow { days_back: 365 }
+        ));
     }
 
     #[test]
@@ -253,7 +256,10 @@ mod tests {
         assert!(matches!(tw, SyncStrategy::TimeWindow { days_back: 30 }));
 
         let fh = SyncStrategy::full_history();
-        assert!(matches!(fh, SyncStrategy::FullHistory { max_records: None }));
+        assert!(matches!(
+            fh,
+            SyncStrategy::FullHistory { max_records: None }
+        ));
 
         let fhl = SyncStrategy::full_history_with_limit(5000);
         assert!(matches!(

@@ -3,8 +3,8 @@
 //! This module provides utilities to dynamically discover and describe
 //! the schema of ontology tables in the `elt` schema.
 
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 
 /// Information about a database column
@@ -25,10 +25,7 @@ pub struct TableSchema {
 }
 
 /// Get the schema for a specific table in the elt schema
-pub async fn get_table_schema(
-    pool: &PgPool,
-    table_name: &str,
-) -> Result<TableSchema, sqlx::Error> {
+pub async fn get_table_schema(pool: &PgPool, table_name: &str) -> Result<TableSchema, sqlx::Error> {
     let rows = sqlx::query(
         r#"
         SELECT
@@ -72,11 +69,10 @@ pub async fn list_ontology_tables(pool: &PgPool) -> Result<Vec<String>, sqlx::Er
         WHERE table_schema = 'elt'
         AND table_name NOT IN ('sources', 'streams', 'jobs', 'devices', 'pending_device_pairings')
         ORDER BY table_name
-        "#
+        "#,
     )
     .fetch_all(pool)
     .await?;
 
     Ok(tables.into_iter().map(|(name,)| name).collect())
 }
-

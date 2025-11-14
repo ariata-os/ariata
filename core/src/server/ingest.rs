@@ -1,20 +1,20 @@
 //! Ingestion API for receiving data from all sources
 
 use axum::{
-    extract::{Json, State},
+    extract::{rejection::JsonRejection, Json, State},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    http::{StatusCode, HeaderMap},
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::{
-    error::{Error, Result},
     database::Database,
-    storage::{Storage, stream_writer::StreamWriter},
+    error::{Error, Result},
+    storage::{stream_writer::StreamWriter, Storage},
 };
 
 /// Ingestion request from any source
@@ -72,15 +72,22 @@ pub struct AppState {
 pub async fn ingest(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<IngestRequest>,
+    payload: std::result::Result<Json<IngestRequest>, JsonRejection>,
 ) -> Response {
+    let payload = match payload {
+        Ok(Json(payload)) => payload,
+        Err(rejection) => {
+            tracing::warn!(error = %rejection, "Failed to parse ingest payload");
+            return rejection.into_response();
+        }
+    };
     // Extract and validate device token from Authorization header
     let device_token = match extract_device_token(&headers) {
         Some(token) => token,
         None => {
             return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({
-                "error": "Missing Authorization header. Device token is required.",
-                "hint": "Include 'Authorization: Bearer <device_token>' header"
+                "error": "Missing device token",
+                "hint": "Include 'Authorization: Bearer <device_token>' or 'X-Device-Token: <device_token>' header"
             }))).into_response();
         }
     };
@@ -89,10 +96,14 @@ pub async fn ingest(
     let source_id = match crate::api::validate_device_token(state.db.pool(), &device_token).await {
         Ok(id) => id,
         Err(e) => {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({
-                "error": "Invalid or revoked device token",
-                "message": e.to_string()
-            }))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "Invalid or revoked device token",
+                    "message": e.to_string()
+                })),
+            )
+                .into_response();
         }
     };
 
@@ -103,32 +114,28 @@ pub async fn ingest(
 
     // Validate source and stream exist
     if let Err(e) = validate_source_stream(&state.db, &payload.source, &payload.stream).await {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "error": e.to_string()
-        }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response();
     }
 
     // Process records based on storage strategy
-    let (accepted, rejected) = match process_records(
-        &state,
-        &payload.source,
-        &payload.stream,
-        &payload.records,
-    ).await {
-        Ok(counts) => counts,
-        Err(e) => {
-            tracing::error!("Failed to process records: {}", e);
-            (0, payload.records.len())
-        }
-    };
+    let (accepted, rejected) =
+        match process_records(&state, &payload.source, &payload.stream, &payload.records).await {
+            Ok(counts) => counts,
+            Err(e) => {
+                tracing::error!("Failed to process records: {}", e);
+                (0, payload.records.len())
+            }
+        };
 
     // Trigger transforms if records were successfully processed (hot path like cloud syncs)
     if accepted > 0 {
-        if let Err(e) = trigger_transforms_for_batch(
-            &state,
-            source_id,
-            &payload.stream,
-        ).await {
+        if let Err(e) = trigger_transforms_for_batch(&state, source_id, &payload.stream).await {
             tracing::warn!(
                 error = %e,
                 stream = %payload.stream,
@@ -137,12 +144,16 @@ pub async fn ingest(
         }
     }
 
-    (StatusCode::OK, Json(IngestResponse {
-        accepted,
-        rejected,
-        next_checkpoint: None, // Checkpoint management will be implemented later if needed
-        activity_id: uuid::Uuid::new_v4().to_string(), // Generate ID for debugging/tracing
-    })).into_response()
+    (
+        StatusCode::OK,
+        Json(IngestResponse {
+            accepted,
+            rejected,
+            next_checkpoint: None, // Checkpoint management will be implemented later if needed
+            activity_id: uuid::Uuid::new_v4().to_string(), // Generate ID for debugging/tracing
+        }),
+    )
+        .into_response()
 }
 
 /// Extract device token from Authorization header
@@ -152,6 +163,12 @@ fn extract_device_token(headers: &HeaderMap) -> Option<String> {
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
         .map(|s| s.to_string())
+        .or_else(|| {
+            headers
+                .get("x-device-token")
+                .and_then(|h| h.to_str().ok())
+                .map(|s| s.to_string())
+        })
 }
 
 /// Validate source and stream configuration exists
@@ -159,11 +176,7 @@ fn extract_device_token(headers: &HeaderMap) -> Option<String> {
 /// This validation is now minimal - we accept any source/stream combination and let
 /// the downstream processors and transform registry determine if it's valid. This
 /// avoids maintaining a hardcoded list that can get out of sync with the rest of the system.
-async fn validate_source_stream(
-    _db: &Database,
-    _source: &str,
-    _stream: &str,
-) -> Result<()> {
+async fn validate_source_stream(_db: &Database, _source: &str, _stream: &str) -> Result<()> {
     // Basic validation - just ensure strings are not empty
     // Downstream processors will handle unknown source/stream combinations
     Ok(())
@@ -207,22 +220,58 @@ async fn process_single_record(
     // All device processors now use StreamWriter (writes to S3/object storage)
     match (source, stream) {
         ("ios", "healthkit") => {
-            crate::sources::ios::healthkit::process(&state.db, &state.storage, &state.stream_writer, record).await?;
+            crate::sources::ios::healthkit::process(
+                &state.db,
+                &state.storage,
+                &state.stream_writer,
+                record,
+            )
+            .await?;
         }
         ("ios", "location") => {
-            crate::sources::ios::location::process(&state.db, &state.storage, &state.stream_writer, record).await?;
+            crate::sources::ios::location::process(
+                &state.db,
+                &state.storage,
+                &state.stream_writer,
+                record,
+            )
+            .await?;
         }
         ("ios", "microphone") | ("ios", "mic") => {
-            crate::sources::ios::microphone::process(&state.db, &state.storage, &state.stream_writer, record).await?;
+            crate::sources::ios::microphone::process(
+                &state.db,
+                &state.storage,
+                &state.stream_writer,
+                record,
+            )
+            .await?;
         }
         ("mac", "apps") => {
-            crate::sources::mac::apps::process(&state.db, &state.storage, &state.stream_writer, record).await?;
+            crate::sources::mac::apps::process(
+                &state.db,
+                &state.storage,
+                &state.stream_writer,
+                record,
+            )
+            .await?;
         }
         ("mac", "browser") => {
-            crate::sources::mac::browser::process(&state.db, &state.storage, &state.stream_writer, record).await?;
+            crate::sources::mac::browser::process(
+                &state.db,
+                &state.storage,
+                &state.stream_writer,
+                record,
+            )
+            .await?;
         }
         ("mac", "imessage") => {
-            crate::sources::mac::imessage::process(&state.db, &state.storage, &state.stream_writer, record).await?;
+            crate::sources::mac::imessage::process(
+                &state.db,
+                &state.storage,
+                &state.stream_writer,
+                record,
+            )
+            .await?;
         }
         _ => {
             tracing::warn!("Unknown source/stream: {}/{}", source, stream);
@@ -302,7 +351,8 @@ async fn trigger_transforms_for_batch(
             stream_name,
             records.clone(),
             (min_timestamp, max_timestamp),
-        ).await?;
+        )
+        .await?;
         Some(archive_id)
     } else {
         None
@@ -329,7 +379,8 @@ async fn trigger_transforms_for_batch(
         source_id,
         stream_name,
         Some(records), // Pass collected records for direct transform
-    ).await?;
+    )
+    .await?;
 
     Ok(())
 }
@@ -348,8 +399,7 @@ mod tests {
             "timestamp": "2024-01-01T00:00:00Z"
         }"#;
 
-        let request: IngestRequest = serde_json::from_str(json)
-            .expect("test JSON should be valid");
+        let request: IngestRequest = serde_json::from_str(json).expect("test JSON should be valid");
         assert_eq!(request.source, "ios");
         assert_eq!(request.stream, "healthkit");
         assert_eq!(request.records.len(), 1);

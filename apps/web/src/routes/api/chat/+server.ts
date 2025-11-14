@@ -171,7 +171,7 @@ async function saveMessagesToSession(
 	if (toolCalls && toolCalls.length > 0) {
 		console.log('[saveMessages] First tool call:', JSON.stringify(toolCalls[0], null, 2));
 		console.log('[saveMessages] First tool result:', JSON.stringify(toolResults?.[0], null, 2));
-		console.log('[saveMessages] First tool result.result:', JSON.stringify(toolResults?.[0]?.result, null, 2));
+		console.log('[saveMessages] First tool result.output:', JSON.stringify(toolResults?.[0]?.output, null, 2));
 	}
 
 	// Build new messages array with accurate timestamps

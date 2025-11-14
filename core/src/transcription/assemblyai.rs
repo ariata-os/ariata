@@ -1,7 +1,7 @@
+use crate::error::{Error, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use crate::error::{Error, Result};
 
 const ASSEMBLYAI_API_BASE: &str = "https://api.assemblyai.com/v2";
 
@@ -68,8 +68,8 @@ impl AssemblyAIClient {
     pub fn new(api_key: String) -> Self {
         // Configure HTTP client with timeouts (following oauth_client.rs pattern)
         let client = Client::builder()
-            .connect_timeout(Duration::from_secs(10))  // TCP connection timeout
-            .timeout(Duration::from_secs(60))           // Total request timeout
+            .connect_timeout(Duration::from_secs(10)) // TCP connection timeout
+            .timeout(Duration::from_secs(60)) // Total request timeout
             .build()
             .expect("Failed to build HTTP client");
 
@@ -162,9 +162,9 @@ impl AssemblyAIClient {
     async fn submit_transcription(&self, audio_url: &str) -> Result<String> {
         let request = TranscriptRequest {
             audio_url: audio_url.to_string(),
-            speaker_labels: Some(false),  // Explicitly disable diarization
-            punctuate: Some(true),         // Enable punctuation for readability
-            format_text: Some(true),       // Enable text formatting
+            speaker_labels: Some(false), // Explicitly disable diarization
+            punctuate: Some(true),       // Enable punctuation for readability
+            format_text: Some(true),     // Enable text formatting
         };
 
         let response = self
@@ -220,7 +220,10 @@ impl AssemblyAIClient {
             // Query transcription status
             let response = self
                 .client
-                .get(&format!("{}/transcript/{}", ASSEMBLYAI_API_BASE, transcript_id))
+                .get(&format!(
+                    "{}/transcript/{}",
+                    ASSEMBLYAI_API_BASE, transcript_id
+                ))
                 .header("authorization", &self.api_key)
                 .send()
                 .await

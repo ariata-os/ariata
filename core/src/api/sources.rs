@@ -3,8 +3,8 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::{Error, Result};
 use super::types::{Source, SourceStatus};
+use crate::error::{Error, Result};
 
 /// List all configured sources
 ///
@@ -140,4 +140,3 @@ pub async fn get_source_status(db: &PgPool, source_id: Uuid) -> Result<SourceSta
 
     Ok(status)
 }
-

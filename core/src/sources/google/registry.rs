@@ -26,15 +26,16 @@ impl SourceRegistry for GoogleSource {
                 // Calendar stream
                 StreamDescriptor::new("calendar")
                     .display_name("Google Calendar")
-                    .description("Sync calendar events with attendees, locations, and conference details")
+                    .description(
+                        "Sync calendar events with attendees, locations, and conference details",
+                    )
                     .table_name("stream_google_calendar")
                     .config_schema(calendar_config_schema())
                     .config_example(calendar_config_example())
                     .supports_incremental(true)
                     .supports_full_refresh(true)
-                    .default_cron_schedule("0 0 */6 * * *")  // Every 6 hours (6-field: sec min hour day month dow)
+                    .default_cron_schedule("0 0 */6 * * *") // Every 6 hours (6-field: sec min hour day month dow)
                     .build(),
-
                 // Gmail stream
                 StreamDescriptor::new("gmail")
                     .display_name("Gmail")
@@ -44,7 +45,7 @@ impl SourceRegistry for GoogleSource {
                     .config_example(gmail_config_example())
                     .supports_incremental(true)
                     .supports_full_refresh(true)
-                    .default_cron_schedule("0 */15 * * * *")  // Every 15 minutes (6-field: sec min hour day month dow)
+                    .default_cron_schedule("0 */15 * * * *") // Every 15 minutes (6-field: sec min hour day month dow)
                     .build(),
             ],
         }

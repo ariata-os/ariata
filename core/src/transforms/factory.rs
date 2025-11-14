@@ -5,13 +5,13 @@
 
 use crate::error::{Error, Result};
 use crate::jobs::transform_context::TransformContext;
-use crate::sources::base::OntologyTransform;
 use crate::sources::ariata::transform::ChatConversationTransform;
+use crate::sources::base::OntologyTransform;
 use crate::sources::google::calendar::transform::GoogleCalendarTransform;
 use crate::sources::google::gmail::transform::GmailEmailTransform;
 use crate::sources::ios::healthkit::transform::{
-    HealthKitHeartRateTransform, HealthKitHRVTransform, HealthKitStepsTransform,
-    HealthKitSleepTransform, HealthKitWorkoutTransform,
+    HealthKitHRVTransform, HealthKitHeartRateTransform, HealthKitSleepTransform,
+    HealthKitStepsTransform, HealthKitWorkoutTransform,
 };
 use crate::sources::ios::location::transform::IosLocationTransform;
 use crate::sources::ios::microphone::MicrophoneTranscriptionTransform;
@@ -77,9 +77,7 @@ impl TransformFactory {
 
             ("stream_ios_healthkit", "health_sleep") => Ok(Box::new(HealthKitSleepTransform)),
 
-            ("stream_ios_healthkit", "health_workout") => {
-                Ok(Box::new(HealthKitWorkoutTransform))
-            }
+            ("stream_ios_healthkit", "health_workout") => Ok(Box::new(HealthKitWorkoutTransform)),
 
             // Unknown mapping
             _ => Err(Error::InvalidInput(format!(
@@ -100,8 +98,10 @@ mod tests {
     use tokio::sync::Mutex;
 
     fn create_test_context() -> TransformContext {
-        let storage = Storage::local("/tmp/test").unwrap();
-        let stream_writer = Arc::new(Mutex::new(crate::storage::stream_writer::StreamWriter::new()));
+        let storage = Storage::local("/tmp/test".to_string()).unwrap();
+        let stream_writer = Arc::new(Mutex::new(
+            crate::storage::stream_writer::StreamWriter::new(),
+        ));
         let api_keys = ApiKeys::from_env();
 
         TransformContext::new(Arc::new(storage), stream_writer, api_keys)

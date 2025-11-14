@@ -32,7 +32,12 @@ impl OntologyTransform for IosLocationTransform {
     }
 
     #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
+    async fn transform(
+        &self,
+        db: &Database,
+        context: &crate::jobs::transform_context::TransformContext,
+        source_id: Uuid,
+    ) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -48,7 +53,9 @@ impl OntologyTransform for IosLocationTransform {
         // Read stream data from data source using checkpoint
         let checkpoint_key = "location_to_location_point";
         let read_start = std::time::Instant::now();
-        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let data_source = context.get_data_source().ok_or_else(|| {
+            crate::Error::Other("No data source available for transform".to_string())
+        })?;
         let batches = data_source
             .read_with_checkpoint(source_id, "location", checkpoint_key)
             .await?;
@@ -62,17 +69,25 @@ impl OntologyTransform for IosLocationTransform {
         );
 
         // Batch insert configuration
-        let mut pending_records: Vec<(String, f64, f64, Option<f64>, Option<f64>, Option<f64>, Option<f64>, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut pending_records: Vec<(
+            String,
+            f64,
+            f64,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+            DateTime<Utc>,
+            Uuid,
+            serde_json::Value,
+        )> = Vec::new();
         let mut batch_insert_total_ms = 0u128;
         let mut batch_insert_count = 0;
 
         let processing_start = std::time::Instant::now();
 
         for batch in batches {
-            tracing::debug!(
-                batch_record_count = batch.records.len(),
-                "Processing batch"
-            );
+            tracing::debug!(batch_record_count = batch.records.len(), "Processing batch");
 
             for record in &batch.records {
                 records_read += 1;
@@ -85,12 +100,14 @@ impl OntologyTransform for IosLocationTransform {
                     continue; // Skip records without longitude
                 };
 
-                let timestamp = record.get("timestamp")
+                let timestamp = record
+                    .get("timestamp")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok())
                     .unwrap_or_else(|| Utc::now());
 
-                let stream_id = record.get("id")
+                let stream_id = record
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .unwrap_or_else(|| Uuid::new_v4());
@@ -98,10 +115,20 @@ impl OntologyTransform for IosLocationTransform {
                 let altitude = record.get("altitude").and_then(|v| v.as_f64());
                 let speed = record.get("speed").and_then(|v| v.as_f64());
                 let course = record.get("course").and_then(|v| v.as_f64());
-                let horizontal_accuracy = record.get("horizontal_accuracy").and_then(|v| v.as_f64());
-                let activity_type = record.get("activity_type").and_then(|v| v.as_str()).map(String::from);
-                let activity_confidence = record.get("activity_confidence").and_then(|v| v.as_str()).map(String::from);
-                let floor_level = record.get("floor_level").and_then(|v| v.as_i64()).map(|v| v as i32);
+                let horizontal_accuracy =
+                    record.get("horizontal_accuracy").and_then(|v| v.as_f64());
+                let activity_type = record
+                    .get("activity_type")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let activity_confidence = record
+                    .get("activity_confidence")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let floor_level = record
+                    .get("floor_level")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v as i32);
                 let raw_data = record.get("raw_data").cloned();
 
                 // Build metadata with iOS-specific fields
@@ -165,12 +192,9 @@ impl OntologyTransform for IosLocationTransform {
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                data_source.update_checkpoint(
-                    source_id,
-                    "location",
-                    checkpoint_key,
-                    max_ts
-                ).await?;
+                data_source
+                    .update_checkpoint(source_id, "location", checkpoint_key, max_ts)
+                    .await?;
             }
         }
 
@@ -235,7 +259,18 @@ impl OntologyTransform for IosLocationTransform {
 /// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
 async fn execute_location_batch_insert(
     db: &Database,
-    records: &[(String, f64, f64, Option<f64>, Option<f64>, Option<f64>, Option<f64>, DateTime<Utc>, Uuid, serde_json::Value)],
+    records: &[(
+        String,
+        f64,
+        f64,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+        DateTime<Utc>,
+        Uuid,
+        serde_json::Value,
+    )],
 ) -> Result<usize> {
     if records.is_empty() {
         return Ok(0);
@@ -278,7 +313,19 @@ async fn execute_location_batch_insert(
     let mut query = sqlx::query(&query_str);
 
     // Bind all parameters row by row
-    for (point_wkt, latitude, longitude, altitude, accuracy, speed, course, timestamp, stream_id, metadata) in records {
+    for (
+        point_wkt,
+        latitude,
+        longitude,
+        altitude,
+        accuracy,
+        speed,
+        course,
+        timestamp,
+        stream_id,
+        metadata,
+    ) in records
+    {
         query = query
             .bind(format!("SRID=4326;{}", point_wkt))
             .bind(latitude)

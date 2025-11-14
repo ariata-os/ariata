@@ -32,7 +32,12 @@ impl OntologyTransform for NotionPageTransform {
     }
 
     #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
-    async fn transform(&self, db: &Database, context: &crate::jobs::transform_context::TransformContext, source_id: Uuid) -> Result<TransformResult> {
+    async fn transform(
+        &self,
+        db: &Database,
+        context: &crate::jobs::transform_context::TransformContext,
+        source_id: Uuid,
+    ) -> Result<TransformResult> {
         let mut records_read = 0;
         let mut records_written = 0;
         let mut records_failed = 0;
@@ -48,7 +53,9 @@ impl OntologyTransform for NotionPageTransform {
         // Read stream data from S3 using checkpoint
         let checkpoint_key = "notion_to_knowledge_note";
         let read_start = std::time::Instant::now();
-        let data_source = context.get_data_source().ok_or_else(|| crate::Error::Other("No data source available for transform".to_string()))?;
+        let data_source = context.get_data_source().ok_or_else(|| {
+            crate::Error::Other("No data source available for transform".to_string())
+        })?;
         let batches = data_source
             .read_with_checkpoint(source_id, "notion", checkpoint_key)
             .await?;
@@ -61,17 +68,24 @@ impl OntologyTransform for NotionPageTransform {
         );
 
         // Batch insert configuration
-        let mut pending_records: Vec<(String, Option<String>, String, String, String, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)> = Vec::new();
+        let mut pending_records: Vec<(
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+            DateTime<Utc>,
+            DateTime<Utc>,
+            Uuid,
+            serde_json::Value,
+        )> = Vec::new();
         let mut batch_insert_total_ms = 0u128;
         let mut batch_insert_count = 0;
 
         let processing_start = std::time::Instant::now();
 
         for batch in batches {
-            tracing::debug!(
-                batch_record_count = batch.records.len(),
-                "Processing batch"
-            );
+            tracing::debug!(batch_record_count = batch.records.len(), "Processing batch");
 
             for record in &batch.records {
                 records_read += 1;
@@ -81,45 +95,52 @@ impl OntologyTransform for NotionPageTransform {
                     continue; // Skip records without page_id
                 };
 
-                let stream_id = record.get("id")
+                let stream_id = record
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .unwrap_or_else(|| Uuid::new_v4());
 
                 // Skip archived pages
-                let archived = record.get("archived")
+                let archived = record
+                    .get("archived")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 if archived {
                     continue;
                 }
 
-                let url = record.get("url")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let url = record.get("url").and_then(|v| v.as_str()).unwrap_or("");
 
-                let created_time = record.get("created_time")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| s.parse::<DateTime<Utc>>().ok())
-                    .unwrap_or_else(|| Utc::now());
-
-                let last_edited_time = record.get("last_edited_time")
+                let created_time = record
+                    .get("created_time")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<DateTime<Utc>>().ok())
                     .unwrap_or_else(|| Utc::now());
 
-                let parent_type = record.get("parent_type")
+                let last_edited_time = record
+                    .get("last_edited_time")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<DateTime<Utc>>().ok())
+                    .unwrap_or_else(|| Utc::now());
+
+                let parent_type = record
+                    .get("parent_type")
                     .and_then(|v| v.as_str())
                     .unwrap_or("workspace");
 
-                let parent_id = record.get("parent_id")
+                let parent_id = record
+                    .get("parent_id")
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
-                let properties = record.get("properties").cloned()
+                let properties = record
+                    .get("properties")
+                    .cloned()
                     .unwrap_or(serde_json::Value::Null);
 
-                let content_markdown = record.get("content_markdown")
+                let content_markdown = record
+                    .get("content_markdown")
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
@@ -127,7 +148,9 @@ impl OntologyTransform for NotionPageTransform {
                 let title = extract_title_from_properties(&properties)
                     .or_else(|| {
                         // Fallback: extract first heading from content
-                        content_markdown.as_ref().and_then(|c| extract_first_heading(c))
+                        content_markdown
+                            .as_ref()
+                            .and_then(|c| extract_first_heading(c))
                     })
                     .unwrap_or_else(|| "Untitled".to_string());
 
@@ -196,12 +219,9 @@ impl OntologyTransform for NotionPageTransform {
 
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
-                data_source.update_checkpoint(
-                    source_id,
-                    "notion",
-                    checkpoint_key,
-                    max_ts
-                ).await?;
+                data_source
+                    .update_checkpoint(source_id, "notion", checkpoint_key, max_ts)
+                    .await?;
             }
         }
 
@@ -266,7 +286,17 @@ impl OntologyTransform for NotionPageTransform {
 /// Builds and executes a multi-row INSERT statement for efficient bulk insertion.
 async fn execute_notion_page_batch_insert(
     db: &Database,
-    records: &[(String, Option<String>, String, String, String, DateTime<Utc>, DateTime<Utc>, Uuid, serde_json::Value)],
+    records: &[(
+        String,
+        Option<String>,
+        String,
+        String,
+        String,
+        DateTime<Utc>,
+        DateTime<Utc>,
+        Uuid,
+        serde_json::Value,
+    )],
 ) -> Result<usize> {
     if records.is_empty() {
         return Ok(0);
@@ -274,7 +304,19 @@ async fn execute_notion_page_batch_insert(
 
     let query_str = Database::build_batch_insert_query(
         "elt.knowledge_document",
-        &["title", "content", "document_type", "external_id", "external_url", "created_time", "last_modified_time", "source_stream_id", "metadata", "source_table", "source_provider"],
+        &[
+            "title",
+            "content",
+            "document_type",
+            "external_id",
+            "external_url",
+            "created_time",
+            "last_modified_time",
+            "source_stream_id",
+            "metadata",
+            "source_table",
+            "source_provider",
+        ],
         "source_stream_id",
         records.len(),
     );
@@ -282,7 +324,18 @@ async fn execute_notion_page_batch_insert(
     let mut query = sqlx::query(&query_str);
 
     // Bind all parameters row by row
-    for (title, content, document_type, external_id, external_url, created_time, last_modified_time, stream_id, metadata) in records {
+    for (
+        title,
+        content,
+        document_type,
+        external_id,
+        external_url,
+        created_time,
+        last_modified_time,
+        stream_id,
+        metadata,
+    ) in records
+    {
         query = query
             .bind(title)
             .bind(content)

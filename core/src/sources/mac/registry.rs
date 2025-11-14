@@ -172,7 +172,9 @@ mod tests {
     #[test]
     fn test_apps_stream() {
         let desc = MacSource::descriptor();
-        let apps = desc.streams.iter()
+        let apps = desc
+            .streams
+            .iter()
             .find(|s| s.name == "apps")
             .expect("Apps stream not found");
 
@@ -184,7 +186,9 @@ mod tests {
     #[test]
     fn test_browser_stream() {
         let desc = MacSource::descriptor();
-        let browser = desc.streams.iter()
+        let browser = desc
+            .streams
+            .iter()
             .find(|s| s.name == "browser")
             .expect("Browser stream not found");
 
@@ -195,7 +199,9 @@ mod tests {
     #[test]
     fn test_imessage_stream() {
         let desc = MacSource::descriptor();
-        let imessage = desc.streams.iter()
+        let imessage = desc
+            .streams
+            .iter()
             .find(|s| s.name == "imessage")
             .expect("iMessage stream not found");
 

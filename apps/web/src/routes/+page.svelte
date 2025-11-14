@@ -310,7 +310,7 @@
 										</div>
 									{:else if part.type.startsWith("tool-") || part.type === "dynamic-tool"}
 										<!-- Debug: Log the part to console -->
-										{console.log('[Page] Rendering tool part:', part)}
+										{console.log('[Page] Rendering tool part:', $state.snapshot(part))}
 										<!-- Render tool invocations -->
 										<div class="tool-calls-container mb-3">
 											<ToolCall

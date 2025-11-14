@@ -19,11 +19,11 @@
 //! The stream name `app_export` is normalized to `stream_ariata_ai_chat` by the
 //! transform registry for routing transform jobs.
 
-use async_trait::async_trait;
 use crate::error::Result;
 use crate::sources::base::{SyncMode, SyncResult};
 use crate::sources::stream::Stream;
 use crate::storage::stream_writer::StreamWriter;
+use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
 use serde_json::{json, Value as JsonValue};
 use sqlx::{PgPool, Row};
@@ -133,7 +133,12 @@ impl Stream for AppChatExportStream {
 
                 // Generate deterministic message_id with index to prevent collisions
                 // Format: {session_id}_{timestamp_ms}_{index}
-                let message_id = format!("{}_{}_{}",session_id, msg_timestamp.timestamp_millis(), msg_idx);
+                let message_id = format!(
+                    "{}_{}_{}",
+                    session_id,
+                    msg_timestamp.timestamp_millis(),
+                    msg_idx
+                );
 
                 // Extract message fields
                 let role = message

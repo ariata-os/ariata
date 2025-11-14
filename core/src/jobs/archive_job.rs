@@ -10,8 +10,8 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::error::Result;
-use crate::storage::{encryption, EncryptionKey};
 use crate::storage::Storage;
+use crate::storage::{encryption, EncryptionKey};
 
 /// Archive job model from database
 #[derive(Debug, sqlx::FromRow)]
@@ -417,10 +417,11 @@ pub async fn spawn_archive_job_async(
     .await?;
 
     // Get master key from environment
-    let master_key_hex = std::env::var("STREAM_ENCRYPTION_MASTER_KEY")
-        .map_err(|_| crate::error::Error::Configuration(
-            "STREAM_ENCRYPTION_MASTER_KEY required for archival".into()
-        ))?;
+    let master_key_hex = std::env::var("STREAM_ENCRYPTION_MASTER_KEY").map_err(|_| {
+        crate::error::Error::Configuration(
+            "STREAM_ENCRYPTION_MASTER_KEY required for archival".into(),
+        )
+    })?;
     let master_key_bytes = crate::storage::encryption::parse_master_key_hex(&master_key_hex)?;
 
     // Prepare context for async execution
@@ -435,7 +436,9 @@ pub async fn spawn_archive_job_async(
 
     // Spawn async archival in background (fire-and-forget)
     tokio::spawn(async move {
-        if let Err(e) = execute_archive_job(&db_clone, &archive_context, archive_id, records_clone).await {
+        if let Err(e) =
+            execute_archive_job(&db_clone, &archive_context, archive_id, records_clone).await
+        {
             error!(
                 archive_job_id = %archive_id,
                 error = %e,

@@ -66,7 +66,9 @@ pub async fn test_local_storage(path: &str) -> Result<()> {
     let read_data = storage.download(test_key).await?;
 
     if read_data != test_data {
-        return Err(Error::Other("Storage test failed: data mismatch".to_string()));
+        return Err(Error::Other(
+            "Storage test failed: data mismatch".to_string(),
+        ));
     }
 
     // Clean up
