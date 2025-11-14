@@ -457,9 +457,15 @@ struct PermissionsStep: View {
     @Environment(\.scenePhase) var scenePhase
     
     var allPermissionsGranted: Bool {
-        healthKitManager.hasAllPermissions() && 
-        locationManager.hasPermission && 
-        audioManager.hasPermission
+        let healthGranted = healthKitManager.hasAllPermissions()
+        let locationGranted = locationManager.hasAlwaysPermission  // Require "Always" permission, not just "When In Use"
+        let audioGranted = audioManager.hasPermission
+
+        #if DEBUG
+        print("📋 Permission check: health=\(healthGranted), location=\(locationGranted) (hasPermission=\(locationManager.hasPermission), hasAlways=\(locationManager.hasAlwaysPermission)), audio=\(audioGranted)")
+        #endif
+
+        return healthGranted && locationGranted && audioGranted
     }
     
     var body: some View {
@@ -487,7 +493,7 @@ struct PermissionsStep: View {
                     icon: "location.fill",
                     title: "Location (Always)",
                     description: "Track your movements and locations",
-                    isGranted: locationManager.hasPermission
+                    isGranted: locationManager.hasAlwaysPermission  // Check for "Always", not just "When In Use"
                 )
                 
                 // Microphone Permission
@@ -517,10 +523,18 @@ struct PermissionsStep: View {
             } else if !allPermissionsGranted {
                 // Open settings button
                 VStack(spacing: 12) {
-                    Text("Some permissions were denied")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                    
+                    // Show specific message if location is "When In Use" instead of "Always"
+                    if locationManager.hasPermission && !locationManager.hasAlwaysPermission {
+                        Text("Location permission must be set to \"Always\" for background tracking")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Text("Some permissions were denied")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+
                     Button(action: openSettings) {
                         HStack {
                             Text("Open Settings")
@@ -577,15 +591,27 @@ struct PermissionsStep: View {
             // Force re-check of HealthKit status
             healthKitManager.checkAuthorizationStatus()
 
-            // 2. Request Location (Always)
-            print("📱 Requesting Location permission...")
-            _ = await locationManager.requestAuthorization()
+            // 2. Request Location - Two-step process (Apple best practice)
+            print("📱 Requesting Location permission (When In Use)...")
+            _ = await locationManager.requestAuthorization()  // Step 1: When In Use
 
             // Small delay to let iOS permission system update
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
 
             // Force re-check of Location status
             locationManager.checkAuthorizationStatus()
+
+            // Step 2: Upgrade to Always (if When In Use was granted)
+            if locationManager.authorizationStatus == .authorizedWhenInUse {
+                print("📱 Upgrading Location permission to Always...")
+                _ = await locationManager.requestAlwaysAuthorization()  // Step 2: Always
+
+                // Small delay to let iOS permission system update
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+
+                // Force re-check of Location status
+                locationManager.checkAuthorizationStatus()
+            }
 
             // 3. Request Microphone
             print("📱 Requesting Microphone permission...")

@@ -85,20 +85,47 @@ class LocationManager: NSObject, ObservableObject {
                 return
             }
 
-            // Request authorization on main thread
+            // STEP 1: Request "When In Use" first (Apple best practice)
+            Task { @MainActor in
+                locationManager.requestWhenInUseAuthorization()
+            }
+
+            // Wait for the authorization dialog to be handled
+            Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
+
+                // Accept When In Use as success for initial request
+                let granted = authorizationStatus == .authorizedAlways ||
+                              authorizationStatus == .authorizedWhenInUse
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
+    /// Request upgrade from "When In Use" to "Always" permission
+    func requestAlwaysAuthorization() async -> Bool {
+        return await withCheckedContinuation { continuation in
+            // If already Always, return true
+            if authorizationStatus == .authorizedAlways {
+                continuation.resume(returning: true)
+                return
+            }
+
+            // Must have "When In Use" before requesting "Always"
+            guard authorizationStatus == .authorizedWhenInUse else {
+                continuation.resume(returning: false)
+                return
+            }
+
+            // STEP 2: Request upgrade to "Always"
             Task { @MainActor in
                 locationManager.requestAlwaysAuthorization()
             }
 
-            // Wait for the authorization dialog to be handled
-            // iOS will first grant "When In Use", then prompt for "Always" later
+            // Wait for the authorization dialog
             Task {
                 try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
-
-                // Accept either When In Use or Always as success
-                // iOS will prompt for upgrade to Always automatically later
-                let granted = authorizationStatus == .authorizedAlways ||
-                              authorizationStatus == .authorizedWhenInUse
+                let granted = authorizationStatus == .authorizedAlways
                 continuation.resume(returning: granted)
             }
         }
@@ -113,6 +140,11 @@ class LocationManager: NSObject, ObservableObject {
         // We request Always, but iOS may grant When In Use first
         return authorizationStatus == .authorizedAlways ||
                authorizationStatus == .authorizedWhenInUse
+    }
+
+    var hasAlwaysPermission: Bool {
+        // Check specifically for Always authorization (required for background tracking)
+        return authorizationStatus == .authorizedAlways
     }
     
     // MARK: - Location Tracking
