@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            id,\n            latitude as centroid_lat,\n            longitude as centroid_lon,\n            start_time,\n            end_time\n        FROM elt.location_visit\n        WHERE place_id IS NULL\n        ORDER BY start_time DESC\n        LIMIT 100\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "centroid_lat",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "centroid_lon",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 3,
+        "name": "start_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "end_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "577bd82fdb021f4c00624a67b698d8ce9692e7fe8116b6dd061eab7decbd64fa"
+}

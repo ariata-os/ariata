@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE elt.axiology_initiative\n        SET is_active = false, updated_at = NOW()\n        WHERE id = $1 AND is_active = true\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2647a9981bb8912aae980013fc4036b378d309b01578d170ab3e895bd666badf"
+}

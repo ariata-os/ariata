@@ -50,6 +50,16 @@ export const load: PageLoad = async ({ url, fetch }) => {
 
 		const data = await response.json();
 
+		// TEMP DEBUG: Log loaded messages
+		console.log('[+page.ts] Loaded conversation with', data.messages?.length || 0, 'messages');
+		const messagesWithTools = (data.messages || []).filter((m: any) => m.tool_calls && m.tool_calls.length > 0);
+		if (messagesWithTools.length > 0) {
+			console.log('[+page.ts] Found', messagesWithTools.length, 'messages with tool_calls');
+			console.log('[+page.ts] First tool call sample:', messagesWithTools[0].tool_calls[0]);
+		} else {
+			console.log('[+page.ts] NO messages with tool_calls in loaded data');
+		}
+
 		return {
 			conversationId,
 			conversation: data.conversation,

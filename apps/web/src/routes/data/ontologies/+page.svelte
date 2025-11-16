@@ -42,16 +42,20 @@
 	// Group ontologies by domain
 	let groupedOntologies: Record<string, typeof data.ontologies> = {};
 	$: {
-		groupedOntologies = data.ontologies.reduce(
-			(acc, ontology) => {
-				if (!acc[ontology.domain]) {
-					acc[ontology.domain] = [];
-				}
-				acc[ontology.domain].push(ontology);
-				return acc;
-			},
-			{} as Record<string, typeof data.ontologies>,
-		);
+		// Initialize all domains from domainConfig (except Unknown)
+		const allDomains = Object.keys(domainConfig).filter(d => d !== 'Unknown');
+		groupedOntologies = allDomains.reduce((acc, domain) => {
+			acc[domain] = [];
+			return acc;
+		}, {} as Record<string, typeof data.ontologies>);
+
+		// Populate with actual ontologies
+		data.ontologies.forEach((ontology) => {
+			if (!groupedOntologies[ontology.domain]) {
+				groupedOntologies[ontology.domain] = [];
+			}
+			groupedOntologies[ontology.domain].push(ontology);
+		});
 	}
 
 	// Track which sample records are expanded
@@ -125,74 +129,84 @@
 						</h2>
 					</div>
 
-					<!-- Ontologies Cards -->
-					<div
-						class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-					>
-						{#each ontologies as ontology}
-							<div
-								class="p-4 bg-white border border-neutral-200 rounded-lg hover:border-neutral-300 transition-all duration-200"
-							>
-								<!-- Header -->
-								<div class="mb-3">
-									<h3
-										class="font-medium text-neutral-900 text-sm mb-1"
-									>
-										{ontology.name}
-									</h3>
-									<p class="text-xs text-neutral-500">
-										{formatCount(ontology.record_count)}
-									</p>
-								</div>
-
-								<!-- Sample Record Section -->
-								{#if ontology.sample_record}
-									<div
-										class="mt-3 pt-3 border-t border-neutral-100"
-									>
-										<button
-											on:click={() =>
-												toggleSample(ontology.name)}
-											class="w-full text-left flex items-center justify-between text-xs text-neutral-600 hover:text-neutral-900 transition-colors"
+					<!-- Ontologies Cards or Empty State -->
+					{#if ontologies.length === 0}
+						<div
+							class="border border-dashed border-neutral-300 rounded-lg p-8 text-center bg-neutral-50/50"
+						>
+							<p class="text-sm text-neutral-500">
+								Nothing here yet
+							</p>
+						</div>
+					{:else}
+						<div
+							class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+						>
+							{#each ontologies as ontology}
+								<div
+									class="p-4 bg-white border border-neutral-200 rounded-lg hover:border-neutral-300 transition-all duration-200"
+								>
+									<!-- Header -->
+									<div class="mb-3">
+										<h3
+											class="font-medium text-neutral-900 text-sm mb-1"
 										>
-											<span>Sample record</span>
-											<iconify-icon
-												icon={expandedSamples.has(
-													ontology.name,
-												)
-													? "ri:arrow-up-s-line"
-													: "ri:arrow-down-s-line"}
-												class="text-base"
-											></iconify-icon>
-										</button>
-
-										{#if expandedSamples.has(ontology.name)}
-											<div
-												class="mt-2 p-2 bg-neutral-50 rounded border border-neutral-200 max-h-48 overflow-auto"
-											>
-												<pre
-													class="text-xs text-neutral-700 whitespace-pre-wrap break-words font-mono">{JSON.stringify(
-														ontology.sample_record,
-														null,
-														2,
-													)}</pre>
-											</div>
-										{/if}
-									</div>
-								{:else if ontology.record_count === 0}
-									<div
-										class="mt-3 pt-3 border-t border-neutral-100"
-									>
-										<p
-											class="text-xs text-neutral-400 italic"
-										>
-											No data yet
+											{ontology.name}
+										</h3>
+										<p class="text-xs text-neutral-500">
+											{formatCount(ontology.record_count)}
 										</p>
 									</div>
-								{/if}
-							</div>
-						{/each}
-					</div>
+
+									<!-- Sample Record Section -->
+									{#if ontology.sample_record}
+										<div
+											class="mt-3 pt-3 border-t border-neutral-100"
+										>
+											<button
+												on:click={() =>
+													toggleSample(ontology.name)}
+												class="w-full text-left flex items-center justify-between text-xs text-neutral-600 hover:text-neutral-900 transition-colors"
+											>
+												<span>Sample record</span>
+												<iconify-icon
+													icon={expandedSamples.has(
+														ontology.name,
+													)
+														? "ri:arrow-up-s-line"
+														: "ri:arrow-down-s-line"}
+													class="text-base"
+												></iconify-icon>
+											</button>
+
+											{#if expandedSamples.has(ontology.name)}
+												<div
+													class="mt-2 p-2 bg-neutral-50 rounded border border-neutral-200 max-h-48 overflow-auto"
+												>
+													<pre
+														class="text-xs text-neutral-700 whitespace-pre-wrap break-words font-mono">{JSON.stringify(
+															ontology.sample_record,
+															null,
+															2,
+														)}</pre>
+												</div>
+											{/if}
+										</div>
+									{:else if ontology.record_count === 0}
+										<div
+											class="mt-3 pt-3 border-t border-neutral-100"
+										>
+											<p
+												class="text-xs text-neutral-400 italic"
+											>
+												No data yet
+											</p>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			{/each}
 		{/if}

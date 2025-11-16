@@ -10,11 +10,12 @@ use crate::{
     database::Database,
     error::{Error, Result},
     sources::base::{
-        get_or_create_device_source, validate_latitude, validate_longitude,
+        validate_latitude, validate_longitude,
         validate_timestamp_reasonable,
     },
     storage::{stream_writer::StreamWriter, Storage},
 };
+use uuid::Uuid;
 
 pub use transform::IosLocationTransform;
 
@@ -23,16 +24,18 @@ pub use transform::IosLocationTransform;
 /// Parses and stores GPS coordinates, activity type, and movement data from iOS devices.
 ///
 /// # Arguments
+/// * `source_id` - Validated source ID from the ingest endpoint
 /// * `db` - Database connection
 /// * `_storage` - Storage layer (unused for location, but kept for API consistency)
 /// * `stream_writer` - StreamWriter for writing to S3/object storage
 /// * `record` - JSON record from the device
 #[tracing::instrument(
-    skip(db, _storage, stream_writer, record),
-    fields(source = "ios", stream = "location")
+    skip(source_id, _db, _storage, stream_writer, record),
+    fields(source = "ios", stream = "location", source_id = %source_id)
 )]
 pub async fn process(
-    db: &Database,
+    source_id: Uuid,
+    _db: &Database,
     _storage: &Arc<Storage>,
     stream_writer: &Arc<Mutex<StreamWriter>>,
     record: &Value,
@@ -41,8 +44,6 @@ pub async fn process(
         .get("device_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing device_id".into()))?;
-
-    let source_id = get_or_create_device_source(db, "ios", device_id).await?;
 
     let timestamp = record
         .get("timestamp")

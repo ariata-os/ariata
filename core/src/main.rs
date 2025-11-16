@@ -14,11 +14,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Initialize tracing
+    // Use RUST_LOG env var, falling back to INFO if not set
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into()),
-        )
+        .with_env_filter(env_filter)
         .init();
 
     let cli = Cli::parse();

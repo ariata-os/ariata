@@ -398,9 +398,15 @@ pub async fn spawn_archive_job_async(
         "Spawning archive job for async S3 archival"
     );
 
+    // Get provider from source
+    let provider: String = sqlx::query_scalar("SELECT provider FROM sources WHERE id = $1")
+        .bind(source_id)
+        .fetch_one(db)
+        .await?;
+
     // Generate S3 key for archival
     let date = Utc::now().date_naive();
-    let key_builder = crate::storage::models::StreamKeyBuilder::new(source_id, stream_name, date);
+    let key_builder = crate::storage::models::StreamKeyBuilder::new(&provider, source_id, stream_name, date);
     let s3_key = key_builder.build();
 
     // Create archive job in database

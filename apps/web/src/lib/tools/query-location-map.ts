@@ -1,22 +1,22 @@
-import { tool } from 'ai';
 import { z } from 'zod';
 import type { Pool } from 'pg';
 
 /**
  * Tool for querying location data and generating interactive maps
+ * Returns a plain object compatible with AI SDK v6 tool format
  */
 export async function createLocationMapTool(pool: Pool) {
-	return tool({
+	const inputSchema = z.object({
+		startDate: z.string().optional().describe('Start date in YYYY-MM-DD format (e.g., "2025-11-10")'),
+		endDate: z.string().optional().describe('End date in YYYY-MM-DD format (e.g., "2025-11-10")'),
+		limit: z.number().optional().describe('Maximum number of points to return (default: 10000)')
+	});
+
+	return {
 		description: 'Query location data and generate an interactive map visualization. IMPORTANT: Dates must be in YYYY-MM-DD format (e.g., "2025-11-10").',
-		parameters: z.object({
-			startDate: z.string().optional().describe('Start date in YYYY-MM-DD format (e.g., "2025-11-10")'),
-			endDate: z.string().optional().describe('End date in YYYY-MM-DD format (e.g., "2025-11-10")'),
-			limit: z.number().optional().describe('Maximum number of points to return (default: 10000)')
-		}),
-		execute: async ({ startDate, endDate, limit = 10000 }) => {
-			console.log('[queryLocationMap] ========== EXECUTE FUNCTION CALLED ==========');
-			console.log('[queryLocationMap] Input params:', { startDate, endDate, limit });
-			console.log('[queryLocationMap] Pool status:', { connected: !!pool });
+		inputSchema,
+		execute: async ({ startDate, endDate, limit = 10000 }: z.infer<typeof inputSchema>) => {
+			console.log('[queryLocationMap] Executing with params:', { startDate, endDate, limit });
 
 			// Validate date format
 			const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -122,9 +122,7 @@ export async function createLocationMapTool(pool: Pool) {
 					console.log(`[queryLocationMap] Fallback returned ${result.rows.length} location points`);
 				}
 
-				console.log('[queryLocationMap] Query completed successfully');
 				console.log(`[queryLocationMap] Returned ${result.rows.length} location points`);
-				console.log('[queryLocationMap] First row sample:', result.rows[0]);
 
 				// Transform to MapVisualization format
 				const points = result.rows.map((row) => ({
@@ -171,12 +169,8 @@ export async function createLocationMapTool(pool: Pool) {
 					}
 				};
 
-				const resultString = JSON.stringify(wrappedResult);
-				console.log('[queryLocationMap] Wrapped result created, length:', resultString.length);
-				console.log('[queryLocationMap] Point count:', result.rows.length);
-				console.log('[queryLocationMap] ========== RETURNING RESULT ==========');
-
-				return resultString;
+				// Return object directly (AI SDK v6 expects objects, not strings)
+				return wrappedResult;
 			} catch (error: any) {
 				console.error('[queryLocationMap] ========== ERROR CAUGHT ==========');
 				console.error('[queryLocationMap] Error type:', error.constructor.name);
@@ -185,5 +179,5 @@ export async function createLocationMapTool(pool: Pool) {
 				throw new Error(`Location query failed: ${error.message}`);
 			}
 		}
-	});
+	};
 }

@@ -15,6 +15,7 @@ use crate::sources::ios::healthkit::transform::{
 };
 use crate::sources::ios::location::transform::IosLocationTransform;
 use crate::sources::ios::microphone::MicrophoneTranscriptionTransform;
+use crate::transforms::enrich::location::LocationVisitTransform;
 use crate::sources::notion::pages::transform::NotionPageTransform;
 
 /// Transform factory for creating transform instances
@@ -65,6 +66,9 @@ impl TransformFactory {
 
             // iOS location
             ("stream_ios_location", "location_point") => Ok(Box::new(IosLocationTransform)),
+
+            // Location clustering
+            ("location_point", "location_visit") => Ok(Box::new(LocationVisitTransform)),
 
             // iOS HealthKit (one source, multiple targets)
             ("stream_ios_healthkit", "health_heart_rate") => {

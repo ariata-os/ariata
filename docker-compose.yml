@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # PostgreSQL with PostGIS and pgvector extensions
   postgres:
@@ -7,16 +5,16 @@ services:
     container_name: ariata-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ariata
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-ariata}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-schemas.sh:/docker-entrypoint-initdb.d/01-init-schemas.sh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,11 +28,11 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "9000:9000" # API
-      - "9001:9001" # Console UI
+      - "${MINIO_PORT:-9000}:9000" # API
+      - "${MINIO_CONSOLE_PORT:-9001}:9001" # Console UI
     volumes:
       - minio_data:/data
     healthcheck:
@@ -53,7 +51,7 @@ services:
     container_name: ariata-core
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ariata
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-ariata}
       ARIATA_ENCRYPTION_KEY: ${ARIATA_ENCRYPTION_KEY}
       RUST_LOG: info,ariata=debug
       # OAuth endpoints
@@ -64,10 +62,10 @@ services:
       # API Keys
       ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY}
       # MinIO connection
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      MINIO_BUCKET: ariata-data
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${S3_BUCKET:-ariata}
     ports:
       - "8000:8000"
     depends_on:
@@ -92,7 +90,7 @@ services:
     container_name: ariata-web
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ariata
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-ariata}
       ELT_API_URL: http://core:8000
       PUBLIC_ELT_API_URL: http://localhost:8000
     ports:

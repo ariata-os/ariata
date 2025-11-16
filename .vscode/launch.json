@@ -6,8 +6,9 @@
             "args": [],
             "cwd": "${workspaceFolder:ariata}/apps/mac",
             "name": "Debug ariata-mac (apps/mac)",
-            "program": "${workspaceFolder:ariata}/apps/mac/.build/debug/ariata-mac",
-            "preLaunchTask": "swift: Build Debug ariata-mac (apps/mac)"
+            "preLaunchTask": "swift: Build Debug ariata-mac (apps/mac)",
+            "target": "ariata-mac",
+            "configuration": "debug"
         },
         {
             "type": "swift",
@@ -15,8 +16,29 @@
             "args": [],
             "cwd": "${workspaceFolder:ariata}/apps/mac",
             "name": "Release ariata-mac (apps/mac)",
-            "program": "${workspaceFolder:ariata}/apps/mac/.build/release/ariata-mac",
-            "preLaunchTask": "swift: Build Release ariata-mac (apps/mac)"
+            "preLaunchTask": "swift: Build Release ariata-mac (apps/mac)",
+            "target": "ariata-mac",
+            "configuration": "release"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ariata}/apps/oldmac",
+            "name": "Debug ariata-mac (apps/oldmac)",
+            "target": "ariata-mac",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ariata-mac (apps/oldmac)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ariata}/apps/oldmac",
+            "name": "Release ariata-mac (apps/oldmac)",
+            "target": "ariata-mac",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ariata-mac (apps/oldmac)"
         }
     ]
 }

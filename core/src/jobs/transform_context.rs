@@ -20,6 +20,18 @@ use tokio::sync::Mutex;
 /// transform jobs that use the hot path (direct memory access). For sync jobs
 /// and ingest endpoints, the initial context is created without a data source,
 /// and the transform trigger logic creates a new context with the actual data source.
+///
+/// # Metadata
+///
+/// The `metadata` field allows passing configuration parameters to transforms.
+/// This is useful for testing with seed data or adjusting transform behavior.
+///
+/// Example:
+/// ```json
+/// {
+///   "lookback_hours": 168  // Process last 7 days for location clustering
+/// }
+/// ```
 #[derive(Clone)]
 pub struct TransformContext {
     /// Object storage (S3/MinIO) for file access and presigned URLs
@@ -36,6 +48,12 @@ pub struct TransformContext {
 
     /// API keys for external services
     pub api_keys: ApiKeys,
+
+    /// Configuration metadata for transforms
+    ///
+    /// Use this to pass parameters like lookback windows, thresholds, etc.
+    /// Defaults to empty JSON object.
+    pub metadata: serde_json::Value,
 }
 
 impl TransformContext {
@@ -53,6 +71,7 @@ impl TransformContext {
             stream_writer,
             memory_data_source: None,
             api_keys,
+            metadata: serde_json::json!({}),
         }
     }
 
@@ -71,6 +90,34 @@ impl TransformContext {
             stream_writer,
             memory_data_source: Some(memory_data_source),
             api_keys,
+            metadata: serde_json::json!({}),
+        }
+    }
+
+    /// Create a context with custom metadata
+    ///
+    /// Use this to pass configuration parameters to transforms.
+    /// Useful for testing with seed data or adjusting transform behavior.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let metadata = serde_json::json!({
+    ///     "lookback_hours": 168  // Process last 7 days
+    /// });
+    /// let context = TransformContext::with_metadata(storage, stream_writer, api_keys, metadata);
+    /// ```
+    pub fn with_metadata(
+        storage: Arc<Storage>,
+        stream_writer: Arc<Mutex<StreamWriter>>,
+        api_keys: ApiKeys,
+        metadata: serde_json::Value,
+    ) -> Self {
+        Self {
+            storage,
+            stream_writer,
+            memory_data_source: None,
+            api_keys,
+            metadata,
         }
     }
 

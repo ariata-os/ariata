@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            latitude,\n            longitude,\n            start_time,\n            end_time,\n            metadata\n        FROM elt.location_visit\n        ORDER BY start_time DESC\n        LIMIT 50\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 1,
+        "name": "longitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "start_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "end_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "e07932487de73f843d7266395ce3584d811cd723af366b2522b5481c2eebac84"
+}

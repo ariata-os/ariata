@@ -4,6 +4,10 @@
 # Default target - show help when just 'make' is run
 .DEFAULT_GOAL := help
 
+# Load environment variables from .env file
+-include .env
+export
+
 # === CONFIGURATION ===
 # Database Configuration (Single database with schemas)
 DB_USER := postgres
@@ -180,24 +184,37 @@ core-ngrok:
 		echo "Or download from: https://ngrok.com/download"; \
 		exit 1; \
 	fi
+	@echo "🧹 Cleaning up port $(API_PORT)..."
+	@lsof -ti:$(API_PORT) | xargs kill -9 2>/dev/null || true
 	@echo "🚀 Starting Rust server on localhost:$(API_PORT)..."
-	@cd core && cargo run -- server & \
+	@cd core && RUST_LOG=$(RUST_LOG) cargo run -- server & \
 	SERVER_PID=$$!; \
 	echo "⏳ Waiting for server to start..."; \
 	sleep 3; \
 	echo "🌐 Starting ngrok tunnel..."; \
-	ngrok http $(API_PORT) --log=stdout & \
+	if [ -n "$$NGROK_DOMAIN" ]; then \
+		echo "   Using static domain: $$NGROK_DOMAIN"; \
+		ngrok http $(API_PORT) --domain=$$NGROK_DOMAIN --log=false > /dev/null 2>&1 & \
+	else \
+		echo "   Using random URL (set NGROK_DOMAIN in .env for static domain)"; \
+		ngrok http $(API_PORT) --log=false > /dev/null 2>&1 & \
+	fi; \
 	NGROK_PID=$$!; \
 	sleep 2; \
 	echo ""; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "✅ ngrok tunnel established!"; \
 	echo ""; \
-	echo "📱 Get your HTTPS URL from:"; \
-	echo "   http://localhost:4040"; \
-	echo ""; \
-	echo "🔍 Or run this command:"; \
-	echo "   curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'"; \
+	if [ -n "$$NGROK_DOMAIN" ]; then \
+		echo "📱 Your HTTPS endpoint:"; \
+		echo "   https://$$NGROK_DOMAIN"; \
+	else \
+		echo "📱 Get your HTTPS URL from:"; \
+		echo "   http://localhost:4040"; \
+		echo ""; \
+		echo "🔍 Or run this command:"; \
+		echo "   curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url'"; \
+	fi; \
 	echo ""; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo ""; \

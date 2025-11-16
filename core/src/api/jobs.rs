@@ -45,6 +45,20 @@ pub async fn trigger_stream_sync(
     }
     .to_string();
 
+    // Load cursor from database for incremental syncs
+    let cursor_before = if sync_mode_str == "incremental" {
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT last_sync_token FROM elt.streams WHERE source_id = $1 AND stream_name = $2",
+        )
+        .bind(source_id)
+        .bind(stream_name)
+        .fetch_optional(db)
+        .await?
+        .flatten()
+    } else {
+        None
+    };
+
     // Create job request
     let request = CreateJobRequest::new_sync_job(
         source_id,
@@ -52,7 +66,7 @@ pub async fn trigger_stream_sync(
         sync_mode_str.clone(),
         SyncJobMetadata {
             sync_mode: sync_mode_str,
-            cursor_before: None,
+            cursor_before,
         },
     );
 

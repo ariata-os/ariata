@@ -32,7 +32,7 @@
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^2.0.44",
-		"@ai-sdk/svelte": "^3.0.93",
+		"@ai-sdk/svelte": "4.0.0-beta.99",
 		"@types/node": "^24.10.1",
 		"ai": "6.0.0-beta.99",
 		"bits-ui": "1.0.0-next.98",

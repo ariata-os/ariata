@@ -175,7 +175,7 @@ impl AriataMcpServer {
 
     /// Execute a read-only SQL query against axiology tables
     #[tool(
-        description = "Execute a read-only SQL query against axiology tables (values, telos, goals, virtues, vices, habits, temperaments, preferences). Only SELECT queries are allowed. Returns the user's formal axiological framework for context-aware decision support."
+        description = "Execute a read-only SQL query against axiology tables. Available tables: elt.axiology_value, elt.axiology_telos, elt.axiology_goal, elt.axiology_virtue, elt.axiology_vice, elt.axiology_habit, elt.axiology_temperament, elt.axiology_preference. Only SELECT queries are allowed. Returns the user's formal axiological framework for context-aware decision support."
     )]
     async fn ariata_query_axiology(
         &self,
@@ -220,6 +220,36 @@ impl AriataMcpServer {
             Err(e) => {
                 // Categorize errors appropriately
                 if e.contains("Invalid date format") {
+                    Err(McpError::invalid_params(e, None))
+                } else {
+                    Err(McpError::internal_error(e, None))
+                }
+            }
+        }
+    }
+
+    /// Manage axiology entities (create, read, update, delete operations)
+    #[tool(
+        description = "Manage your axiology system - create, read, update, delete tasks, initiatives, aspirations, values, telos, virtues, vices, habits, temperaments, and preferences. Operations: 'create' (new entity), 'read' (get by ID), 'update' (modify existing), 'delete' (soft delete), 'list' (get all active). Entity types: task (daily/weekly), initiative (month/quarter), aspiration (multi-year), value (foundational principle), telos (life purpose), virtue (positive pattern), vice (negative pattern), habit (daily practice), temperament (innate disposition), preference (entity affinity)."
+    )]
+    async fn ariata_manage_axiology(
+        &self,
+        params: Parameters<tools::ManageAxiologyRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        match tools::manage_axiology(&self.pool, params.0).await {
+            Ok(result) => {
+                let json_str = serde_json::to_string_pretty(&result).map_err(|e| {
+                    McpError::internal_error(format!("Failed to serialize result: {}", e), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json_str)]))
+            }
+            Err(e) => {
+                // Categorize errors appropriately
+                if e.contains("Invalid operation")
+                    || e.contains("Invalid entity_type")
+                    || e.contains("Missing")
+                    || e.contains("not found")
+                {
                     Err(McpError::invalid_params(e, None))
                 } else {
                     Err(McpError::internal_error(e, None))

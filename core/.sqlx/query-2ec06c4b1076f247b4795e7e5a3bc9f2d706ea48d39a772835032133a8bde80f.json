@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO elt.entities_place (\n            id,\n            canonical_name,\n            category,\n            geo_center,\n            bounding_box,\n            metadata,\n            created_at,\n            updated_at\n        ) VALUES (\n            $1, $2, NULL, ST_SetSRID(ST_GeomFromText($3), 4326), NULL, $4, NOW(), NOW()\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2ec06c4b1076f247b4795e7e5a3bc9f2d706ea48d39a772835032133a8bde80f"
+}

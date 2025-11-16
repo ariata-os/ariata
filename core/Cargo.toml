@@ -27,6 +27,14 @@ path = "src/bin/seed.rs"
 name = "ariata-mcp-server"
 path = "src/bin/mcp-server.rs"
 
+[[bin]]
+name = "test_clustering"
+path = "src/bin/test_clustering.rs"
+
+[[bin]]
+name = "test_place_resolution"
+path = "src/bin/test_place_resolution.rs"
+
 [dependencies]
 # CLI
 clap = { version = "4.5", features = ["derive"] }
@@ -99,6 +107,9 @@ regex = "1.0"
 # MCP Server
 rmcp = { version = "0.8.5", features = ["server", "transport-io", "transport-streamable-http-server"] }
 schemars = "1.0"
+
+# Geospatial/clustering
+geo = "0.28"  # Geospatial calculations (Haversine distance)
 
 # Interactive CLI setup
 dialoguer = "0.11"

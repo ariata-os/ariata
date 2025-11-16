@@ -174,6 +174,32 @@ impl Scheduler {
         Ok(())
     }
 
+    /// Schedule the location visit clustering job (hourly)
+    pub async fn schedule_location_clustering_job(&self) -> Result<()> {
+        let db = self.db.clone();
+        let storage = self.storage.clone();
+        let stream_writer = self.stream_writer.clone();
+
+        tracing::info!("Scheduling location visit clustering job (hourly)");
+
+        // Create transform context
+        let api_keys = crate::jobs::ApiKeys::from_env();
+        let transform_context = Arc::new(crate::jobs::TransformContext::new(
+            Arc::new(storage),
+            stream_writer,
+            api_keys,
+        ));
+
+        crate::jobs::periodic_clustering::start_location_clustering_job(
+            db,
+            transform_context,
+        )
+        .await?;
+
+        tracing::info!("Location visit clustering job scheduled successfully");
+        Ok(())
+    }
+
     /// Schedule the prudent context job (4x daily: 6am, 12pm, 6pm, 10pm)
     pub async fn schedule_prudent_context_job(&self, llm_client: Arc<dyn LLMClient>) -> Result<()> {
         let schedules = vec![

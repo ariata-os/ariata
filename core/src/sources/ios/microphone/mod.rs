@@ -9,9 +9,10 @@ use tokio::sync::Mutex;
 use crate::{
     database::Database,
     error::{Error, Result},
-    sources::base::{get_or_create_device_source, validation::validate_timestamp_reasonable},
+    sources::base::validation::validate_timestamp_reasonable,
     storage::{stream_writer::StreamWriter, Storage},
 };
+use uuid::Uuid;
 
 pub use transform::MicrophoneTranscriptionTransform;
 
@@ -21,16 +22,18 @@ pub use transform::MicrophoneTranscriptionTransform;
 /// Audio files are stored in MinIO/S3 with metadata written to object storage via StreamWriter.
 ///
 /// # Arguments
+/// * `source_id` - Validated source ID from the ingest endpoint
 /// * `db` - Database connection
 /// * `storage` - Storage layer for audio file uploads
 /// * `stream_writer` - StreamWriter for writing to S3/object storage
 /// * `record` - JSON record from the device
 #[tracing::instrument(
-    skip(db, storage, stream_writer, record),
-    fields(source = "ios", stream = "microphone")
+    skip(source_id, _db, storage, stream_writer, record),
+    fields(source = "ios", stream = "microphone", source_id = %source_id)
 )]
 pub async fn process(
-    db: &Database,
+    source_id: Uuid,
+    _db: &Database,
     storage: &Arc<Storage>,
     stream_writer: &Arc<Mutex<StreamWriter>>,
     record: &Value,
@@ -40,10 +43,11 @@ pub async fn process(
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing device_id".into()))?;
 
-    let source_id = get_or_create_device_source(db, "ios", device_id).await?;
-
+    // iOS sends timestamp_start and timestamp_end for microphone chunks
+    // Use timestamp_start as the primary timestamp
     let timestamp = record
-        .get("timestamp")
+        .get("timestamp_start")
+        .or_else(|| record.get("timestamp"))  // Fallback to timestamp for backward compatibility
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing timestamp".into()))?;
 

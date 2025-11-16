@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            id,\n            latitude,\n            longitude,\n            timestamp,\n            accuracy_meters as horizontal_accuracy,\n            speed_meters_per_second as speed\n        FROM elt.location_point\n        WHERE timestamp >= $1\n          AND (accuracy_meters IS NULL OR accuracy_meters < $2)\n          AND (speed_meters_per_second IS NULL\n               OR speed_meters_per_second < 0\n               OR speed_meters_per_second < $3)\n        ORDER BY timestamp ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "latitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "longitude",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 3,
+        "name": "timestamp",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "horizontal_accuracy",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "speed",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "d2367bc9d0b350d79d8334101a92de7a8f0710c4896dbd0123bdb646a59b22dc"
+}

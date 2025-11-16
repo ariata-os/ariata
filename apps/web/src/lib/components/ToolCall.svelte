@@ -1,5 +1,6 @@
 <script lang="ts">
 	import MapVisualization from './MapVisualization.svelte';
+	import PursuitsWidget from './PursuitsWidget.svelte';
 
 	interface ToolCallProps {
 		tool_name: string;
@@ -21,41 +22,52 @@
 			console.log('[ToolCall] Parsed JSON result:', parsedResult);
 		} catch (e) {
 			console.error('[ToolCall] Failed to parse result JSON:', e);
+			// If parsing fails, treat it as an error result
+			parsedResult = { error: rawResult };
 		}
 	}
 
 	// Type guard and parse result
-	let result = parsedResult as {
-		success: boolean;
+	let result: {
+		success?: boolean;
 		type?: string;
 		data?: unknown;
 		rowCount?: number;
 		rows?: unknown[];
 		columns?: string[];
 		error?: string;
-		rawOutput?: string; // For MCP tools
+		rawOutput?: string; // For legacy MCP tools
+		narratives?: unknown[]; // For narrative queries
+		narrative_count?: number;
 	} | undefined;
 
-	// If rawOutput is a JSON string, try to parse it
-	if (result?.rawOutput && typeof result.rawOutput === 'string') {
-		try {
-			const parsedRawOutput = JSON.parse(result.rawOutput);
-			// Pretty-print the parsed output
-			result = {
-				...result,
-				rawOutput: JSON.stringify(parsedRawOutput, null, 2)
-			};
-		} catch (e) {
-			// If it's not valid JSON, keep it as-is
-			console.log('[ToolCall] rawOutput is not JSON, keeping as string');
-		}
+	// Only proceed with object operations if parsedResult is actually an object
+	if (typeof parsedResult === 'object' && parsedResult !== null) {
+		result = parsedResult as typeof result;
+	} else {
+		// If it's still not an object, wrap it as an error
+		result = { error: String(parsedResult) };
 	}
 
 	// Check if this is a map visualization
 	const isMapVisualization = result?.success && result?.type === 'map_visualization';
 
-	// Auto-expand map visualizations
-	let isExpanded = $state(isMapVisualization);
+	// Check if this is a pursuits widget
+	const isPursuitsWidget = result?.success && result?.type === 'pursuits_widget';
+
+	// Check if this is a narrative result (new MCP format) - with safe type guard
+	const isNarrativeResult = result && typeof result === 'object' && 'narratives' in result;
+
+	// Check if this is a generic MCP tool result (any object without success/type/rows)
+	const isGenericMcpResult = result &&
+		!result.success &&
+		!result.type &&
+		!result.rows &&
+		!isMapVisualization &&
+		typeof result === 'object';
+
+	// Auto-expand map visualizations and pursuits widget
+	let isExpanded = $state(isMapVisualization || isPursuitsWidget);
 
 	// Extract reasoning from arguments (with safety checks)
 	// For map tool, construct a description from the time range
@@ -86,16 +98,22 @@
 		<span class="tool-name">{tool_name}</span>
 		<span class="tool-action">"{reasoning}"</span>
 		{#if result}
-			{#if result.success}
-				{#if isMapVisualization}
-					<span class="tool-status success">Map ready</span>
-				{:else if result.rawOutput}
-					<span class="tool-status success">Success</span>
-				{:else}
-					<span class="tool-status success">{result.rowCount || 0} rows</span>
-				{/if}
-			{:else}
+			{#if result.error}
 				<span class="tool-status error">Error</span>
+			{:else if isMapVisualization}
+				<span class="tool-status success">Map ready</span>
+			{:else if isPursuitsWidget}
+				<span class="tool-status success">{result.data?.metadata?.totalCount || 0} pursuits</span>
+			{:else if isNarrativeResult}
+				<span class="tool-status success">{result.narrative_count || 0} narratives</span>
+			{:else if result.rawOutput}
+				<span class="tool-status success">Success</span>
+			{:else if result.rows}
+				<span class="tool-status success">{result.rowCount || 0} rows</span>
+			{:else if isGenericMcpResult}
+				<span class="tool-status success">Success</span>
+			{:else}
+				<span class="tool-status success">Completed</span>
 			{/if}
 		{/if}
 		<iconify-icon
@@ -107,54 +125,63 @@
 	{#if isExpanded}
 		<div class="tool-call-details">
 			{#if result}
-				{#if result.success}
-					{#if isMapVisualization}
-						<!-- Render map visualization -->
-						<div class="detail-section">
-							<MapVisualization data={result.data} />
-						</div>
-					{:else if result.rawOutput}
-						<!-- Render raw MCP tool output -->
-						<div class="detail-section">
-							<div class="detail-label">Output:</div>
-							<pre class="detail-code">{result.rawOutput}</pre>
-						</div>
-					{:else}
-						<!-- Render standard query results -->
-						{#if query}
-							<div class="detail-section">
-								<div class="detail-label">Query:</div>
-								<pre class="detail-code">{query}</pre>
-							</div>
-						{/if}
-
-						<div class="detail-section">
-							<div class="detail-label">Results:</div>
-							<div class="detail-value">
-								{result.rowCount || 0} row{(result.rowCount || 0) !== 1 ? 's' : ''} returned
-							</div>
-
-							{#if result.columns && result.columns.length > 0}
-								<div class="detail-value text-neutral-600 text-xs mt-1">
-									Columns: {result.columns.join(', ')}
-								</div>
-							{/if}
-
-							{#if result.rows && result.rows.length > 0 && result.rows.length <= 3}
-								<div class="detail-value mt-2">
-									<pre class="detail-code">{JSON.stringify(result.rows, null, 2)}</pre>
-								</div>
-							{:else if result.rows && result.rows.length > 3}
-								<div class="detail-value text-neutral-500 text-xs mt-1">
-									(Preview limited to first few rows)
-								</div>
-							{/if}
-						</div>
-					{/if}
-				{:else}
+				{#if result.error}
 					<div class="detail-section">
 						<div class="detail-label error">Error:</div>
 						<div class="detail-value error">{result.error || 'Unknown error'}</div>
+					</div>
+				{:else if isMapVisualization}
+					<!-- Render map visualization -->
+					<div class="detail-section">
+						<MapVisualization data={result.data} />
+					</div>
+				{:else if isPursuitsWidget}
+					<!-- Render pursuits widget -->
+					<div class="detail-section">
+						<PursuitsWidget data={result.data} />
+					</div>
+				{:else if isNarrativeResult || isGenericMcpResult}
+					<!-- Render MCP tool output (narratives or other generic results) -->
+					<div class="detail-section">
+						<div class="detail-label">Output:</div>
+						<pre class="detail-code">{JSON.stringify(result, null, 2)}</pre>
+					</div>
+				{:else if result.rawOutput}
+					<!-- Render legacy MCP tool output -->
+					<div class="detail-section">
+						<div class="detail-label">Output:</div>
+						<pre class="detail-code">{result.rawOutput}</pre>
+					</div>
+				{:else if result.rows}
+					<!-- Render standard query results -->
+					{#if query}
+						<div class="detail-section">
+							<div class="detail-label">Query:</div>
+							<pre class="detail-code">{query}</pre>
+						</div>
+					{/if}
+
+					<div class="detail-section">
+						<div class="detail-label">Results:</div>
+						<div class="detail-value">
+							{result.rowCount || 0} row{(result.rowCount || 0) !== 1 ? 's' : ''} returned
+						</div>
+
+						{#if result.columns && result.columns.length > 0}
+							<div class="detail-value text-neutral-600 text-xs mt-1">
+								Columns: {result.columns.join(', ')}
+							</div>
+						{/if}
+
+						{#if result.rows && result.rows.length > 0 && result.rows.length <= 3}
+							<div class="detail-value mt-2">
+								<pre class="detail-code">{JSON.stringify(result.rows, null, 2)}</pre>
+							</div>
+						{:else if result.rows && result.rows.length > 3}
+							<div class="detail-value text-neutral-500 text-xs mt-1">
+								(Preview limited to first few rows)
+							</div>
+						{/if}
 					</div>
 				{/if}
 			{/if}
@@ -169,9 +196,9 @@
 <style>
 	.tool-call-item {
 		background-color: var(--color-paper);
-		border: 1px solid var(--color-stone-200);
+		border: 1px solid var(--color-stone-300);
 		border-radius: 0.5rem;
-		margin-bottom: 0.75rem;
+		margin-bottom: 1.5rem;
 		overflow: hidden;
 	}
 
@@ -241,7 +268,7 @@
 
 	.tool-call-details {
 		padding: 0.75rem;
-		border-top: 1px solid var(--color-stone-200);
+		border-top: 1px solid var(--color-stone-300);
 		background-color: var(--color-white);
 	}
 

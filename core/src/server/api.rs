@@ -489,6 +489,31 @@ pub async fn cancel_job_handler(
     }
 }
 
+/// Get job history for a specific stream
+#[derive(Debug, Deserialize)]
+pub struct StreamJobsParams {
+    pub limit: Option<i64>,
+}
+
+pub async fn get_stream_jobs_handler(
+    State(state): State<AppState>,
+    Path((source_id, stream_name)): Path<(Uuid, String)>,
+    Query(params): Query<StreamJobsParams>,
+) -> Response {
+    let limit = params.limit.unwrap_or(10);
+
+    match crate::api::get_job_history(state.db.pool(), source_id, &stream_name, limit).await {
+        Ok(jobs) => (StatusCode::OK, Json(jobs)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
 // ============================================================================
 // Device Pairing Endpoints
 // ============================================================================
@@ -727,4 +752,282 @@ pub async fn verify_device_handler(
                 .into_response()
         }
     }
+}
+
+// =============================================================================
+// Profile API
+// =============================================================================
+
+/// Get user profile
+pub async fn get_profile_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::get_profile(state.db.pool()).await)
+}
+
+/// Update user profile
+pub async fn update_profile_handler(
+    State(state): State<AppState>,
+    Json(request): Json<crate::api::UpdateProfileRequest>,
+) -> Response {
+    api_response(crate::api::update_profile(state.db.pool(), request).await)
+}
+
+// =============================================================================
+// Assistant Profile API
+// =============================================================================
+
+/// Get assistant profile
+pub async fn get_assistant_profile_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::get_assistant_profile(state.db.pool()).await)
+}
+
+/// Update assistant profile
+pub async fn update_assistant_profile_handler(
+    State(state): State<AppState>,
+    Json(request): Json<crate::api::UpdateAssistantProfileRequest>,
+) -> Response {
+    api_response(crate::api::update_assistant_profile(state.db.pool(), request).await)
+}
+
+// =============================================================================
+// Axiology API - Tasks
+// =============================================================================
+
+/// List all active tasks
+pub async fn list_tasks_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::list_tasks(state.db.pool()).await)
+}
+
+/// Get a specific task by ID
+pub async fn get_task_handler(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Response {
+    api_response(crate::api::get_task(state.db.pool(), task_id).await)
+}
+
+/// Create a new task
+pub async fn create_task_handler(
+    State(state): State<AppState>,
+    Json(request): Json<crate::api::CreateTaskRequest>,
+) -> Response {
+    api_response(crate::api::create_task(state.db.pool(), request).await)
+}
+
+/// Update an existing task
+pub async fn update_task_handler(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+    Json(request): Json<crate::api::UpdateTaskRequest>,
+) -> Response {
+    api_response(crate::api::update_task(state.db.pool(), task_id, request).await)
+}
+
+/// Delete a task (soft delete)
+pub async fn delete_task_handler(
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Response {
+    match crate::api::delete_task(state.db.pool(), task_id).await {
+        Ok(_) => success_message("Task deleted successfully"),
+        Err(e) => error_response(e),
+    }
+}
+
+/// List all distinct tags across temporal pursuits
+pub async fn list_tags_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::list_tags(state.db.pool()).await)
+}
+
+// =============================================================================
+// Axiology API - Temperaments
+// =============================================================================
+
+pub async fn list_temperaments_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::list_temperaments(state.db.pool()).await)
+}
+
+pub async fn get_temperament_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    api_response(crate::api::get_temperament(state.db.pool(), id).await)
+}
+
+pub async fn create_temperament_handler(
+    State(state): State<AppState>,
+    Json(request): Json<crate::api::CreateSimpleRequest>,
+) -> Response {
+    api_response(crate::api::create_temperament(state.db.pool(), request).await)
+}
+
+pub async fn update_temperament_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<crate::api::UpdateSimpleRequest>,
+) -> Response {
+    api_response(crate::api::update_temperament(state.db.pool(), id, request).await)
+}
+
+pub async fn delete_temperament_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    match crate::api::delete_temperament(state.db.pool(), id).await {
+        Ok(_) => success_message("Temperament deleted successfully"),
+        Err(e) => error_response(e),
+    }
+}
+
+// =============================================================================
+// Axiology API - Virtues
+// =============================================================================
+
+pub async fn list_virtues_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::list_virtues(state.db.pool()).await)
+}
+
+pub async fn get_virtue_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    api_response(crate::api::get_virtue(state.db.pool(), id).await)
+}
+
+pub async fn create_virtue_handler(
+    State(state): State<AppState>,
+    Json(request): Json<crate::api::CreateSimpleRequest>,
+) -> Response {
+    api_response(crate::api::create_virtue(state.db.pool(), request).await)
+}
+
+pub async fn update_virtue_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<crate::api::UpdateSimpleRequest>,
+) -> Response {
+    api_response(crate::api::update_virtue(state.db.pool(), id, request).await)
+}
+
+pub async fn delete_virtue_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    match crate::api::delete_virtue(state.db.pool(), id).await {
+        Ok(_) => success_message("Virtue deleted successfully"),
+        Err(e) => error_response(e),
+    }
+}
+
+// =============================================================================
+// Axiology API - Vices
+// =============================================================================
+
+pub async fn list_vices_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::list_vices(state.db.pool()).await)
+}
+
+pub async fn get_vice_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    api_response(crate::api::get_vice(state.db.pool(), id).await)
+}
+
+pub async fn create_vice_handler(
+    State(state): State<AppState>,
+    Json(request): Json<crate::api::CreateSimpleRequest>,
+) -> Response {
+    api_response(crate::api::create_vice(state.db.pool(), request).await)
+}
+
+pub async fn update_vice_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<crate::api::UpdateSimpleRequest>,
+) -> Response {
+    api_response(crate::api::update_vice(state.db.pool(), id, request).await)
+}
+
+pub async fn delete_vice_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    match crate::api::delete_vice(state.db.pool(), id).await {
+        Ok(_) => success_message("Vice deleted successfully"),
+        Err(e) => error_response(e),
+    }
+}
+
+// =============================================================================
+// Axiology API - Values
+// =============================================================================
+
+pub async fn list_values_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::list_values(state.db.pool()).await)
+}
+
+pub async fn get_value_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    api_response(crate::api::get_value(state.db.pool(), id).await)
+}
+
+pub async fn create_value_handler(
+    State(state): State<AppState>,
+    Json(request): Json<crate::api::CreateSimpleRequest>,
+) -> Response {
+    api_response(crate::api::create_value(state.db.pool(), request).await)
+}
+
+pub async fn update_value_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<crate::api::UpdateSimpleRequest>,
+) -> Response {
+    api_response(crate::api::update_value(state.db.pool(), id, request).await)
+}
+
+pub async fn delete_value_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    match crate::api::delete_value(state.db.pool(), id).await {
+        Ok(_) => success_message("Value deleted successfully"),
+        Err(e) => error_response(e),
+    }
+}
+
+// =============================================================================
+// Tools API
+// =============================================================================
+
+/// List all tools with optional filtering
+pub async fn list_tools_handler(
+    State(state): State<AppState>,
+    Query(query): Query<crate::api::ListToolsQuery>,
+) -> Response {
+    api_response(crate::api::list_tools(state.db.pool(), query).await)
+}
+
+/// Get a specific tool by ID
+pub async fn get_tool_handler(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    api_response(crate::api::get_tool(state.db.pool(), id).await)
+}
+
+/// Update a tool's metadata
+pub async fn update_tool_handler(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(request): Json<crate::api::UpdateToolRequest>,
+) -> Response {
+    api_response(crate::api::update_tool(state.db.pool(), id, request).await)
+}
+
+/// Get pinned tools with full metadata
+pub async fn get_pinned_tools_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::get_pinned_tools(state.db.pool()).await)
 }

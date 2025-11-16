@@ -1,5 +1,7 @@
 //! Transform registry and routing
 
+pub mod enrich;
+pub mod entity_resolution;
 pub mod factory;
 pub mod registry;
 

@@ -1,24 +1,40 @@
 import type { RequestHandler } from './$types';
 import type { Config } from '@sveltejs/adapter-vercel';
 import { env } from '$env/dynamic/private';
-import { orchestrateChat } from '$lib/server/agent-orchestrator';
+import { getAgent, initializeAgents } from '$lib/server/agents/registry';
+import { routeToAgent, isValidAgentId } from '$lib/server/routing/intent-router';
 import { getDb, getPool } from '$lib/server/db';
-import { chatSessions, preferences, type ChatMessage } from '$lib/server/schema';
+import { chatSessions, preferences, assistantProfile, type ChatMessage } from '$lib/server/schema';
 import { eq, sql } from 'drizzle-orm';
-import { convertToModelMessages, type UIMessage } from 'ai';
+import {
+	isTextUIPart,
+	isToolOrDynamicToolUIPart,
+	createAgentUIStreamResponse,
+	createIdGenerator,
+	type UIMessage
+} from 'ai';
+import type { AgentId } from '$lib/server/agents/types';
 
 // Constants
 const MAX_TITLE_LENGTH = 50;
-// Anthropic model strings
+
+// AI Gateway model strings (provider/model format)
 const ALLOWED_MODELS = [
-	'claude-sonnet-4-20250514', // Claude Sonnet 4
-	'claude-opus-4-20250514', // Claude Opus 4
-	'claude-haiku-4-20250514' // Claude Haiku 4
+	'anthropic/claude-sonnet-4.5',
+	'anthropic/claude-opus-4.1',
+	'anthropic/claude-haiku-4.5',
+	'openai/gpt-5',
+	'openai/gpt-oss-120b',
+	'openai/gpt-oss-20b',
+	'google/gemini-2.5-pro',
+	'google/gemini-2.5-flash',
+	'xai/grok-4',
+	'moonshotai/kimi-k2-thinking'
 ];
 
-// Verify Anthropic API key is set
-if (!env.ANTHROPIC_API_KEY) {
-	console.warn('ANTHROPIC_API_KEY environment variable is not set');
+// Verify AI Gateway API key is set
+if (!env.AI_GATEWAY_API_KEY) {
+	console.warn('AI_GATEWAY_API_KEY environment variable is not set');
 }
 
 // Vercel serverless function configuration
@@ -37,10 +53,18 @@ export const config: Config = {
 export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const body = await request.json();
-		const { messages, sessionId, model = 'claude-sonnet-4-20250514' } = body;
+		const {
+			messages,
+			sessionId,
+			model = 'openai/gpt-oss-120b',
+			agentId = 'auto'
+		} = body;
 
-		console.log('[API] Received request with model:', model, 'sessionId:', sessionId);
-		console.log('[API] Messages format:', messages?.[0]); // Log first message to see format
+		console.log('[API] Received request');
+		console.log('[API]   sessionId:', sessionId);
+		console.log('[API]   model:', model);
+		console.log('[API]   agentId:', agentId);
+		console.log('[API]   messages:', messages?.length);
 
 		// Validate messages
 		if (!messages || !Array.isArray(messages)) {
@@ -67,12 +91,26 @@ export const POST: RequestHandler = async ({ request }) => {
 			});
 		}
 
-		// Validate model
+		// Validate model (still supported for backwards compatibility and override)
 		if (!ALLOWED_MODELS.includes(model)) {
 			return new Response(
 				JSON.stringify({
 					error: 'Invalid model',
 					allowed: ALLOWED_MODELS
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' }
+				}
+			);
+		}
+
+		// Validate agentId
+		if (!isValidAgentId(agentId)) {
+			return new Response(
+				JSON.stringify({
+					error: 'Invalid agentId',
+					allowed: ['auto', 'analytics', 'research', 'general', 'action']
 				}),
 				{
 					status: 400,
@@ -109,35 +147,103 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		// Load user preferences for personalization
 		const prefs = await db.select().from(preferences);
-		const userName = prefs.find((p) => p.key === 'user_name')?.value || 'the user';
+		const userName = prefs.find((p) => p.key === 'user_name')?.value || 'User';
 
-		// Get database pool for tools
-		const pool = getPool();
+		// Load assistant profile for AI personalization
+		const assistantProfiles = await db.select().from(assistantProfile).limit(1);
+		const assistantName = assistantProfiles[0]?.assistantName || 'Ariata';
 
-		// Convert UIMessages to ModelMessages
-		const modelMessages = convertToModelMessages(messages as UIMessage[]);
-		console.log('[API] Converted to ModelMessages:', modelMessages.length, 'messages');
+		// Initialize agents with user and assistant names from database
+		// Smart caching: only reinitializes if settings have changed
+		await initializeAgents(userName, assistantName);
 
-		// Run agent with custom tools (queryOntologies, queryLocationMap)
-		// Uses @ai-sdk/anthropic provider with ANTHROPIC_API_KEY
-		const result = await orchestrateChat({
-			messages: modelMessages,
-			model,
-			pool,
-			sessionId,
-			userName,
-			onFinish: async (event) => {
+		// === AGENT ROUTING ===
+		// Determine which agent should handle this request
+		let selectedAgentId: AgentId;
+		let routingReason: string;
+
+		if (agentId === 'auto') {
+			// Auto-routing: use intent detection
+			const lastMessage = messages[messages.length - 1];
+			const messageText =
+				lastMessage?.role === 'user'
+					? Array.isArray(lastMessage.parts)
+						? lastMessage.parts
+								.filter(isTextUIPart)
+								.map((p) => p.text)
+								.join('')
+						: lastMessage.content || ''
+					: '';
+
+			const routing = routeToAgent({
+				message: messageText,
+				recentMessages: messages.slice(-3) as UIMessage[], // Last 3 messages for context
+			});
+
+			selectedAgentId = routing.agentId;
+			routingReason = routing.reason;
+			console.log('[API] Auto-routed to agent:', selectedAgentId);
+			console.log('[API] Routing reason:', routingReason);
+		} else {
+			// Manual agent selection
+			selectedAgentId = agentId as AgentId;
+			routingReason = `User selected ${agentId} agent`;
+			console.log('[API] User selected agent:', selectedAgentId);
+		}
+
+		// Get the selected agent
+		const agent = getAgent(selectedAgentId);
+
+		// Add context as a system message in UIMessage format
+		const currentDate = new Date().toISOString().split('T')[0];
+		const contextMessage: UIMessage = {
+			id: 'system-context',
+			role: 'system',
+			parts: [
+				{
+					type: 'text',
+					text: `User: ${userName}\nCurrent date: ${currentDate} (YYYY-MM-DD format)`,
+				},
+			],
+		};
+
+		// Prepend context to original UIMessages
+		const messagesWithContext = [contextMessage, ...(messages as UIMessage[])];
+
+		// Stream response using agent
+		console.log('[API] Streaming response with', selectedAgentId, 'agent');
+		return createAgentUIStreamResponse({
+			agent,
+			messages: messagesWithContext,
+			// AI SDK v6: Pass originalMessages so onFinish receives complete conversation
+			// Do NOT include the system context message in originalMessages
+			originalMessages: messages as UIMessage[],
+			// AI SDK v6: Server-side ID generation for consistent message IDs
+			generateMessageId: createIdGenerator({
+				prefix: 'msg',
+				size: 16
+			}),
+			onFinish: async ({ messages: completeMessages }) => {
 				try {
-					await saveMessagesToSession(sessionId, messages as UIMessage[], event, model);
+					// Save messages along with agent metadata
+					await saveMessagesToSession(sessionId, completeMessages, model, selectedAgentId);
 				} catch (error) {
 					console.error('[API] Failed to save messages to session:', error);
 				}
-			}
-		});
+			},
+			// Error handling - sanitize errors before sending to client
+			onError: (error) => {
+				console.error('[API] Stream error:', error);
 
-		// toUIMessageStreamResponse() streams tool calls in real-time (compatible with useChat)
-		// Tool calls are saved to DB in the onFinish callback
-		return result.toUIMessageStreamResponse();
+				// Return sanitized error message to client
+				// Don't expose internal details in production
+				if (error instanceof Error) {
+					return `An error occurred: ${error.message}`;
+				}
+
+				return 'An unexpected error occurred. Please try again.';
+			},
+		});
 	} catch (error) {
 		console.error('Chat API error:', error);
 		return new Response(JSON.stringify({ error: 'Internal server error' }), {
@@ -152,67 +258,95 @@ export const POST: RequestHandler = async ({ request }) => {
  *
  * Uses atomic JSONB operations to prevent lost updates from concurrent requests.
  * Export to ELT pipeline happens asynchronously via scheduled job.
+ *
+ * AI SDK v6 Best Practice: Save complete UIMessages from toUIMessageStreamResponse onFinish
+ * The messages parameter contains the full conversation including user and assistant messages.
  */
 async function saveMessagesToSession(
 	sessionId: string,
-	userMessages: UIMessage[],
-	event: any, // onFinish event containing text, toolCalls, toolResults, etc.
-	model: string
+	completeMessages: UIMessage[],
+	model: string,
+	agentId?: string
 ) {
 	const db = getDb();
 
-	// Extract data from the onFinish event
-	const assistantContent = event.text;
-	const toolCalls = event.toolCalls;
-	const toolResults = event.toolResults;
+	// Convert complete UIMessages to our ChatMessage format
+	const now = new Date();
+	const allMessages: ChatMessage[] = [];
 
-	console.log('[saveMessages] Tool calls:', toolCalls?.length || 0);
-	console.log('[saveMessages] Tool results:', toolResults?.length || 0);
-	if (toolCalls && toolCalls.length > 0) {
-		console.log('[saveMessages] First tool call:', JSON.stringify(toolCalls[0], null, 2));
-		console.log('[saveMessages] First tool result:', JSON.stringify(toolResults?.[0], null, 2));
-		console.log('[saveMessages] First tool result.output:', JSON.stringify(toolResults?.[0]?.output, null, 2));
+	// Build a map of tool results from the messages
+	// In UI SDK, tool results are embedded in message parts
+	const toolResultsMap = new Map();
+	for (const msg of completeMessages) {
+		if (msg.role === 'assistant' && Array.isArray(msg.parts)) {
+			for (const part of msg.parts) {
+				if (isToolOrDynamicToolUIPart(part) && part.state === 'output-available') {
+					toolResultsMap.set(part.toolCallId, part.output);
+				}
+			}
+		}
 	}
 
-	// Build new messages array with accurate timestamps
-	const now = new Date();
-	const newMessages: ChatMessage[] = [
-		// Add user messages (typically just one, but handle multiple)
-		...userMessages
-			.filter((m) => m.role === 'user')
-			.map((m, idx) => ({
-				role: 'user' as const,
-				content: m.parts.find(p => p.type === 'text')?.text || '',
-				timestamp: new Date(now.getTime() + idx).toISOString(), // Offset by 1ms per message
+	console.log('[saveMessages] Processing', completeMessages.length, 'UI messages');
+
+	// Convert each UIMessage to our ChatMessage format
+	for (let i = 0; i < completeMessages.length; i++) {
+		const msg = completeMessages[i];
+		const timestamp = new Date(now.getTime() + i).toISOString();
+
+		if (msg.role === 'user') {
+			// Extract text content from user message parts
+			const textContent = Array.isArray(msg.parts)
+				? msg.parts.filter(isTextUIPart).map(p => p.text).join('')
+				: '';
+
+			allMessages.push({
+				role: 'user',
+				content: textContent,
+				timestamp,
 				model: null
-			})),
-		// Add assistant message with tool calls
-		{
-			role: 'assistant' as const,
-			content: assistantContent,
-			timestamp: new Date(now.getTime() + userMessages.length).toISOString(),
-			model,
-			provider: 'anthropic',
-			tool_calls:
-				toolCalls && toolCalls.length > 0
-					? toolCalls.map((call, idx) => ({
-							tool_name: call.toolName,
-							arguments: call.args,
-							result: toolResults?.[idx]?.output || toolResults?.[idx]?.result,
-							timestamp: new Date().toISOString()
+			});
+		} else if (msg.role === 'assistant') {
+			// Extract text content and tool calls from assistant message parts
+			const textParts = Array.isArray(msg.parts) ? msg.parts.filter(isTextUIPart) : [];
+			const toolCallParts = Array.isArray(msg.parts) ? msg.parts.filter(isToolOrDynamicToolUIPart) : [];
+
+			const textContent = textParts.map(p => p.text).join('');
+
+			// Extract provider from model string
+			const provider = model.includes('/') ? model.split('/')[0] : 'unknown';
+
+			allMessages.push({
+				role: 'assistant',
+				content: textContent,
+				timestamp,
+				model,
+				provider,
+				agentId, // Track which agent handled this message
+				tool_calls: toolCallParts.length > 0
+					? toolCallParts.map(tc => ({
+							tool_name: tc.type.startsWith('tool-')
+								? tc.type.replace('tool-', '')
+								: (tc as any).toolName,
+							tool_call_id: tc.toolCallId,
+							arguments: (tc.input || {}) as Record<string, unknown>,
+							result: tc.state === 'output-available' ? tc.output : toolResultsMap.get(tc.toolCallId),
+							timestamp
 						}))
 					: undefined
+			});
 		}
-	];
+	}
 
-	// Use atomic JSONB operations to prevent lost updates from concurrent requests
-	// This ensures concurrent writes to the same session don't lose data
+	console.log('[saveMessages] Converted', allMessages.length, 'messages (replacing entire conversation)');
+
+	// Replace all messages (not append) since we're receiving the complete conversation
 	const updateResult = await db
 		.update(chatSessions)
 		.set({
-			messages: sql`messages || ${JSON.stringify(newMessages)}::jsonb`,
+			messages: allMessages,
 			updatedAt: now,
-			messageCount: sql`message_count + ${newMessages.length}`
+			messageCount: allMessages.length
 		})
 		.where(eq(chatSessions.id, sessionId))
 		.returning({ messageCount: chatSessions.messageCount });
@@ -222,6 +356,6 @@ async function saveMessagesToSession(
 	}
 
 	console.log(
-		`[saveMessages] Saved ${newMessages.length} messages to session ${sessionId} (total: ${updateResult[0].messageCount})`
+		`[saveMessages] Saved ${allMessages.length} messages to session ${sessionId} (total: ${updateResult[0].messageCount})`
 	);
 }

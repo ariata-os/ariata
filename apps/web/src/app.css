@@ -38,45 +38,52 @@
 /* Markdown Styles */
 .markdown {
 	color: var(--color-stone-800);
+	line-height: 1.8;
 }
 
 .markdown h1 {
-	@apply text-2xl font-serif mt-6 mb-4;
+	@apply text-2xl font-serif mt-8 mb-6;
 	color: var(--color-navy);
+	line-height: 1.4;
 }
 
 .markdown h2 {
-	@apply text-xl  font-serif mt-5 mb-3;
+	@apply text-xl  font-serif mt-7 mb-5;
 	color: var(--color-navy);
+	line-height: 1.4;
 }
 
 .markdown h3 {
-	@apply text-xl font-serif mt-4 mb-2;
+	@apply text-xl font-serif mt-6 mb-4;
 	color: var(--color-navy);
+	line-height: 1.4;
 }
 
 .markdown h4 {
 	@apply text-lg  font-serif mt-3 mb-2;
 	color: var(--color-navy-light);
+	line-height: 1.4;
 }
 
 .markdown h5 {
 	@apply text-base font-serif mt-2 mb-1;
 	color: var(--color-navy-light);
+	line-height: 1.4;
 }
 
 .markdown h6 {
 	@apply text-sm font-medium font-serif mt-2 mb-1;
 	color: var(--color-stone-700);
+	line-height: 1.4;
 }
 
 .markdown p {
-	@apply mb-4 leading-relaxed;
+	@apply mb-4;
+	line-height: 1.8;
 }
 
 .markdown strong {
 	@apply font-medium;
-	color: var(--color-navy);
 }
 
 .markdown em {
@@ -84,36 +91,31 @@
 }
 
 .markdown code {
-	@apply px-1.5 py-0.5 rounded text-sm font-mono;
-	background-color: var(--color-paper);
-	color: var(--color-stone-800);
+	@apply px-1.5 py-0.5 rounded text-stone-800 text-xs font-mono bg-stone-200;
 }
 
 .markdown pre {
-	@apply p-4 rounded-lg overflow-x-auto mb-4;
-	background-color: var(--color-paper);
-	color: var(--color-stone-800);
-	border: 1px solid var(--color-stone-300);
+	@apply p-4 rounded-lg overflow-x-auto mb-4 bg-paper-dark border border-navy/15;
 }
 
 .markdown pre code {
-	@apply bg-transparent p-0 text-sm;
+	@apply bg-transparent p-0 text-xs;
 }
 
 .markdown ul {
-	@apply list-disc mb-4 space-y-1;
+	@apply list-disc mb-4 space-y-2;
 	padding-left: 2em;
 	list-style-position: outside;
 }
 
 .markdown ol {
-	@apply list-decimal mb-4 space-y-1;
+	@apply list-decimal mb-4 space-y-2;
 	padding-left: 2em;
 	list-style-position: outside;
 }
 
 .markdown li {
-	@apply leading-relaxed;
+	line-height: 1.8;
 	contain: layout;
 }
 
@@ -138,18 +140,36 @@
 }
 
 .markdown table {
-	@apply w-full border-collapse mb-4;
+	@apply w-full mb-4 text-sm rounded-lg overflow-hidden;
+	border-collapse: separate;
+	border-spacing: 0;
+	border: 1px solid var(--color-stone-300);
 }
 
 .markdown th {
-	@apply px-4 py-2 text-left font-medium;
-	background-color: var(--color-paper);
-	border: 1px solid var(--color-stone-300);
+	@apply px-4 py-2 text-left text-sm;
+	font-weight: 400;
+	font-family: var(--font-serif);
+	border-right: 1px solid var(--color-stone-300);
+	border-bottom: 1px solid var(--color-stone-300);
+}
+
+.markdown th:last-child {
+	border-right: none;
 }
 
 .markdown td {
-	@apply px-4 py-2;
-	border: 1px solid var(--color-stone-300);
+	@apply px-4 py-2 text-sm;
+	border-right: 1px solid var(--color-stone-300);
+	border-bottom: 1px solid var(--color-stone-300);
+}
+
+.markdown td:last-child {
+	border-right: none;
+}
+
+.markdown tr:last-child td {
+	border-bottom: none;
 }
 
 .markdown img {

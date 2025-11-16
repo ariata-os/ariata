@@ -101,10 +101,17 @@ impl GoogleGmailStream {
         let records_failed;
         let next_cursor;
 
-        match sync_mode {
-            SyncMode::Incremental {
-                cursor: Some(ref history_id),
-            } => {
+        // Load last sync token from database as defensive fallback
+        let db_history_id = self.get_last_sync_token().await?;
+
+        // Determine effective cursor: prefer SyncMode parameter, fall back to database
+        let effective_cursor = match sync_mode {
+            SyncMode::Incremental { cursor } => cursor.clone().or(db_history_id),
+            SyncMode::FullRefresh => None,
+        };
+
+        match effective_cursor {
+            Some(ref history_id) => {
                 // Use history API for incremental sync
                 let result = self.sync_incremental(history_id).await?;
 
@@ -113,7 +120,7 @@ impl GoogleGmailStream {
                 records_failed = result.2;
                 next_cursor = result.3;
             }
-            _ => {
+            None => {
                 // Full sync - fetch messages based on config
                 match self.config.sync_mode {
                     GmailSyncMode::Messages => {
@@ -661,6 +668,18 @@ impl GoogleGmailStream {
     /// Get user profile (for history ID)
     async fn get_profile(&self) -> Result<serde_json::Value> {
         self.client.get("users/me/profile").await
+    }
+
+    /// Get the last sync token (history ID) from the database
+    async fn get_last_sync_token(&self) -> Result<Option<String>> {
+        let row = sqlx::query_as::<_, (Option<String>,)>(
+            "SELECT last_sync_token FROM streams WHERE source_id = $1 AND stream_name = 'gmail'",
+        )
+        .bind(self.source_id)
+        .fetch_optional(&self.db)
+        .await?;
+
+        Ok(row.and_then(|(token,)| token))
     }
 
     /// Save the history ID to the database

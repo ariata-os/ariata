@@ -2,7 +2,7 @@
 
 # Ariata
 
-Personal data ELT platform. Extract data from Google, iOS, Mac, Notion, Strava → Store in PostgreSQL + MinIO → Query with SQL.
+Personal data ELT platform. Extract data from Google, iOS, Mac, Notion → Store in PostgreSQL + MinIO → Query with SQL.
 
 > **Status**: Active development, beware. Things will break.
 
@@ -13,9 +13,9 @@ Personal data ELT platform. Extract data from Google, iOS, Mac, Notion, Strava �
 
 Ariata is a single-user ELT pipeline for personal data:
 
-- **Extract**: Pull from APIs (Google, Notion, Strava) and devices (iOS, Mac)
+- **Extract**: Pull from APIs (Google, Notion) and devices (iOS, Mac)
 - **Load**: Store raw streams in PostgreSQL + MinIO with full fidelity
-- **Transform**: Normalize into signals for cross-source analysis
+- **Transform**: Normalize into ontologies for cross-source analysis
 
 Self-hosted, open source, Rust-based. Your data stays on your infrastructure.
 
@@ -30,12 +30,13 @@ Unlike enterprise tools (Airbyte: Docker per source), Ariata uses **one Rust pac
 - **Real-time hot pipeline**: Sub-second latency for streaming data enables proactive personal AI (future).
 - **Single-user**: No multi-tenancy overhead = simpler code, better performance.
 
-**Extensibility**: Implement `DataSource` trait in `core/plugins/` for custom sources.
+**Extensibility**: Implement `Stream` trait in `core/src/sources/{provider}/` for custom sources.
 
 ## Implementation Status
 
 | Source | Stream | Status |
 |--------|--------|--------|
+| Ariata | App Export | ✅ |
 | Google | Calendar | ✅ |
 | Google | Gmail | ✅ |
 | iOS | HealthKit | ✅ |
@@ -45,9 +46,6 @@ Unlike enterprise tools (Airbyte: Docker per source), Ariata uses **one Rust pac
 | Mac | Browser | ✅ |
 | Mac | iMessage | ✅ |
 | Notion | Pages | ✅ |
-| Strava | Activities | ✅ |
-
-See [CLAUDE.md](CLAUDE.md) for full implementation details and architecture documentation.
 
 ## Quick Start
 
@@ -71,13 +69,13 @@ Access: `http://localhost:5173` (web) | `http://localhost:8000` (API)
 ## Architecture
 
 ```
-Sources (Cloud: Google, Notion | Device: iOS, Mac)
+Sources (OAuth: Google, Notion | Device: iOS, Mac)
    ↓
-Streams (stream_ios_healthkit, stream_ios_location, stream_google_calendar, etc.)
+Ingest API / StreamWriter
    ↓
-Storage (PostgreSQL: raw streams | MinIO: audio/video/blobs)
+Storage (S3/MinIO: raw JSONL streams | PostgreSQL: metadata + ontologies)
    ↓
-Signals (normalized/aggregated streams for analysis)
+Ontologies (normalized domain primitives: health_*, location_*, social_*, etc.)
    ↓
 Query with SQL
 ```
@@ -85,15 +83,15 @@ Query with SQL
 **Extract:**
 
 - **Source** = Data origin (e.g., iOS, Google, Notion)
-- **Stream** = Raw, non-normalized data from a source (e.g., iOS → stream_ios_healthkit, stream_ios_location, stream_ios_microphone)
+- **Stream** = Raw, non-normalized data from a source (e.g., iOS → healthkit, location, microphone)
 
 **Load:**
 
-- **Storage** = PostgreSQL for structured streams, MinIO for large unstructured data (audio recordings, future video streams)
+- **Storage** = S3/MinIO for raw JSONL streams, PostgreSQL for metadata + ontology tables
 
 **Transform:**
 
-- **Signals** = Normalized/aggregated streams for cross-source analysis
+- **Ontologies** = Normalized domain tables for cross-source analysis (e.g., health_heart_rate, location_point, social_email)
 
 **Core**: Rust library with OAuth, schedulers, and device processors
 **Clients**: iOS/Mac apps push real-time data to ingestion server
@@ -140,13 +138,15 @@ make core-ngrok
 ```
 
 **Get your HTTPS URL:**
-1. Open http://localhost:4040 (ngrok dashboard)
+
+1. Open <http://localhost:4040> (ngrok dashboard)
 2. Copy the HTTPS URL (e.g., `https://abc123.ngrok-free.app`)
 3. Use this URL in your iOS/Mac app settings
 
 **Note:** Free ngrok URLs change each time you restart. For persistent URLs, upgrade to a paid ngrok plan.
 
 **What this does:**
+
 - Starts Rust backend on `localhost:8000`
 - Creates ngrok tunnel with valid SSL certificate
 - iOS/Mac apps can connect via HTTPS (resolves TLS errors)

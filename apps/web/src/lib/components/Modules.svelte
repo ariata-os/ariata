@@ -9,7 +9,15 @@
         href?: string;
     }
 
-    let { modules, activeModule, onModuleSelect, isSideNavOpen, toggleSubNav } =
+    interface Props {
+        modules: Module[];
+        activeModule: string;
+        onModuleSelect: (moduleId: string) => void;
+        isSideNavOpen: boolean;
+        toggleSubNav: () => void;
+    }
+
+    let { modules, activeModule, onModuleSelect, isSideNavOpen, toggleSubNav }: Props =
         $props();
 
     let isLogoHovered = $state(false);
@@ -102,7 +110,7 @@
                 <div class="relative aspect-square h-[18px] w-[18px]">
                     <!-- Dot 1 -->
                     <div
-                        class="absolute h-[6px] w-[6px] rounded-full bg-stone-600 group-hover:bg-navy transition-all duration-200 ease-in-out"
+                        class="absolute h-[6px] w-[6px] rounded-full bg-stone-600 group-hover:bg-blue transition-all duration-200 ease-in-out"
                         style="transform: translate({getDotAnimation(
                             1,
                             isSideNavOpen,
@@ -124,7 +132,7 @@
 
                     <!-- Dot 2 -->
                     <div
-                        class="absolute h-[6px] w-[6px] rounded-full bg-stone-600 group-hover:bg-navy transition-all duration-200 ease-in-out"
+                        class="absolute h-[6px] w-[6px] rounded-full bg-stone-600 group-hover:bg-blue transition-all duration-200 ease-in-out"
                         style="transform: translate({getDotAnimation(
                             2,
                             isSideNavOpen,
@@ -146,7 +154,7 @@
 
                     <!-- Dot 3 -->
                     <div
-                        class="absolute h-[6px] w-[6px] rounded-full bg-stone-600 group-hover:bg-navy transition-all duration-200 ease-in-out"
+                        class="absolute h-[6px] w-[6px] rounded-full bg-stone-600 group-hover:bg-blue transition-all duration-200 ease-in-out"
                         style="transform: translate({getDotAnimation(
                             3,
                             isSideNavOpen,

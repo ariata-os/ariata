@@ -41,6 +41,12 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
                     tracing::warn!("Failed to start scheduler: {}", e);
                 } else {
                     tracing::info!("Scheduler started successfully");
+
+                    // Schedule location visit clustering job
+                    if let Err(e) = sched.schedule_location_clustering_job().await {
+                        tracing::warn!("Failed to schedule location clustering job: {}", e);
+                    }
+
                     // Keep scheduler alive - it will be dropped when the server shuts down
                     // The JobScheduler runs background tasks that need to stay active
                     loop {
@@ -136,6 +142,10 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
             post(api::sync_stream_handler),
         )
         .route(
+            "/api/sources/:id/streams/:name/jobs",
+            get(api::get_stream_jobs_handler),
+        )
+        .route(
             "/api/sources/:id/transforms/:name",
             post(api::trigger_transform_handler),
         )
@@ -157,6 +167,58 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
         .route("/api/jobs/:id", get(api::get_job_handler))
         .route("/api/jobs", get(api::query_jobs_handler))
         .route("/api/jobs/:id/cancel", post(api::cancel_job_handler))
+        // Profile API
+        .route("/api/profile", get(api::get_profile_handler))
+        .route("/api/profile", put(api::update_profile_handler))
+        // Assistant Profile API
+        .route(
+            "/api/assistant-profile",
+            get(api::get_assistant_profile_handler),
+        )
+        .route(
+            "/api/assistant-profile",
+            put(api::update_assistant_profile_handler),
+        )
+        .route(
+            "/api/assistant-profile/pinned-tools",
+            get(api::get_pinned_tools_handler),
+        )
+        // Tools API
+        .route("/api/tools", get(api::list_tools_handler))
+        .route("/api/tools/:id", get(api::get_tool_handler))
+        .route("/api/tools/:id", put(api::update_tool_handler))
+        // Axiology API - Tasks
+        .route("/api/axiology/tasks", get(api::list_tasks_handler))
+        .route("/api/axiology/tasks", post(api::create_task_handler))
+        .route("/api/axiology/tasks/:id", get(api::get_task_handler))
+        .route("/api/axiology/tasks/:id", put(api::update_task_handler))
+        .route("/api/axiology/tasks/:id", delete(api::delete_task_handler))
+        // Axiology API - Tags
+        .route("/api/axiology/tags", get(api::list_tags_handler))
+        // Axiology API - Temperaments
+        .route("/api/axiology/temperaments", get(api::list_temperaments_handler))
+        .route("/api/axiology/temperaments", post(api::create_temperament_handler))
+        .route("/api/axiology/temperaments/:id", get(api::get_temperament_handler))
+        .route("/api/axiology/temperaments/:id", put(api::update_temperament_handler))
+        .route("/api/axiology/temperaments/:id", delete(api::delete_temperament_handler))
+        // Axiology API - Virtues
+        .route("/api/axiology/virtues", get(api::list_virtues_handler))
+        .route("/api/axiology/virtues", post(api::create_virtue_handler))
+        .route("/api/axiology/virtues/:id", get(api::get_virtue_handler))
+        .route("/api/axiology/virtues/:id", put(api::update_virtue_handler))
+        .route("/api/axiology/virtues/:id", delete(api::delete_virtue_handler))
+        // Axiology API - Vices
+        .route("/api/axiology/vices", get(api::list_vices_handler))
+        .route("/api/axiology/vices", post(api::create_vice_handler))
+        .route("/api/axiology/vices/:id", get(api::get_vice_handler))
+        .route("/api/axiology/vices/:id", put(api::update_vice_handler))
+        .route("/api/axiology/vices/:id", delete(api::delete_vice_handler))
+        // Axiology API - Values
+        .route("/api/axiology/values", get(api::list_values_handler))
+        .route("/api/axiology/values", post(api::create_value_handler))
+        .route("/api/axiology/values/:id", get(api::get_value_handler))
+        .route("/api/axiology/values/:id", put(api::update_value_handler))
+        .route("/api/axiology/values/:id", delete(api::delete_value_handler))
         .with_state(state.clone())
         .layer(DefaultBodyLimit::disable()) // Disable default 2MB limit
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024)); // Set 20MB limit for audio files

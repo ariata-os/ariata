@@ -306,7 +306,7 @@ impl Storage {
         master_key: &[u8; 32],
     ) -> Result<Vec<u8>> {
         // Parse the date from the S3 key
-        // Key format: streams/{source_id}/{stream_name}/date={YYYY-MM-DD}/records_{timestamp}.jsonl
+        // Key format: streams/{provider}/{source_id}/{stream_name}/date={YYYY-MM-DD}/records_{timestamp}.jsonl
         let date = models::StreamKeyParser::parse_date_from_key(s3_key)?;
 
         // Derive encryption key

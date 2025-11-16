@@ -7,8 +7,12 @@
 	import { chatSessions } from "$lib/stores/chatSessions.svelte";
 	import { goto, onNavigate } from "$app/navigation";
 	import { onMount } from "svelte";
+	import { createAIContext } from '@ai-sdk/svelte';
 
 	let { children, data } = $props();
+
+	// Create AI context for synchronized state across Chat instances
+	createAIContext();
 
 	let activeModule = $state("chat");
 	let isSideNavOpen = $state(true);
@@ -87,20 +91,30 @@
 					text: "Account",
 					pagespace: "account",
 				},
+				{
+					href: "/profile/assistant",
+					icon: "ri:robot-line",
+					text: "Assistant",
+					pagespace: "assistant",
+				},
 			],
 		},
-		values: {
-			id: "values",
-			name: "Values",
-			icon: "ri:triangle-line",
-			iconFilled: "ri:triangle-fill",
-			title: "Values",
+		axiology: {
+			id: "axiology",
+			name: "Axiology",
+			icon: "ri:compass-3-line",
+			iconFilled: "ri:compass-3-fill",
+			title: "Axiology",
 			items: [
 				{
-					href: "/values",
-					icon: "ri:triangle-line",
-					text: "My Values",
-					pagespace: "values",
+					href: "/axiology",
+					icon: "ri:compass-3-line",
+					text: "Overview",
+				},
+				{
+					href: "/axiology/tasks",
+					icon: "ri:checkbox-line",
+					text: "Tasks",
 				},
 			],
 		},
@@ -113,7 +127,7 @@
 		// Root (/) and /[conversationId] are chat
 		if (
 			path === "" ||
-			!["data", "profile", "values", "api", "oauth"].includes(path)
+			!["data", "profile", "axiology", "api", "oauth"].includes(path)
 		) {
 			// If it's not one of the known modules, assume it's a conversation ID (chat)
 			return "chat";

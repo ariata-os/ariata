@@ -4,6 +4,30 @@
 //!
 //! This is the SINGLE SOURCE OF TRUTH for stream→ontology mappings.
 //! DO NOT duplicate these mappings elsewhere in the codebase.
+//!
+//! ## Transform Stage Taxonomy
+//!
+//! Transforms are organized by ELT stage:
+//!
+//! ### 1. **Ingest**: Stream → Primitive (in `/sources/{provider}/`)
+//! - Purpose: Normalize raw provider data to standard ontology schema
+//! - Example: `stream_ios_location` → `location_point`
+//! - Provider-specific: Yes (Gmail API ≠ Outlook API)
+//!
+//! ### 2. **Enrich**: Primitive → Semantic Primitive (in `/transforms/enrich/{domain}/`)
+//! - Purpose: Derive semantic meaning from raw primitives
+//! - Example: `location_point` → `location_visit` (clustering)
+//! - Provider-agnostic: Yes (works with any GPS data)
+//!
+//! ### 3. **Aggregate**: Multi-Primitive → Semantic (in `/transforms/aggregate/{domain}/`)
+//! - Purpose: Synthesize insights from multiple primitive types
+//! - Example: `calendar` + `location` → `contextualized_event`
+//! - Cross-domain: Often
+//!
+//! ### 4. **Narrative**: Cross-Domain → Narrative (in `/transforms/narrative/`)
+//! - Purpose: Generate narrative prose from multiple domains
+//! - Example: all primitives → `narrative_chunks` (day/week)
+//! - Agent-driven: Yes (LLM-based synthesis)
 
 use crate::error::{Error, Result};
 
@@ -67,6 +91,12 @@ pub fn get_transform_route(stream_name: &str) -> Result<TransformRoute> {
             domain: "location",
             transform_stage: "location_normalization",
         }),
+        "location_point" => Ok(TransformRoute {
+            source_table: "location_point",
+            target_tables: vec!["location_visit"],
+            domain: "location",
+            transform_stage: "visit_clustering",
+        }),
         "speech_transcription" => Ok(TransformRoute {
             source_table: "speech_transcription",
             target_tables: vec!["semantic_inferences"],
@@ -74,7 +104,7 @@ pub fn get_transform_route(stream_name: &str) -> Result<TransformRoute> {
             transform_stage: "semantic_parsing",
         }),
         _ => Err(Error::InvalidInput(format!(
-            "Unknown stream for transform: '{}'. Valid streams: stream_ios_microphone, stream_google_gmail, stream_google_calendar, stream_notion_pages, stream_ariata_ai_chat, stream_ios_healthkit, stream_ios_location, speech_transcription",
+            "Unknown stream for transform: '{}'. Valid streams: stream_ios_microphone, stream_google_gmail, stream_google_calendar, stream_notion_pages, stream_ariata_ai_chat, stream_ios_healthkit, stream_ios_location, location_point, speech_transcription",
             stream_name
         ))),
     }
@@ -86,6 +116,7 @@ pub fn list_transform_streams() -> Vec<&'static str> {
         "stream_ios_microphone",
         "stream_ios_healthkit",
         "stream_ios_location",
+        "location_point",
         "stream_google_gmail",
         "stream_google_calendar",
         "stream_notion_pages",

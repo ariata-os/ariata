@@ -10,11 +10,12 @@ use crate::{
     database::Database,
     error::{Error, Result},
     sources::base::{
-        get_or_create_device_source, validate_heart_rate, validate_percentage, validate_positive,
+        validate_heart_rate, validate_percentage, validate_positive,
         validate_timestamp_reasonable,
     },
     storage::{stream_writer::StreamWriter, Storage},
 };
+use uuid::Uuid;
 
 pub use transform::{
     HealthKitHRVTransform, HealthKitHeartRateTransform, HealthKitSleepTransform,
@@ -27,27 +28,27 @@ pub use transform::{
 /// sleep data, workouts, and other HealthKit measurements.
 ///
 /// # Arguments
+/// * `source_id` - Validated source ID from the ingest endpoint
 /// * `db` - Database connection
 /// * `_storage` - Storage layer (unused for HealthKit, but kept for API consistency)
 /// * `stream_writer` - StreamWriter for writing to S3/object storage
 /// * `record` - JSON record from the device
 #[tracing::instrument(
-    skip(db, _storage, stream_writer, record),
-    fields(source = "ios", stream = "healthkit")
+    skip(source_id, _db, _storage, stream_writer, record),
+    fields(source = "ios", stream = "healthkit", source_id = %source_id)
 )]
 pub async fn process(
-    db: &Database,
+    source_id: Uuid,
+    _db: &Database,
     _storage: &Arc<Storage>,
     stream_writer: &Arc<Mutex<StreamWriter>>,
     record: &Value,
 ) -> Result<()> {
-    // Get source_id from device_id in the record
+    // Get device_id for logging
     let device_id = record
         .get("device_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| Error::Other("Missing device_id".into()))?;
-
-    let source_id = get_or_create_device_source(db, "ios", device_id).await?;
 
     // Parse timestamp
     let timestamp = record

@@ -213,13 +213,17 @@
 		width: 100%;
 		border-radius: 0.375rem;
 		overflow: hidden;
-		border: 1px solid rgb(229 229 229);
+		border: 1px solid var(--color-stone-300);
+		position: relative;
+		z-index: 1;
 	}
 
 	.map-container {
 		width: 100%;
 		height: 400px;
 		background-color: rgb(243 244 246);
+		position: relative;
+		z-index: 1;
 	}
 
 	.map-legend {
@@ -228,7 +232,7 @@
 		gap: 1rem;
 		padding: 0.75rem;
 		background-color: rgb(250 250 250);
-		border-top: 1px solid rgb(229 229 229);
+		border-top: 1px solid var(--color-stone-300);
 		font-size: 0.8125rem;
 		color: rgb(82 82 82);
 	}

@@ -2,6 +2,14 @@
 //!
 //! Transforms raw Gmail messages from stream_google_gmail into the normalized
 //! social_email ontology table.
+//!
+//! ## Multi-Account Support
+//!
+//! The social_email table uses UNIQUE (source_stream_id) for deduplication.
+//! This allows the same Gmail message to exist across multiple Gmail accounts
+//! (e.g., personal@gmail.com and work@gmail.com) since each account has its own
+//! unique source_stream_id. This is the correct behavior when an email is CC'd
+//! to multiple accounts owned by the same user.
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

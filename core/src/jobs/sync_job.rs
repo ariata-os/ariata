@@ -33,10 +33,17 @@ pub async fn execute_sync_job(
         .as_ref()
         .ok_or_else(|| crate::Error::InvalidInput("Sync job missing sync_mode".to_string()))?;
 
+    // Extract cursor from metadata if present
+    let cursor_before = job
+        .metadata
+        .get("cursor_before")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     // Convert sync mode string to SyncMode enum
     let sync_mode = match sync_mode_str.as_str() {
         "full_refresh" => SyncMode::FullRefresh,
-        "incremental" => SyncMode::incremental(None),
+        "incremental" => SyncMode::incremental(cursor_before.clone()),
         _ => {
             return Err(crate::Error::InvalidInput(format!(
                 "Invalid sync mode: {}",
@@ -44,13 +51,6 @@ pub async fn execute_sync_job(
             )))
         }
     };
-
-    // Extract cursor from metadata if present
-    let cursor_before = job
-        .metadata
-        .get("cursor_before")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
 
     // Create factory and stream instance
     let factory = StreamFactory::new(db.clone(), context.stream_writer.clone());

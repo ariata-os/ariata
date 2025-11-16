@@ -6,6 +6,7 @@
 pub mod archive_job;
 pub mod executor;
 pub mod models;
+pub mod periodic_clustering;
 pub mod prudent_context_job;
 pub mod sync_job;
 pub mod transform_context;

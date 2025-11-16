@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT tag\n        FROM (\n            SELECT unnest(tags) as tag FROM elt.axiology_task WHERE is_active = true AND tags IS NOT NULL\n            UNION\n            SELECT unnest(tags) as tag FROM elt.axiology_initiative WHERE is_active = true AND tags IS NOT NULL\n            UNION\n            SELECT unnest(tags) as tag FROM elt.axiology_aspiration WHERE is_active = true AND tags IS NOT NULL\n        ) all_tags\n        ORDER BY tag\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tag",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5be7502f2a373bd4659d433da3aec6299c2fdfd6f70fe372ac8fd291c032ab3c"
+}

@@ -124,14 +124,22 @@ pub async fn ingest(
     }
 
     // Process records based on storage strategy
-    let (accepted, rejected) =
-        match process_records(&state, &payload.source, &payload.stream, &payload.records).await {
-            Ok(counts) => counts,
-            Err(e) => {
-                tracing::error!("Failed to process records: {}", e);
-                (0, payload.records.len())
-            }
-        };
+    let (accepted, rejected) = match process_records(
+        &state,
+        source_id,
+        &payload.source,
+        &payload.stream,
+        &payload.records,
+        &payload.device_id,
+    )
+    .await
+    {
+        Ok(counts) => counts,
+        Err(e) => {
+            tracing::error!("Failed to process records: {}", e);
+            (0, payload.records.len())
+        }
+    };
 
     // Trigger transforms if records were successfully processed (hot path like cloud syncs)
     if accepted > 0 {
@@ -185,9 +193,11 @@ async fn validate_source_stream(_db: &Database, _source: &str, _stream: &str) ->
 /// Process records based on storage strategy
 async fn process_records(
     state: &AppState,
+    source_id: uuid::Uuid,
     source: &str,
     stream: &str,
     records: &[Value],
+    device_id: &str,
 ) -> Result<(usize, usize)> {
     let mut accepted = 0;
     let mut rejected = 0;
@@ -196,7 +206,17 @@ async fn process_records(
     let storage_strategy = get_storage_strategy(&state.db, source, stream).await?;
 
     for record in records {
-        match process_single_record(state, &storage_strategy, source, stream, record).await {
+        // Inject device_id from top-level payload into each record
+        let mut enriched_record = record.clone();
+        if let Value::Object(ref mut map) = enriched_record {
+            map.insert("device_id".to_string(), Value::String(device_id.to_string()));
+        } else {
+            tracing::warn!("Record is not a JSON object, skipping device_id injection");
+        }
+
+        match process_single_record(state, source_id, &storage_strategy, source, stream, &enriched_record)
+            .await
+        {
             Ok(_) => accepted += 1,
             Err(e) => {
                 tracing::warn!("Failed to process record: {}", e);
@@ -211,6 +231,7 @@ async fn process_records(
 /// Process single record - routes to appropriate processor based on source/stream
 async fn process_single_record(
     state: &AppState,
+    source_id: uuid::Uuid,
     _strategy: &StorageStrategy,
     source: &str,
     stream: &str,
@@ -221,6 +242,7 @@ async fn process_single_record(
     match (source, stream) {
         ("ios", "healthkit") => {
             crate::sources::ios::healthkit::process(
+                source_id,
                 &state.db,
                 &state.storage,
                 &state.stream_writer,
@@ -230,6 +252,7 @@ async fn process_single_record(
         }
         ("ios", "location") => {
             crate::sources::ios::location::process(
+                source_id,
                 &state.db,
                 &state.storage,
                 &state.stream_writer,
@@ -239,6 +262,7 @@ async fn process_single_record(
         }
         ("ios", "microphone") | ("ios", "mic") => {
             crate::sources::ios::microphone::process(
+                source_id,
                 &state.db,
                 &state.storage,
                 &state.stream_writer,
@@ -266,6 +290,15 @@ async fn process_single_record(
         }
         ("mac", "imessage") => {
             crate::sources::mac::imessage::process(
+                &state.db,
+                &state.storage,
+                &state.stream_writer,
+                record,
+            )
+            .await?;
+        }
+        ("mac", "screen_time") => {
+            crate::sources::mac::screen_time::process(
                 &state.db,
                 &state.storage,
                 &state.stream_writer,

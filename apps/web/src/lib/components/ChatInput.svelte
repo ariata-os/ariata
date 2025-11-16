@@ -1,14 +1,23 @@
 <script lang="ts">
 	import { createEventDispatcher } from "svelte";
 
-	export let value = "";
-	export let disabled = false;
-	export let placeholder = "Message...";
-	export let maxWidth = "max-w-2xl";
+	let {
+		value = $bindable(""),
+		disabled = false,
+		placeholder = "Message...",
+		maxWidth = "max-w-2xl",
+		focused = $bindable(false)
+	} = $props();
 
 	const dispatch = createEventDispatcher<{ submit: string }>();
 
 	let textarea: HTMLTextAreaElement;
+	let isFocused = $state(false);
+
+	// Sync internal focus state with external bindable prop
+	$effect(() => {
+		focused = isFocused;
+	});
 
 	function autoResize() {
 		if (textarea) {
@@ -33,11 +42,33 @@
 			textarea.style.height = "auto";
 		}
 	}
+
+	function handleWrapperClick(e: MouseEvent) {
+		// Don't focus if clicking on a button, dropdown, or interactive element
+		const target = e.target as HTMLElement;
+		if (
+			target.tagName === 'BUTTON' ||
+			target.closest('button') ||
+			target.closest('.pickers-slot') || // Don't focus when clicking in the pickers area
+			target.classList.contains('z-50') || // Don't focus when clicking dropdown menus
+			target.closest('.z-50') // Don't focus when clicking inside dropdown menus
+		) {
+			return;
+		}
+		// Focus the textarea
+		if (textarea) {
+			textarea.focus();
+		}
+	}
 </script>
 
 <div class="chat-input-container {maxWidth} w-full">
 	<div
-		class="chat-input-wrapper bg-white border border-stone-300 rounded-lg"
+		class="chat-input-wrapper bg-white border border-stone-300 rounded-xl shadow-sm transition-all duration-300 hover:border-blue-200 hover:shadow-blue-200/50 cursor-text"
+		class:focused={isFocused}
+		on:click={handleWrapperClick}
+		role="button"
+		tabindex="-1"
 	>
 		<!-- Textarea Area -->
 		<div class="textarea-section pt-4 px-4 pb-1">
@@ -48,17 +79,20 @@
 				bind:value
 				on:input={autoResize}
 				on:keydown={handleKeydown}
+				on:focus={() => { isFocused = true; }}
+				on:blur={() => { isFocused = false; }}
 				{placeholder}
 				{disabled}
 				rows="1"
-				class="w-full resize-none outline-none text-stone-800 placeholder:text-stone-500 font-sans text-base"
+				class="chat-textarea w-full resize-none outline-none text-stone-800 placeholder:text-stone-500 font-sans text-base"
 				style="max-height: 200px; overflow-y: auto;"
 			></textarea>
 		</div>
 
 		<!-- Bottom Action Bar -->
-		<div class="action-bar flex items-center justify-between px-2 pb-2">
-			<div class="model-picker-slot">
+		<div class="action-bar flex items-center justify-between px-2 pb-2 pt-2">
+			<div class="pickers-slot flex items-center gap-2">
+				<slot name="agentPicker" />
 				<slot name="modelPicker" />
 			</div>
 			<button
@@ -103,6 +137,7 @@
 		transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
+
 	/* Custom scrollbar for textarea */
 	textarea::-webkit-scrollbar {
 		width: 6px;
@@ -122,7 +157,12 @@
 	}
 
 	.chat-input-wrapper {
-		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	.chat-input-wrapper.focused {
+		border-color: var(--color-blue) !important;
+		box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05), 0 0 0 3px rgba(40, 131, 222, 0.3) !important;
 	}
 
 	.textarea-section {

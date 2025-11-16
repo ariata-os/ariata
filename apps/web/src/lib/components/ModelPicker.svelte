@@ -1,13 +1,7 @@
 <script lang="ts">
 	import { fly, fade } from "svelte/transition";
 	import { cubicOut } from "svelte/easing";
-
-	export interface ModelOption {
-		id: string;
-		displayName: string;
-		provider: string;
-		description?: string;
-	}
+	import { models, type ModelOption, DEFAULT_MODEL } from "$lib/config/models";
 
 	interface Props {
 		value: ModelOption;
@@ -19,26 +13,41 @@
 		disabled = false,
 	}: Props = $props();
 
-	const models: ModelOption[] = [
-		{
-			id: "claude-sonnet-4-20250514",
-			displayName: "Claude 3.5 Sonnet v2",
-			provider: "Anthropic",
-			description: "Latest and most capable model",
-		},
-		{
-			id: "claude-opus-4-20250514",
-			displayName: "Claude Opus 4",
-			provider: "Anthropic",
-			description: "Most powerful model for complex tasks",
-		},
-		{
-			id: "claude-haiku-4-20250514",
-			displayName: "Claude 3.5 Haiku",
-			provider: "Anthropic",
-			description: "Fast and efficient",
-		},
-	];
+	// Helper function to get icon for provider
+	function getProviderIcon(provider: string): string {
+		switch (provider.toLowerCase()) {
+			case 'anthropic':
+				return 'ri:claude-fill';
+			case 'openai':
+				return 'simple-icons:openai';
+			case 'google':
+				return 'simple-icons:google';
+			case 'xai':
+				return 'ri:twitter-x-fill';
+			case 'moonshot ai':
+				return 'ri:moon-fill';
+			default:
+				return 'ri:robot-fill';
+		}
+	}
+
+	// Helper function to get icon color for provider
+	function getProviderIconColor(provider: string): string {
+		switch (provider.toLowerCase()) {
+			case 'anthropic':
+				return 'text-orange-600';
+			case 'openai':
+				return 'text-green-600';
+			case 'google':
+				return 'text-blue-600';
+			case 'xai':
+				return 'text-neutral-900';
+			case 'moonshot ai':
+				return 'text-purple-600';
+			default:
+				return 'text-neutral-600';
+		}
+	}
 
 	let open = $state(false);
 	let buttonElement: HTMLButtonElement;
@@ -86,11 +95,11 @@
 		type="button"
 		onclick={toggleDropdown}
 		{disabled}
-		class="flex cursor-pointer items-center gap-2 rounded-full border border-neutral-300 bg-white text-sm transition-all duration-200"
+		class="flex cursor-pointer items-center gap-2 rounded-full bg-white text-sm transition-all duration-200"
 		class:opacity-50={disabled}
 		class:cursor-not-allowed={disabled}
 		class:bg-neutral-100={disabled}
-		class:hover:bg-neutral-50={!disabled}
+		class:hover:bg-stone-100={!disabled}
 		class:px-3={!disabled}
 		class:py-1.5={!disabled}
 		class:w-8={disabled}
@@ -100,7 +109,7 @@
 	>
 		{#if disabled}
 			<iconify-icon
-				icon="ri:claude-fill"
+				icon={getProviderIcon(value.provider)}
 				class="text-neutral-600"
 				width="16"
 				in:fade={{ duration: 200 }}
@@ -119,45 +128,43 @@
 	{#if open && !disabled}
 		<div
 			bind:this={dropdownElement}
-			class="absolute z-50 left-0 top-full mt-2 w-80 bg-white border border-neutral-300 shadow-lg rounded-lg overflow-hidden"
+			class="absolute z-50 left-0 top-full mt-2 w-64 bg-white border border-neutral-300 shadow-lg rounded-lg overflow-hidden"
 			transition:fly={{ y: -10, duration: 200, easing: cubicOut }}
 		>
-			{#each models as model}
-				<button
-					type="button"
-					class="w-full px-4 py-3 text-left transition-colors border-b border-neutral-100 last:border-b-0"
-					class:bg-neutral-50={model.id === value.id}
-					class:hover:bg-neutral-50={model.id !== value.id}
-					onclick={() => selectModel(model)}
-				>
-					<div class="flex items-start justify-between gap-2">
-						<div class="flex-1">
-							<div class="flex items-center gap-2 mb-1">
+			<div class="max-h-80 overflow-y-auto">
+				{#each models as model}
+					<button
+						type="button"
+						class="w-full px-4 py-2.5 text-left transition-colors border-b border-neutral-100 last:border-b-0"
+						class:bg-neutral-50={model.id === value.id}
+						class:hover:bg-neutral-50={model.id !== value.id}
+						onclick={() => selectModel(model)}
+					>
+						<div class="flex items-center justify-between gap-2">
+							<div class="flex items-center gap-2">
 								<iconify-icon
-									icon="ri:claude-fill"
-									class="text-orange-600"
+									icon={getProviderIcon(model.provider)}
+									class={getProviderIconColor(model.provider)}
 									width="16"
 								></iconify-icon>
 								<span class="text-sm text-neutral-900">
 									{model.displayName}
+									{#if model.id === DEFAULT_MODEL.id}
+										<span class="text-xs text-neutral-500 ml-1">(recommended)</span>
+									{/if}
 								</span>
 							</div>
-							{#if model.description}
-								<p class="text-xs text-neutral-600 ml-6">
-									{model.description}
-								</p>
+							{#if model.id === value.id}
+								<iconify-icon
+									icon="ri:check-line"
+									class="text-blue-600 flex-shrink-0"
+									width="16"
+								></iconify-icon>
 							{/if}
 						</div>
-						{#if model.id === value.id}
-							<iconify-icon
-								icon="ri:check-line"
-								class="text-blue-600 flex-shrink-0"
-								width="16"
-							></iconify-icon>
-						{/if}
-					</div>
-				</button>
-			{/each}
+					</button>
+				{/each}
+			</div>
 		</div>
 	{/if}
 </div>

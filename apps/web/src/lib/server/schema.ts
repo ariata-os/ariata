@@ -17,6 +17,9 @@ import { sql } from 'drizzle-orm';
 // App schema namespace
 export const appSchema = pgSchema('app');
 
+// ELT schema namespace (for sources table)
+export const eltSchema = pgSchema('elt');
+
 // ============================================================================
 // Type Definitions
 // ============================================================================
@@ -30,6 +33,7 @@ export interface ChatMessage {
 	timestamp: string; // ISO 8601 timestamp
 	model?: string | null; // Claude model used (null for user messages)
 	provider?: string; // AI provider (e.g., "anthropic")
+	agentId?: string; // Agent that handled this message (e.g., "analytics", "research", "general")
 	tool_calls?: ToolCall[]; // Record tool invocations
 	intent?: IntentMetadata; // Intent classification metadata (assistant messages only)
 }
@@ -49,10 +53,12 @@ export interface IntentMetadata {
 }
 
 /**
- * Tool call structure (future extension)
+ * Tool call structure
+ * Stores tool invocations with results for persistence
  */
 export interface ToolCall {
 	tool_name: string;
+	tool_call_id?: string; // AI SDK toolCallId for matching results
 	arguments: Record<string, unknown>;
 	result?: unknown;
 	timestamp: string;
@@ -148,8 +154,73 @@ export const recentlyViewed = appSchema.table('recently_viewed', {
 });
 
 // ============================================================================
+// Sources Table (from ELT schema)
+// ============================================================================
+
+/**
+ * Data sources - supports both OAuth (Google, Notion) and Device (Mac, iOS)
+ * Device pairing uses: device_id, device_token, pairing_status, device_info
+ */
+export const sources = eltSchema.table('sources', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	provider: text('provider').notNull(),
+	name: text('name').notNull().unique(),
+
+	// OAuth credentials (null for device sources)
+	accessToken: text('access_token'),
+	refreshToken: text('refresh_token'),
+	tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+
+	// Device authentication (used for Mac/iOS pairing)
+	authType: text('auth_type').notNull().default('oauth2'),
+	deviceId: text('device_id'),
+	deviceInfo: jsonb('device_info').$type<{
+		deviceName?: string;
+		deviceType?: 'mac' | 'ios';
+		osVersion?: string;
+		model?: string;
+	}>(),
+	deviceToken: text('device_token'),
+	pairingCode: text('pairing_code'),
+	pairingStatus: text('pairing_status'), // 'pending' | 'active' | 'revoked'
+	codeExpiresAt: timestamp('code_expires_at', { withTimezone: true }),
+	lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+
+	// Status tracking
+	isActive: boolean('is_active').default(true),
+	isInternal: boolean('is_internal').default(false),
+	errorMessage: text('error_message'),
+	errorAt: timestamp('error_at', { withTimezone: true }),
+
+	// Timestamps
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================================================
+// Assistant Profile Table (from ELT schema)
+// ============================================================================
+
+/**
+ * Assistant profile - AI assistant preferences (singleton table)
+ * Contains user's AI assistant configuration like name, default agent, default model
+ */
+export const assistantProfile = eltSchema.table('assistant_profile', {
+	id: uuid('id').primaryKey(),
+	assistantName: text('assistant_name'),
+	defaultAgentId: text('default_agent_id'),
+	defaultModelId: text('default_model_id'),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+// ============================================================================
 // Type Inference
 // ============================================================================
 
 export type ChatSession = typeof chatSessions.$inferSelect;
 export type NewChatSession = typeof chatSessions.$inferInsert;
+export type Source = typeof sources.$inferSelect;
+export type NewSource = typeof sources.$inferInsert;
+export type AssistantProfile = typeof assistantProfile.$inferSelect;
+export type NewAssistantProfile = typeof assistantProfile.$inferInsert;

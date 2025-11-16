@@ -1,11 +1,13 @@
-//! Seeding module for Monday in Rome reference dataset
+//! Seeding module for reference datasets and production defaults
 //!
-//! This module provides functionality to seed the database with the Monday in Rome
-//! reference dataset, which contains real-world data collected from a full day in Rome, Italy.
+//! This module provides functionality to seed the database with:
+//! - Monday in Rome reference dataset (real-world data from a full day in Rome, Italy)
+//! - Production defaults (models, agents, sample axiology tags)
 
 pub mod monday_in_rome;
 pub mod narratives;
 pub mod ontologies;
+pub mod prod_seed;
 
 use crate::database::Database;
 use crate::storage::{stream_writer::StreamWriter, Storage};
