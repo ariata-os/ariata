@@ -117,7 +117,7 @@ async fn fetch_archive_job(db: &PgPool, archive_job_id: Uuid) -> Result<ArchiveJ
         "SELECT id, sync_job_id, source_id, stream_name, s3_key, status,
                 retry_count, max_retries, record_count, size_bytes,
                 min_timestamp, max_timestamp
-         FROM elt.archive_jobs
+         FROM data.archive_jobs
          WHERE id = $1",
     )
     .bind(archive_job_id)
@@ -173,7 +173,7 @@ async fn execute_archival(
 
     // Record metadata in stream_objects table
     sqlx::query(
-        "INSERT INTO elt.stream_objects
+        "INSERT INTO data.stream_objects
          (source_id, stream_name, s3_key, record_count, size_bytes,
           min_timestamp, max_timestamp, archive_job_id, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())",
@@ -202,7 +202,7 @@ async fn execute_archival(
 /// Mark archive job as in progress
 async fn mark_job_in_progress(db: &PgPool, archive_job_id: Uuid) -> Result<()> {
     sqlx::query(
-        "UPDATE elt.archive_jobs
+        "UPDATE data.archive_jobs
          SET status = 'in_progress',
              started_at = NOW()
          WHERE id = $1",
@@ -217,7 +217,7 @@ async fn mark_job_in_progress(db: &PgPool, archive_job_id: Uuid) -> Result<()> {
 /// Mark archive job as completed
 async fn mark_job_completed(db: &PgPool, archive_job_id: Uuid) -> Result<()> {
     sqlx::query(
-        "UPDATE elt.archive_jobs
+        "UPDATE data.archive_jobs
          SET status = 'completed',
              completed_at = NOW()
          WHERE id = $1",
@@ -236,7 +236,7 @@ async fn mark_job_failed_with_retry(
     error_message: &str,
 ) -> Result<()> {
     sqlx::query(
-        "UPDATE elt.archive_jobs
+        "UPDATE data.archive_jobs
          SET status = 'pending',
              retry_count = retry_count + 1,
              error_message = $2
@@ -257,7 +257,7 @@ async fn mark_job_failed_permanent(
     error_message: &str,
 ) -> Result<()> {
     sqlx::query(
-        "UPDATE elt.archive_jobs
+        "UPDATE data.archive_jobs
          SET status = 'failed',
              error_message = $2,
              completed_at = NOW()
@@ -302,7 +302,7 @@ pub async fn create_archive_job(
         .sum::<i64>();
 
     let row = sqlx::query(
-        "INSERT INTO elt.archive_jobs
+        "INSERT INTO data.archive_jobs
          (sync_job_id, source_id, stream_name, s3_key, status,
           record_count, size_bytes, min_timestamp, max_timestamp, created_at)
          VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, NOW())
@@ -462,7 +462,7 @@ pub async fn fetch_pending_archive_jobs(db: &PgPool, limit: i32) -> Result<Vec<A
         "SELECT id, sync_job_id, source_id, stream_name, s3_key, status,
                 retry_count, max_retries, record_count, size_bytes,
                 min_timestamp, max_timestamp
-         FROM elt.archive_jobs
+         FROM data.archive_jobs
          WHERE status IN ('pending', 'failed')
          ORDER BY created_at ASC
          LIMIT $1",

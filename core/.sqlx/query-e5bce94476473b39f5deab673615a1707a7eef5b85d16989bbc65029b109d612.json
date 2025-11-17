@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO data.social_email\n                (message_id, subject, from_address, from_name, to_addresses, direction, timestamp,\n                 source_stream_id, source_table, source_provider)\n                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'stream_seed_data', 'seed')\n                ON CONFLICT DO NOTHING\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray",
+        "Text",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e5bce94476473b39f5deab673615a1707a7eef5b85d16989bbc65029b109d612"
+}

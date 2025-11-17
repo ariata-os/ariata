@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO app.api_usage\n            (endpoint, day_bucket, request_count)\n        VALUES ($1, $2, 1)\n        ON CONFLICT (endpoint, day_bucket)\n        DO UPDATE SET\n            request_count = api_usage.request_count + 1,\n            updated_at = NOW()\n        RETURNING request_count as \"count!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8ac8afa9647927e102fbe207abf6206c91cc881d06f6f75095c9a0cfcfe2ac0f"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO app.models (\n                user_id, model_id, display_name, provider, enabled, sort_order,\n                context_window, max_output_tokens, supports_tools, is_default\n            )\n            VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9)\n            ON CONFLICT (model_id) WHERE user_id IS NULL DO UPDATE SET\n                display_name = EXCLUDED.display_name,\n                provider = EXCLUDED.provider,\n                enabled = EXCLUDED.enabled,\n                sort_order = EXCLUDED.sort_order,\n                context_window = EXCLUDED.context_window,\n                max_output_tokens = EXCLUDED.max_output_tokens,\n                supports_tools = EXCLUDED.supports_tools,\n                is_default = EXCLUDED.is_default,\n                updated_at = NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "84b86775ffa228879dcc206694d13d804ec0715c0124d3592b6350e4d3587a93"
+}

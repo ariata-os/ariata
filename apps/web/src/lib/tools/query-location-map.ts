@@ -30,7 +30,7 @@ export async function createLocationMapTool(pool: Pool) {
 			}
 
 			try {
-				// Query location data from elt.location_point table
+				// Query location data from data.location_point table
 				// Use systematic sampling (every 4th point) to evenly distribute points across the day
 				const params: any[] = [];
 				let paramIndex = 1;
@@ -60,7 +60,7 @@ export async function createLocationMapTool(pool: Pool) {
 							speed_meters_per_second as speed,
 							course_degrees as course,
 							ROW_NUMBER() OVER (ORDER BY timestamp) as rn
-						FROM elt.location_point
+						FROM data.location_point
 						WHERE ${whereConditions}
 					)
 					SELECT
@@ -98,7 +98,7 @@ export async function createLocationMapTool(pool: Pool) {
 							accuracy_meters as horizontal_accuracy,
 							speed_meters_per_second as speed,
 							course_degrees as course
-						FROM elt.location_point
+						FROM data.location_point
 						WHERE 1=1
 					`;
 

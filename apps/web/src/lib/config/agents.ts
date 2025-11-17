@@ -8,30 +8,24 @@
 
 /**
  * UI-safe agent metadata
- * Excludes sensitive backend details like tool categories and default models
+ * Simplified 2-agent system:
+ * - agent: Has all tools, handles queries requiring data/actions
+ * - chat: No tools, simple conversation only
  */
 export const AGENT_UI_METADATA = [
 	{
-		id: 'analytics',
-		name: 'Analytics',
-		description: 'Specializes in data exploration, location analysis, and visualizations',
-		color: '#3b82f6',
-		icon: 'ri:bar-chart-line',
-		enabled: true,
-	},
-	{
-		id: 'research',
-		name: 'Research',
-		description: 'Focuses on narratives, semantic search, values, and connecting ideas',
-		color: '#8b5cf6',
-		icon: 'ri:book-open-line',
-		enabled: true,
-	},
-	{
-		id: 'general',
-		name: 'General',
-		description: 'Adaptive assistant for general queries and mixed tasks',
+		id: 'agent',
+		name: 'Agent',
+		description: 'Intelligent assistant with access to all available tools. Can query data, search the web, visualize information, and help with tasks.',
 		color: '#6b7280',
+		icon: 'ri:robot-line',
+		enabled: true,
+	},
+	{
+		id: 'chat',
+		name: 'Chat',
+		description: 'Simple conversational assistant without tool access. Best for quick questions and general conversation.',
+		color: '#64748b',
 		icon: 'ri:chat-3-line',
 		enabled: true,
 	},

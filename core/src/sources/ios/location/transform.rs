@@ -277,20 +277,20 @@ async fn execute_location_batch_insert(
     }
 
     // Build custom batch insert query with PostGIS function
-    // We can't use the generic builder because coordinates needs ST_GeogFromText()
+    // We can't use the generic builder because coordinates needs data.ST_GeogFromText()
     let num_cols = 12;
-    let mut query_str = String::from("INSERT INTO elt.location_point (");
+    let mut query_str = String::from("INSERT INTO data.location_point (");
     query_str.push_str("coordinates, latitude, longitude, altitude_meters, ");
     query_str.push_str("accuracy_meters, speed_meters_per_second, course_degrees, ");
     query_str.push_str("timestamp, source_stream_id, source_table, source_provider, metadata");
     query_str.push_str(") VALUES ");
 
-    // Build VALUES clauses with ST_GeogFromText for coordinates
+    // Build VALUES clauses with data.ST_GeogFromText for coordinates
     let mut value_clauses = Vec::with_capacity(records.len());
     for row_idx in 0..records.len() {
         let base_param = row_idx * num_cols + 1;
         let clause = format!(
-            "(ST_GeogFromText(${base_param}), ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
+            "(data.ST_GeogFromText(${base_param}), ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
             base_param + 1,
             base_param + 2,
             base_param + 3,

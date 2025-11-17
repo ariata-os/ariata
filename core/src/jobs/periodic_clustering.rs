@@ -89,7 +89,7 @@ async fn fetch_primary_source_id(db: &PgPool) -> Result<Uuid> {
     let row = sqlx::query!(
         r#"
         SELECT id
-        FROM elt.sources
+        FROM data.sources
         ORDER BY created_at ASC
         LIMIT 1
         "#

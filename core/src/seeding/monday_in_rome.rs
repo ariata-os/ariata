@@ -34,7 +34,7 @@ const RECORDING_TIMEZONE: &str = "Europe/Rome";
 async fn get_or_create_test_source(db: &Database) -> Result<Uuid> {
     // Check if test source already exists
     let existing = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM elt.sources WHERE name = 'monday-in-rome' LIMIT 1",
+        "SELECT id FROM data.sources WHERE name = 'monday-in-rome' LIMIT 1",
     )
     .fetch_optional(db.pool())
     .await?;
@@ -46,7 +46,7 @@ async fn get_or_create_test_source(db: &Database) -> Result<Uuid> {
 
     // Create test source
     let id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO elt.sources (name, provider, auth_type, is_active)
+        "INSERT INTO data.sources (name, provider, auth_type, is_active)
          VALUES ('monday-in-rome', 'ios', 'device', true)
          RETURNING id",
     )
@@ -247,7 +247,7 @@ async fn seed_microphone_transcriptions(
 
     // Create a seed stream ID for microphone (similar to other streams)
     let seed_stream_id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO elt.streams (source_id, stream_name, table_name, created_at, updated_at)
+        "INSERT INTO data.streams (source_id, stream_name, table_name, created_at, updated_at)
          VALUES ($1, 'microphone', 'stream_ios_microphone', NOW(), NOW())
          ON CONFLICT (source_id, stream_name) DO UPDATE SET updated_at = NOW()
          RETURNING id",
@@ -308,7 +308,7 @@ async fn seed_microphone_transcriptions(
         // Insert into speech_transcription table
         sqlx::query(
             r#"
-            INSERT INTO elt.speech_transcription (
+            INSERT INTO data.speech_transcription (
                 audio_file_path,
                 audio_duration_seconds,
                 transcript_text,
@@ -416,7 +416,7 @@ async fn seed_sleep_data(db: &Database, csv_path: &PathBuf) -> Result<usize> {
         // Insert into health_sleep table
         sqlx::query(
             r#"
-            INSERT INTO elt.health_sleep (
+            INSERT INTO data.health_sleep (
                 start_time,
                 end_time,
                 total_duration_minutes,
@@ -551,7 +551,7 @@ async fn seed_imessage_data(db: &Database, _source_id: Uuid, csv_path: &PathBuf)
         // Required fields: message_id, channel, timestamp, direction
         sqlx::query(
             r#"
-            INSERT INTO elt.social_message (
+            INSERT INTO data.social_message (
                 message_id,
                 thread_id,
                 channel,
@@ -602,7 +602,7 @@ async fn seed_imessage_data(db: &Database, _source_id: Uuid, csv_path: &PathBuf)
 async fn get_or_create_person(db: &Database, name: &str) -> Result<Uuid> {
     // Check if person already exists
     let existing = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM elt.entities_person WHERE canonical_name = $1 LIMIT 1",
+        "SELECT id FROM data.entities_person WHERE canonical_name = $1 LIMIT 1",
     )
     .bind(name)
     .fetch_optional(db.pool())
@@ -614,7 +614,7 @@ async fn get_or_create_person(db: &Database, name: &str) -> Result<Uuid> {
 
     // Create new person
     let id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO elt.entities_person (canonical_name, metadata)
+        "INSERT INTO data.entities_person (canonical_name, metadata)
          VALUES ($1, '{}')
          RETURNING id",
     )
@@ -770,7 +770,7 @@ async fn seed_email_data(db: &Database, _source_id: Uuid, csv_path: &PathBuf) ->
         // Insert into social_email table
         sqlx::query(
             r#"
-            INSERT INTO elt.social_email (
+            INSERT INTO data.social_email (
                 message_id,
                 thread_id,
                 subject,
@@ -843,11 +843,12 @@ async fn seed_email_data(db: &Database, _source_id: Uuid, csv_path: &PathBuf) ->
     Ok(count)
 }
 
-/// Seed axiology data (values, telos, goals, virtues, vices, habits, temperaments, preferences)
+/// Seed axiology and actions data
 ///
-/// Loads all axiology CSV files and seeds them into respective tables.
+/// Loads axiology CSVs (values, telos, virtues, vices, habits, temperaments, preferences)
+/// and actions CSVs (tasks/goals) and seeds them into respective tables.
 async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize> {
-    info!("🎯 Seeding axiology data (values, goals, virtues, habits, etc.)...");
+    info!("🎯 Seeding axiology and actions data (values, tasks, virtues, habits, etc.)...");
     let mut total_count = 0;
 
     // Seed VALUES
@@ -867,7 +868,7 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
             let description = record.get("description").and_then(|v| v.as_str());
 
             sqlx::query(
-                "INSERT INTO elt.axiology_value (title, description, is_active)
+                "INSERT INTO data.axiology_value (title, description, is_active)
                  VALUES ($1, $2, true)
                  ON CONFLICT DO NOTHING",
             )
@@ -898,7 +899,7 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
             let description = record.get("description").and_then(|v| v.as_str());
 
             sqlx::query(
-                "INSERT INTO elt.axiology_telos (title, description, is_active)
+                "INSERT INTO data.axiology_telos (title, description, is_active)
                  VALUES ($1, $2, true)
                  ON CONFLICT DO NOTHING",
             )
@@ -912,11 +913,11 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
         info!("✅ Seeded telos");
     }
 
-    // Seed GOALS
-    let goals_path = base_path.join("axiology_goals.csv");
-    if goals_path.exists() {
-        info!("Seeding axiology goals...");
-        let file_content = std::fs::read_to_string(&goals_path)?;
+    // Seed TASKS (formerly "goals" - moved from axiology to actions)
+    let tasks_path = base_path.join("axiology_goals.csv");
+    if tasks_path.exists() {
+        info!("Seeding tasks (from legacy axiology_goals.csv)...");
+        let file_content = std::fs::read_to_string(&tasks_path)?;
         let mut rdr = csv::Reader::from_reader(file_content.as_bytes());
 
         for result in rdr.deserialize() {
@@ -927,7 +928,15 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| Error::Other("Missing title".into()))?;
             let description = record.get("description").and_then(|v| v.as_str());
+
+            // Map legacy goal_type to tags for new schema
             let goal_type = record.get("goal_type").and_then(|v| v.as_str());
+            let tags: Vec<String> = if let Some(gt) = goal_type {
+                vec![gt.to_string()]
+            } else {
+                vec![]
+            };
+
             let status = record
                 .get("status")
                 .and_then(|v| v.as_str())
@@ -950,13 +959,13 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
                 .map(|dt| dt.with_timezone(&Utc));
 
             sqlx::query(
-                "INSERT INTO elt.axiology_goal (title, description, goal_type, status, progress_percent, start_date, target_date, is_active)
+                "INSERT INTO data.actions_task (title, description, tags, status, progress_percent, start_date, target_date, is_active)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, true)
                  ON CONFLICT DO NOTHING"
             )
             .bind(title)
             .bind(description)
-            .bind(goal_type)
+            .bind(&tags)
             .bind(status)
             .bind(progress_percent)
             .bind(start_date)
@@ -966,7 +975,7 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
 
             total_count += 1;
         }
-        info!("✅ Seeded goals");
+        info!("✅ Seeded tasks");
     }
 
     // Seed VIRTUES
@@ -986,7 +995,7 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
             let description = record.get("description").and_then(|v| v.as_str());
 
             sqlx::query(
-                "INSERT INTO elt.axiology_virtue (title, description, is_active)
+                "INSERT INTO data.axiology_virtue (title, description, is_active)
                  VALUES ($1, $2, true)
                  ON CONFLICT DO NOTHING",
             )
@@ -1017,7 +1026,7 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
             let description = record.get("description").and_then(|v| v.as_str());
 
             sqlx::query(
-                "INSERT INTO elt.axiology_vice (title, description, is_active)
+                "INSERT INTO data.axiology_vice (title, description, is_active)
                  VALUES ($1, $2, true)
                  ON CONFLICT DO NOTHING",
             )
@@ -1060,7 +1069,7 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
                 .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
 
             sqlx::query(
-                "INSERT INTO elt.axiology_habit (title, description, frequency, time_of_day, streak_count, last_completed_date, is_active)
+                "INSERT INTO data.axiology_habit (title, description, frequency, time_of_day, streak_count, last_completed_date, is_active)
                  VALUES ($1, $2, $3, $4, $5, $6, true)
                  ON CONFLICT DO NOTHING"
             )
@@ -1096,7 +1105,7 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
             let temperament_type = record.get("temperament_type").and_then(|v| v.as_str());
 
             sqlx::query(
-                "INSERT INTO elt.axiology_temperament (title, description, temperament_type, is_active)
+                "INSERT INTO data.axiology_temperament (title, description, temperament_type, is_active)
                  VALUES ($1, $2, $3, true)
                  ON CONFLICT DO NOTHING"
             )
@@ -1130,7 +1139,7 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
             let valence = record.get("valence").and_then(|v| v.as_str());
 
             sqlx::query(
-                "INSERT INTO elt.axiology_preference (title, description, preference_domain, valence, is_active)
+                "INSERT INTO data.axiology_preference (title, description, preference_domain, valence, is_active)
                  VALUES ($1, $2, $3, $4, true)
                  ON CONFLICT DO NOTHING"
             )

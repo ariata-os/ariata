@@ -175,7 +175,7 @@ impl AriataMcpServer {
 
     /// Execute a read-only SQL query against axiology tables
     #[tool(
-        description = "Execute a read-only SQL query against axiology tables. Available tables: elt.axiology_value, elt.axiology_telos, elt.axiology_goal, elt.axiology_virtue, elt.axiology_vice, elt.axiology_habit, elt.axiology_temperament, elt.axiology_preference. Only SELECT queries are allowed. Returns the user's formal axiological framework for context-aware decision support."
+        description = "Execute a read-only SQL query against axiology tables. Available tables: data.axiology_value, data.axiology_telos, data.axiology_goal, data.axiology_virtue, data.axiology_vice, data.axiology_habit, data.axiology_temperament, data.axiology_preference. Only SELECT queries are allowed. Returns the user's formal axiological framework for context-aware decision support."
     )]
     async fn ariata_query_axiology(
         &self,
@@ -269,7 +269,7 @@ impl AriataMcpServer {
     //     let snapshot = sqlx::query(
     //         r#"
     //         SELECT context_data, computed_at
-    //         FROM elt.prudent_context_snapshot
+    //         FROM data.prudent_context_snapshot
     //         WHERE expires_at > NOW()
     //         ORDER BY computed_at DESC
     //         LIMIT 1
@@ -388,20 +388,20 @@ Privacy-conscious aggregated queries:
 ```sql
 -- Weekly health summary (aggregated, no raw data)
 SELECT DATE(timestamp), AVG(value) as avg_heart_rate, COUNT(*) as measurements
-FROM elt.health_heart_rate
+FROM data.health_heart_rate
 WHERE timestamp > NOW() - INTERVAL '7 days'
 GROUP BY DATE(timestamp);
 
 -- Step count trends (no location data)
 SELECT DATE(start_time), SUM(value) as total_steps
-FROM elt.health_steps
+FROM data.health_steps
 WHERE start_time > NOW() - INTERVAL '30 days'
 GROUP BY DATE(start_time)
 ORDER BY DATE(start_time);
 
 -- Upcoming calendar (titles only, no attendees/content)
 SELECT title, start_time, duration_minutes
-FROM elt.social_calendar_event
+FROM data.social_calendar_event
 WHERE start_time BETWEEN NOW() AND NOW() + INTERVAL '7 days'
 ORDER BY start_time;
 ```
@@ -527,7 +527,7 @@ When you find information:
 ### Never Say These Things:
 ❌ "Let me use the ariata_query_narratives tool..."
 ❌ "Querying the narrative_chunks table..."
-❌ "The elt.narrative_chunks table shows..."
+❌ "The data.narrative_chunks table shows..."
 ❌ "SELECT narrative_text FROM..."
 ❌ "Here's what the social_calendar_event table returned..."
 ❌ "The location_point data indicates..."

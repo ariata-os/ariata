@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount } from "svelte";
 
 	interface Props {
 		label: string;
@@ -8,20 +8,27 @@
 	let { label }: Props = $props();
 
 	// Animated dots that cycle: . → .. → ...
-	let dots = $state('');
+	let dots = $state("");
 
 	onMount(() => {
 		const interval = setInterval(() => {
-			dots = dots.length >= 3 ? '' : dots + '.';
+			dots = dots.length >= 3 ? "" : dots + ".";
 		}, 800);
 
 		return () => clearInterval(interval);
 	});
 </script>
 
-<div class="thinking-indicator flex items-center gap-2 py-3">
+<div class="thinking-indicator py-2 pl-3.5">
+	<div class="therefore-spinner">
+		<div class="dot dot-1"></div>
+		<div class="dot dot-2"></div>
+		<div class="dot dot-3"></div>
+	</div>
 	<div class="thinking-text">
-		<span class="thinking-shimmer font-serif font-light text-base">
+		<span
+			class="thinking-text-content font-serif font-light text-base text-blue"
+		>
 			{label}{dots}
 		</span>
 	</div>
@@ -29,6 +36,7 @@
 
 <style>
 	.thinking-indicator {
+		position: relative;
 		opacity: 0;
 		animation: fadeIn 0.3s ease-out forwards;
 	}
@@ -44,28 +52,58 @@
 		}
 	}
 
-	.thinking-shimmer {
-		background: linear-gradient(
-			90deg,
-			var(--color-stone-600) 0%,
-			var(--color-stone-400) 20%,
-			var(--color-navy) 40%,
-			var(--color-stone-400) 60%,
-			var(--color-stone-600) 100%
-		);
-		background-size: 2000px 100%;
-		animation: shimmer 4s infinite linear;
-		-webkit-background-clip: text;
-		-webkit-text-fill-color: transparent;
-		background-clip: text;
+	.therefore-spinner {
+		position: absolute;
+		left: -0.5rem;
+		top: 50%;
+		transform: translateY(-50%);
+		width: 12px;
+		height: 12px;
+		animation: rotate 2s ease-in-out infinite;
 	}
 
-	@keyframes shimmer {
+	.dot {
+		position: absolute;
+		width: 4px;
+		height: 4px;
+		background-color: var(--color-blue);
+		border-radius: 50%;
+	}
+
+	/* Top dot */
+	.dot-1 {
+		top: 0;
+		left: 50%;
+		transform: translateX(-50%);
+	}
+
+	/* Bottom left dot */
+	.dot-2 {
+		bottom: 0;
+		left: 0;
+	}
+
+	/* Bottom right dot */
+	.dot-3 {
+		bottom: 0;
+		right: 0;
+	}
+
+	@keyframes rotate {
 		0% {
-			background-position: -1000px 0;
+			transform: translateY(-50%) rotate(0deg) scale(1);
+		}
+		25% {
+			transform: translateY(-50%) rotate(90deg) scale(0.75);
+		}
+		50% {
+			transform: translateY(-50%) rotate(180deg) scale(1);
+		}
+		75% {
+			transform: translateY(-50%) rotate(270deg) scale(0.75);
 		}
 		100% {
-			background-position: 1000px 0;
+			transform: translateY(-50%) rotate(360deg) scale(1);
 		}
 	}
 
@@ -76,12 +114,12 @@
 			opacity: 1;
 		}
 
-		.thinking-shimmer {
+		.therefore-spinner {
 			animation: none;
-			background: var(--color-stone-600);
-			-webkit-background-clip: unset;
-			-webkit-text-fill-color: unset;
-			background-clip: unset;
+		}
+
+		.dot {
+			animation: none;
 		}
 	}
 </style>

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE app.assistant_profile\n        SET enabled_tools = '{\"query_location_map\": true, \"query_pursuits\": true, \"web_search\": true}'::jsonb\n        WHERE enabled_tools = '{}'::jsonb OR enabled_tools IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "1a9ec05b821c616d5da88be6c2d654932a5eb45636c16a0ad549bacb17845515"
+}

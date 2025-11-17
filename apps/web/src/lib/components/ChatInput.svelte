@@ -5,8 +5,8 @@
 		value = $bindable(""),
 		disabled = false,
 		placeholder = "Message...",
-		maxWidth = "max-w-2xl",
-		focused = $bindable(false)
+		maxWidth = "max-w-3xl",
+		focused = $bindable(false),
 	} = $props();
 
 	const dispatch = createEventDispatcher<{ submit: string }>();
@@ -47,11 +47,11 @@
 		// Don't focus if clicking on a button, dropdown, or interactive element
 		const target = e.target as HTMLElement;
 		if (
-			target.tagName === 'BUTTON' ||
-			target.closest('button') ||
-			target.closest('.pickers-slot') || // Don't focus when clicking in the pickers area
-			target.classList.contains('z-50') || // Don't focus when clicking dropdown menus
-			target.closest('.z-50') // Don't focus when clicking inside dropdown menus
+			target.tagName === "BUTTON" ||
+			target.closest("button") ||
+			target.closest(".pickers-slot") || // Don't focus when clicking in the pickers area
+			target.classList.contains("z-50") || // Don't focus when clicking dropdown menus
+			target.closest(".z-50") // Don't focus when clicking inside dropdown menus
 		) {
 			return;
 		}
@@ -64,9 +64,10 @@
 
 <div class="chat-input-container {maxWidth} w-full">
 	<div
+		aria-label="Chat input"
 		class="chat-input-wrapper bg-white border border-stone-300 rounded-xl shadow-sm transition-all duration-300 hover:border-blue-200 hover:shadow-blue-200/50 cursor-text"
 		class:focused={isFocused}
-		on:click={handleWrapperClick}
+		onclick={handleWrapperClick}
 		role="button"
 		tabindex="-1"
 	>
@@ -77,10 +78,14 @@
 				id="chat-input"
 				bind:this={textarea}
 				bind:value
-				on:input={autoResize}
-				on:keydown={handleKeydown}
-				on:focus={() => { isFocused = true; }}
-				on:blur={() => { isFocused = false; }}
+				oninput={autoResize}
+				onkeydown={handleKeydown}
+				onfocus={() => {
+					isFocused = true;
+				}}
+				onblur={() => {
+					isFocused = false;
+				}}
 				{placeholder}
 				{disabled}
 				rows="1"
@@ -90,14 +95,17 @@
 		</div>
 
 		<!-- Bottom Action Bar -->
-		<div class="action-bar flex items-center justify-between px-2 pb-2 pt-2">
+		<div
+			class="action-bar flex items-center justify-between px-2 pb-2 pt-2"
+		>
 			<div class="pickers-slot flex items-center gap-2">
 				<slot name="agentPicker" />
 				<slot name="modelPicker" />
+				<slot name="contextIndicator" />
 			</div>
 			<button
 				type="button"
-				on:click={handleSubmit}
+				onclick={handleSubmit}
 				disabled={!value.trim() || disabled}
 				class="send-button w-8 h-8 btn-primary hover:bg-blue cursor-pointer text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center group"
 			>
@@ -137,7 +145,6 @@
 		transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
-
 	/* Custom scrollbar for textarea */
 	textarea::-webkit-scrollbar {
 		width: 6px;
@@ -162,7 +169,9 @@
 
 	.chat-input-wrapper.focused {
 		border-color: var(--color-blue) !important;
-		box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05), 0 0 0 3px rgba(40, 131, 222, 0.3) !important;
+		box-shadow:
+			0 1px 2px 0 rgb(0 0 0 / 0.05),
+			0 0 0 3px rgba(40, 131, 222, 0.3) !important;
 	}
 
 	.textarea-section {

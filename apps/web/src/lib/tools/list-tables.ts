@@ -60,7 +60,7 @@ export async function createListTablesTool(pool: Pool) {
 				for (const row of result.rows) {
 					const tableName = row.table_name;
 					const tableInfo = {
-						name: `elt.${tableName}`,
+						name: `data.${tableName}`,
 						columns: row.columns
 					};
 

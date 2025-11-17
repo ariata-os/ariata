@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Page, TagInput } from '$lib';
-	import type { Task, CreateTaskRequest } from '$lib/types/axiology';
+	import type { Task, CreateTaskRequest } from '$lib/types/actions';
 
 	let tasks: Task[] = $state([]);
 	let loading = $state(true);
@@ -19,7 +19,7 @@
 	async function loadTasks() {
 		loading = true;
 		try {
-			const response = await fetch(`${API_BASE}/axiology/tasks`);
+			const response = await fetch(`${API_BASE}/actions/tasks`);
 			if (response.ok) {
 				tasks = await response.json();
 			}
@@ -35,7 +35,7 @@
 
 		creating = true;
 		try {
-			const response = await fetch(`${API_BASE}/axiology/tasks`, {
+			const response = await fetch(`${API_BASE}/actions/tasks`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(newTask)

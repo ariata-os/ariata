@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COALESCE(SUM(token_count), 0)::int as \"total_tokens!\"\n        FROM app.api_usage\n        WHERE day_bucket = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total_tokens!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "98381c1310f00b017167e9fea85d9d3b01ed7ddd71aed0a22595736b47cbf019"
+}

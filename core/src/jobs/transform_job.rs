@@ -80,7 +80,7 @@ pub async fn execute_transform_job(
             // Update job with success
             sqlx::query(
                 r#"
-                UPDATE elt.jobs
+                UPDATE data.jobs
                 SET status = 'succeeded',
                     completed_at = NOW(),
                     records_processed = $1,
@@ -152,7 +152,7 @@ pub async fn execute_transform_job(
             // Update job with failure
             sqlx::query(
                 r#"
-                UPDATE elt.jobs
+                UPDATE data.jobs
                 SET status = 'failed',
                     completed_at = NOW(),
                     error_message = $1,

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Page } from "$lib";
-	import { models, DEFAULT_MODEL, type ModelOption } from "$lib/config/models";
+	import type { ModelOption } from "$lib/config/models";
+	import { getModels } from "$lib/stores/models.svelte";
 	import { getEnabledAgents } from "$lib/config/agents";
 	import "iconify-icon";
 	import { onMount } from "svelte";
@@ -20,19 +21,27 @@
 	let saving = $state(false);
 	let saveSuccess = $state(false);
 
+	// Get models from store
+	const models = $derived(getModels());
+	const DEFAULT_MODEL = $derived(models.find(m => m.isDefault) || models[0]);
+
 	// Assistant profile fields
 	let assistantName = $state("");
 	let defaultAgentId = $state("auto");
-	let defaultModelId = $state(DEFAULT_MODEL.id);
-	let selectedModel: ModelOption = $state(DEFAULT_MODEL);
+	let defaultModelId = $state("");
+	let selectedModel: ModelOption | undefined = $state(undefined);
 	let enabledTools: Record<string, boolean> = $state({});
 	let pinnedToolIds: string[] = $state([]);
 	let availablePinnableTools: Array<{ id: string; name: string; description: string | null; icon: string | null }> = $state([]);
 
+	// UI preferences
+	let contextIndicatorAlwaysVisible = $state(false);
+	let contextIndicatorShowThreshold = $state(70);
+
 	// Tools fetched from API
 	let tools: Tool[] = $state([]);
 
-	// Get available agents
+	// Get available agents (simplified 2-agent system)
 	const agents = [
 		{
 			id: "auto",
@@ -41,27 +50,6 @@
 		},
 		...getEnabledAgents(),
 	];
-
-	// Group tools by category for UI display (reactive)
-	const toolsByCategory = $derived(
-		tools.reduce((acc, tool) => {
-			const category = tool.category || 'other';
-			if (!acc[category]) {
-				acc[category] = [];
-			}
-			acc[category].push(tool);
-			return acc;
-		}, {} as Record<string, Tool[]>)
-	);
-
-	// Category display names
-	const categoryNames: Record<string, string> = {
-		shared: "Shared Tools",
-		analytics: "Analytics Tools",
-		research: "Research Tools",
-		action: "Action Tools",
-		other: "Other Tools"
-	};
 
 	onMount(async () => {
 		await loadProfile();
@@ -94,14 +82,22 @@
 				// Populate fields from profile
 				assistantName = profile.assistant_name || "";
 				defaultAgentId = profile.default_agent_id || "auto";
-				defaultModelId = profile.default_model_id || DEFAULT_MODEL.id;
+				defaultModelId = profile.default_model_id || DEFAULT_MODEL?.id || "";
 				enabledTools = profile.enabled_tools || {};
 				pinnedToolIds = profile.pinned_tool_ids || [];
+
+				// Load UI preferences
+				if (profile.ui_preferences?.contextIndicator) {
+					contextIndicatorAlwaysVisible = profile.ui_preferences.contextIndicator.alwaysVisible ?? false;
+					contextIndicatorShowThreshold = profile.ui_preferences.contextIndicator.showThreshold ?? 70;
+				}
 
 				// Update selected model
 				const foundModel = models.find((m) => m.id === defaultModelId);
 				if (foundModel) {
 					selectedModel = foundModel;
+				} else if (DEFAULT_MODEL) {
+					selectedModel = DEFAULT_MODEL;
 				}
 				console.log(
 					"[Assistant Settings] Fields populated successfully",
@@ -116,6 +112,14 @@
 			if (toolsResponse.ok) {
 				tools = await toolsResponse.json();
 				console.log("[Assistant Settings] Loaded", tools.length, "tools");
+
+				// Ensure all tools have explicit enabled/disabled values
+				// Default to true if not set
+				for (const tool of tools) {
+					if (enabledTools[tool.id] === undefined) {
+						enabledTools[tool.id] = true;
+					}
+				}
 
 				// Filter pinnable tools from the loaded tools
 				availablePinnableTools = tools.filter(t => t.is_pinnable);
@@ -154,6 +158,12 @@
 					default_model_id: defaultModelId || null,
 					enabled_tools: enabledTools,
 					pinned_tool_ids: pinnedToolIds,
+					ui_preferences: {
+						contextIndicator: {
+							alwaysVisible: contextIndicatorAlwaysVisible,
+							showThreshold: contextIndicatorShowThreshold,
+						},
+					},
 				}),
 			});
 
@@ -236,6 +246,62 @@
 					</div>
 				</div>
 
+				<!-- Display Preferences Section -->
+				<div class="bg-white border border-neutral-200 rounded-lg p-6">
+					<h2 class="text-lg font-medium text-neutral-900 mb-4">
+						Display Preferences
+					</h2>
+					<p class="text-sm text-neutral-600 mb-6">
+						Customize how the context indicator is displayed in the chat interface.
+					</p>
+
+					<div class="space-y-4">
+						<!-- Always visible toggle -->
+						<label class="flex items-start gap-3 cursor-pointer group">
+							<input
+								type="checkbox"
+								bind:checked={contextIndicatorAlwaysVisible}
+								class="mt-0.5 w-4 h-4 border-neutral-300 rounded text-neutral-900 focus:ring-2 focus:ring-neutral-900 cursor-pointer"
+							/>
+							<div class="flex-1">
+								<div class="text-sm font-medium text-neutral-900 group-hover:text-neutral-700">
+									Always show context indicator
+								</div>
+								<div class="text-xs text-neutral-600 mt-0.5">
+									When enabled, the context indicator will always be visible. When disabled, it will only appear when usage exceeds the threshold below.
+								</div>
+							</div>
+						</label>
+
+						<!-- Threshold input -->
+						<div>
+							<label
+								for="contextThreshold"
+								class="block text-sm font-medium text-neutral-700 mb-2"
+							>
+								Show warning at threshold (%)
+							</label>
+							<input
+								type="number"
+								id="contextThreshold"
+								bind:value={contextIndicatorShowThreshold}
+								min="0"
+								max="100"
+								class="w-32 px-3 py-2 border border-neutral-300 rounded-md focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent"
+							/>
+							<p class="text-xs text-neutral-500 mt-1">
+								The context indicator will turn yellow when usage exceeds this percentage (default: 70%)
+							</p>
+						</div>
+					</div>
+
+					<div class="mt-4 p-3 bg-neutral-50 border border-neutral-200 rounded-md">
+						<p class="text-xs text-neutral-600">
+							<strong>Tip:</strong> The context indicator shows how much of your model's context window is being used. It helps you know when to start a new conversation to avoid running out of space.
+						</p>
+					</div>
+				</div>
+
 				<!-- Tool & Widget Preferences Section -->
 				<div class="bg-white border border-neutral-200 rounded-lg p-6">
 					<h2 class="text-lg font-medium text-neutral-900 mb-4">
@@ -245,38 +311,36 @@
 						Enable or disable specific tools and widgets. This is useful to prevent conflicts with MCP integrations (e.g., disable the Pursuits widget if using Todoist MCP).
 					</p>
 
-					<div class="space-y-6">
-						{#each Object.entries(toolsByCategory) as [category, tools]}
-							<div>
-								<h3 class="text-sm font-semibold text-neutral-700 mb-3">
-									{categoryNames[category]}
-								</h3>
-								<div class="space-y-3">
-									{#each tools as tool}
-										<label class="flex items-start gap-3 cursor-pointer group">
-											<input
-												type="checkbox"
-												bind:checked={enabledTools[tool.id]}
-												class="mt-0.5 w-4 h-4 border-neutral-300 rounded text-neutral-900 focus:ring-2 focus:ring-neutral-900 cursor-pointer"
-											/>
-											<div class="flex-1 min-w-0">
-												<div class="text-sm font-medium text-neutral-900 group-hover:text-neutral-700">
-													{tool.name}
-												</div>
-												<div class="text-xs text-neutral-600 mt-0.5">
-													{tool.description || ''}
-												</div>
+					<div class="space-y-3">
+						{#each tools as tool}
+							<label class="flex items-start gap-3 cursor-pointer group">
+								<input
+									type="checkbox"
+									bind:checked={enabledTools[tool.id]}
+									class="mt-0.5 w-4 h-4 border-neutral-300 rounded text-neutral-900 focus:ring-2 focus:ring-neutral-900 cursor-pointer"
+								/>
+								<div class="flex-1 min-w-0 flex items-center gap-2">
+									{#if tool.icon}
+										<iconify-icon icon={tool.icon} width="16" class="text-neutral-500"></iconify-icon>
+									{/if}
+									<div class="flex-1">
+										<div class="text-sm font-medium text-neutral-900 group-hover:text-neutral-700">
+											{tool.name}
+										</div>
+										{#if tool.description}
+											<div class="text-xs text-neutral-600 mt-0.5">
+												{tool.description}
 											</div>
-										</label>
-									{/each}
+										{/if}
+									</div>
 								</div>
-							</div>
+							</label>
 						{/each}
 					</div>
 
 					<div class="mt-4 p-3 bg-neutral-50 border border-neutral-200 rounded-md">
 						<p class="text-xs text-neutral-600">
-							<strong>Note:</strong> Tools are enabled by default if not unchecked. Disabling a tool will prevent the assistant from using it in all conversations.
+							<strong>Note:</strong> Disabling a tool will prevent the assistant from using it in all conversations. This is useful to prevent conflicts with MCP integrations (e.g., disable the Pursuits widget if using Todoist MCP).
 						</p>
 					</div>
 				</div>

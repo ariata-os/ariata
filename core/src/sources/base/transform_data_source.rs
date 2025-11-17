@@ -159,7 +159,7 @@ impl TransformDataSource for MemoryDataSource {
     ) -> Result<()> {
         // Update checkpoint in database
         sqlx::query(
-            "INSERT INTO elt.stream_checkpoints (source_id, stream_name, checkpoint_key, last_processed_at)
+            "INSERT INTO data.stream_checkpoints (source_id, stream_name, checkpoint_key, last_processed_at)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (source_id, stream_name, checkpoint_key)
              DO UPDATE SET last_processed_at = EXCLUDED.last_processed_at,

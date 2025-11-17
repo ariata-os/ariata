@@ -206,7 +206,7 @@ async fn fetch_location_points(db: &Database, lookback_hours: i64) -> Result<Vec
             timestamp,
             accuracy_meters as horizontal_accuracy,
             speed_meters_per_second as speed
-        FROM elt.location_point
+        FROM data.location_point
         WHERE timestamp >= $1
           AND (accuracy_meters IS NULL OR accuracy_meters < $2)
           AND (speed_meters_per_second IS NULL
@@ -414,7 +414,7 @@ async fn write_visit_idempotent(db: &Database, source_id: Uuid, visit: &Visit) -
 
     sqlx::query!(
         r#"
-        INSERT INTO elt.location_visit (
+        INSERT INTO data.location_visit (
             id,
             place_id,
             centroid_coordinates,
@@ -427,7 +427,7 @@ async fn write_visit_idempotent(db: &Database, source_id: Uuid, visit: &Visit) -
             source_provider,
             metadata
         ) VALUES (
-            $1, NULL, ST_GeogFromText($2), $3, $4, $5, $6, $7, $8, $9, $10
+            $1, NULL, data.ST_GeogFromText($2), $3, $4, $5, $6, $7, $8, $9, $10
         )
         ON CONFLICT (id) DO UPDATE SET
             end_time = EXCLUDED.end_time,
@@ -436,7 +436,7 @@ async fn write_visit_idempotent(db: &Database, source_id: Uuid, visit: &Visit) -
             longitude = EXCLUDED.longitude,
             metadata = EXCLUDED.metadata,
             updated_at = NOW()
-        WHERE elt.location_visit.end_time < EXCLUDED.end_time
+        WHERE data.location_visit.end_time < EXCLUDED.end_time
         "#,
         visit_id,
         format!("SRID=4326;{}", point_wkt),

@@ -92,7 +92,7 @@ impl Database {
     /// Individual transforms should use this to build their batch insert queries.
     ///
     /// # Arguments
-    /// * `table` - Table name (e.g., "elt.location_point")
+    /// * `table` - Table name (e.g., "data.location_point")
     /// * `columns` - Column names in order
     /// * `conflict_column` - Column for ON CONFLICT DO NOTHING (e.g., "source_stream_id")
     /// * `num_rows` - Number of rows to insert in this batch
@@ -103,12 +103,12 @@ impl Database {
     /// # Example
     /// ```ignore
     /// let query_str = db.build_batch_insert_query(
-    ///     "elt.location_point",
+    ///     "data.location_point",
     ///     &["coordinates", "latitude", "longitude"],
     ///     "source_stream_id",
     ///     100, // 100 rows
     /// );
-    /// // Returns: INSERT INTO elt.location_point (coordinates, latitude, longitude)
+    /// // Returns: INSERT INTO data.location_point (coordinates, latitude, longitude)
     /// //          VALUES ($1, $2, $3), ($4, $5, $6), ...
     /// //          ON CONFLICT (source_stream_id) DO NOTHING
     /// ```

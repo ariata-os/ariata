@@ -7,7 +7,7 @@ import type { ToolCategory } from '../tools/types';
 /**
  * Agent identifiers
  */
-export type AgentId = 'analytics' | 'research' | 'general' | 'action';
+export type AgentId = 'agent' | 'chat';
 
 /**
  * Agent metadata for UI and configuration
@@ -30,9 +30,6 @@ export interface AgentMetadata {
 
 	/** Default model for this agent */
 	defaultModel: string;
-
-	/** Tool categories this agent has access to */
-	toolCategories: ToolCategory[];
 
 	/** Maximum number of agentic steps */
 	maxSteps?: number;

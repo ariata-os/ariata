@@ -17,6 +17,7 @@ pub struct UpdateAssistantProfileRequest {
     pub default_model_id: Option<String>,
     pub enabled_tools: Option<serde_json::Value>,
     pub pinned_tool_ids: Option<Vec<String>>,
+    pub ui_preferences: Option<serde_json::Value>,
 }
 
 /// Get the assistant profile (singleton row)
@@ -26,7 +27,7 @@ pub async fn get_assistant_profile(db: &PgPool) -> Result<AssistantProfile> {
     let profile = sqlx::query_as::<_, AssistantProfile>(
         r#"
         SELECT *
-        FROM elt.assistant_profile
+        FROM data.assistant_profile
         LIMIT 1
         "#,
     )
@@ -51,7 +52,7 @@ pub async fn update_assistant_profile(
 
     // Build dynamic UPDATE query based on which fields are present
     let mut updates = Vec::new();
-    let mut query = "UPDATE elt.assistant_profile SET ".to_string();
+    let mut query = "UPDATE data.assistant_profile SET ".to_string();
 
     if request.assistant_name.is_some() {
         updates.push("assistant_name = $1");
@@ -68,6 +69,9 @@ pub async fn update_assistant_profile(
     if request.pinned_tool_ids.is_some() {
         updates.push("pinned_tool_ids = $5");
     }
+    if request.ui_preferences.is_some() {
+        updates.push("ui_preferences = $6");
+    }
 
     if updates.is_empty() {
         // No updates requested, just return current profile
@@ -75,7 +79,7 @@ pub async fn update_assistant_profile(
     }
 
     query.push_str(&updates.join(", "));
-    query.push_str(", updated_at = NOW() WHERE id = $6 RETURNING *");
+    query.push_str(", updated_at = NOW() WHERE id = $7 RETURNING *");
 
     // Execute the update with bound parameters
     let updated_profile = sqlx::query_as::<_, AssistantProfile>(&query)
@@ -84,6 +88,7 @@ pub async fn update_assistant_profile(
         .bind(&request.default_model_id)
         .bind(&request.enabled_tools)
         .bind(&request.pinned_tool_ids)
+        .bind(&request.ui_preferences)
         .bind(profile_id)
         .fetch_one(db)
         .await

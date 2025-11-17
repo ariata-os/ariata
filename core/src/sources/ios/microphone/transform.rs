@@ -402,7 +402,7 @@ async fn execute_speech_transcription_batch_insert(
     ];
 
     let query_str = Database::build_batch_insert_query(
-        "elt.speech_transcription",
+        "data.speech_transcription",
         &columns,
         "source_stream_id",
         records.len(),

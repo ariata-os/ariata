@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO app.agents (user_id, agent_id, name, description, color, icon, enabled, sort_order)\n            VALUES (NULL, $1, $2, $3, $4, $5, $6, $7)\n            ON CONFLICT (agent_id) WHERE user_id IS NULL DO UPDATE SET\n                name = EXCLUDED.name,\n                description = EXCLUDED.description,\n                color = EXCLUDED.color,\n                icon = EXCLUDED.icon,\n                enabled = EXCLUDED.enabled,\n                sort_order = EXCLUDED.sort_order,\n                updated_at = NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "661e4d747c8886fb8fc13bd10632e9aa4d68c40d7e5e286c04131bec8be877ba"
+}

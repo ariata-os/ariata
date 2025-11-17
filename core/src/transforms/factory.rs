@@ -15,6 +15,7 @@ use crate::sources::ios::healthkit::transform::{
 };
 use crate::sources::ios::location::transform::IosLocationTransform;
 use crate::sources::ios::microphone::MicrophoneTranscriptionTransform;
+use crate::sources::mac::transform::{MacAppsTransform, MacBrowserTransform, MacIMessageTransform};
 use crate::transforms::enrich::location::LocationVisitTransform;
 use crate::sources::notion::pages::transform::NotionPageTransform;
 
@@ -66,6 +67,13 @@ impl TransformFactory {
 
             // iOS location
             ("stream_ios_location", "location_point") => Ok(Box::new(IosLocationTransform)),
+
+            // macOS streams
+            ("stream_mac_apps", "activity_app_usage") => Ok(Box::new(MacAppsTransform)),
+
+            ("stream_mac_browser", "activity_web_browsing") => Ok(Box::new(MacBrowserTransform)),
+
+            ("stream_mac_imessage", "social_message") => Ok(Box::new(MacIMessageTransform)),
 
             // Location clustering
             ("location_point", "location_visit") => Ok(Box::new(LocationVisitTransform)),

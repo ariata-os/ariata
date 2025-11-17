@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO data.activity_app_usage\n                (app_name, app_category, start_time, end_time,\n                 source_stream_id, source_table, source_provider)\n                VALUES ($1, $2, $3, $4, $5, 'stream_seed_data', 'seed')\n                ON CONFLICT DO NOTHING\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "96748a78909cf858149a0e79014512c822023047297514fd61bdc64473090586"
+}

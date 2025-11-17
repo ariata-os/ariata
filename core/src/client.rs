@@ -35,7 +35,7 @@ impl Ariata {
 
         // Count active sources
         let active_sources =
-            sqlx::query_scalar!("SELECT COUNT(*) FROM sources WHERE is_active = true")
+            sqlx::query_scalar!("SELECT COUNT(*) FROM data.sources WHERE is_active = true")
                 .fetch_one(self.database.pool())
                 .await
                 .unwrap_or(Some(0))

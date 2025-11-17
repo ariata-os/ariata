@@ -4,6 +4,7 @@
 //! - Monday in Rome reference dataset (real-world data from a full day in Rome, Italy)
 //! - Production defaults (models, agents, sample axiology tags)
 
+pub mod config_loader;
 pub mod monday_in_rome;
 pub mod narratives;
 pub mod ontologies;

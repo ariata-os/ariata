@@ -48,7 +48,7 @@ pub async fn trigger_stream_sync(
     // Load cursor from database for incremental syncs
     let cursor_before = if sync_mode_str == "incremental" {
         sqlx::query_scalar::<_, Option<String>>(
-            "SELECT last_sync_token FROM elt.streams WHERE source_id = $1 AND stream_name = $2",
+            "SELECT last_sync_token FROM data.streams WHERE source_id = $1 AND stream_name = $2",
         )
         .bind(source_id)
         .bind(stream_name)
@@ -137,7 +137,7 @@ pub async fn get_job_history(
     let jobs = sqlx::query_as::<_, Job>(
         r#"
         SELECT *
-        FROM elt.jobs
+        FROM data.jobs
         WHERE source_id = $1 AND stream_name = $2 AND job_type = 'sync'
         ORDER BY created_at DESC
         LIMIT $3

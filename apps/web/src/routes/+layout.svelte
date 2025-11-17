@@ -244,7 +244,7 @@
 				? 'h-16 opacity-100'
 				: 'h-0 opacity-0'} w-full transition-all duration-300 flex items-center px-6 bg-paper-dark"
 		>
-			<Breadcrumbs />
+			<Breadcrumbs {chatSessions} />
 		</header>
 		<div
 			class="border-t border-r border-b {!isSideNavOpen

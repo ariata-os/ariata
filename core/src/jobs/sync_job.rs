@@ -100,7 +100,7 @@ pub async fn execute_sync_job(
             // Update the streams table with last sync timestamp
             sqlx::query(
                 r#"
-                UPDATE elt.streams
+                UPDATE data.streams
                 SET last_sync_at = $1, updated_at = NOW()
                 WHERE source_id = $2 AND stream_name = $3
                 "#,
@@ -114,7 +114,7 @@ pub async fn execute_sync_job(
             // Update job with final stats and metadata
             sqlx::query(
                 r#"
-                UPDATE elt.jobs
+                UPDATE data.jobs
                 SET status = 'succeeded',
                     completed_at = NOW(),
                     records_processed = $1,
@@ -181,7 +181,7 @@ pub async fn execute_sync_job(
             // Update job with error
             sqlx::query(
                 r#"
-                UPDATE elt.jobs
+                UPDATE data.jobs
                 SET status = 'failed',
                     completed_at = NOW(),
                     error_message = $1,

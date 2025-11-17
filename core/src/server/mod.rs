@@ -187,14 +187,32 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
         .route("/api/tools", get(api::list_tools_handler))
         .route("/api/tools/:id", get(api::get_tool_handler))
         .route("/api/tools/:id", put(api::update_tool_handler))
-        // Axiology API - Tasks
-        .route("/api/axiology/tasks", get(api::list_tasks_handler))
-        .route("/api/axiology/tasks", post(api::create_task_handler))
-        .route("/api/axiology/tasks/:id", get(api::get_task_handler))
-        .route("/api/axiology/tasks/:id", put(api::update_task_handler))
-        .route("/api/axiology/tasks/:id", delete(api::delete_task_handler))
-        // Axiology API - Tags
-        .route("/api/axiology/tags", get(api::list_tags_handler))
+        // Models API
+        .route("/api/models", get(api::list_models_handler))
+        .route("/api/models/:id", get(api::get_model_handler))
+        // Agents API
+        .route("/api/agents", get(api::list_agents_handler))
+        .route("/api/agents/:id", get(api::get_agent_handler))
+        // Actions API - Tasks
+        .route("/api/actions/tasks", get(api::list_tasks_handler))
+        .route("/api/actions/tasks", post(api::create_task_handler))
+        .route("/api/actions/tasks/:id", get(api::get_task_handler))
+        .route("/api/actions/tasks/:id", put(api::update_task_handler))
+        .route("/api/actions/tasks/:id", delete(api::delete_task_handler))
+        // Actions API - Initiatives
+        .route("/api/actions/initiatives", get(api::list_initiatives_handler))
+        .route("/api/actions/initiatives", post(api::create_initiative_handler))
+        .route("/api/actions/initiatives/:id", get(api::get_initiative_handler))
+        .route("/api/actions/initiatives/:id", put(api::update_initiative_handler))
+        .route("/api/actions/initiatives/:id", delete(api::delete_initiative_handler))
+        // Actions API - Aspirations
+        .route("/api/actions/aspirations", get(api::list_aspirations_handler))
+        .route("/api/actions/aspirations", post(api::create_aspiration_handler))
+        .route("/api/actions/aspirations/:id", get(api::get_aspiration_handler))
+        .route("/api/actions/aspirations/:id", put(api::update_aspiration_handler))
+        .route("/api/actions/aspirations/:id", delete(api::delete_aspiration_handler))
+        // Actions API - Tags
+        .route("/api/actions/tags", get(api::list_tags_handler))
         // Axiology API - Temperaments
         .route("/api/axiology/temperaments", get(api::list_temperaments_handler))
         .route("/api/axiology/temperaments", post(api::create_temperament_handler))

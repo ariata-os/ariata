@@ -157,7 +157,7 @@ export const DELETE: RequestHandler = async ({ params }) => {
 		console.log('[/api/sessions/[id]] DELETE request for session:', sessionId);
 
 		// Delete session from operational schema
-		// Note: Existing messages in elt.stream_ariata_ai_chat remain for analytics
+		// Note: Existing messages in data.stream_ariata_ai_chat remain for analytics
 		const result = await db
 			.delete(chatSessions)
 			.where(eq(chatSessions.id, sessionId))

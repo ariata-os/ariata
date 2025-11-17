@@ -4,7 +4,6 @@
 import { ToolLoopAgent, stepCountIs } from 'ai';
 import type { AgentMetadata } from './types';
 import { buildInstructions } from './instructions';
-import { getToolsForAgent } from '../tools/categories';
 import { filterToolsByPreferences, type ToolPreferences } from '../tools/preferences';
 import type { ToolRegistry } from '../tools/types';
 
@@ -25,12 +24,15 @@ export function createAgent(
 	assistantName: string = 'Ariata',
 	toolPreferences?: ToolPreferences
 ): ToolLoopAgent {
-	// Filter tools based on agent's allowed categories
-	let agentTools = getToolsForAgent(metadata.toolCategories, allTools);
+	// Determine which tools this agent gets
+	let agentTools: ToolRegistry = {};
 
-	// Apply user preferences filtering if provided
-	if (toolPreferences) {
-		agentTools = filterToolsByPreferences(agentTools, toolPreferences);
+	if (metadata.id === 'agent') {
+		// Agent mode: gets all tools (filtered by user preferences)
+		agentTools = toolPreferences ? filterToolsByPreferences(allTools, toolPreferences) : allTools;
+	} else if (metadata.id === 'chat') {
+		// Chat mode: no tools, just conversation
+		agentTools = {};
 	}
 
 	// Build agent instructions

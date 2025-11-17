@@ -17,8 +17,8 @@ import { sql } from 'drizzle-orm';
 // App schema namespace
 export const appSchema = pgSchema('app');
 
-// ELT schema namespace (for sources table)
-export const eltSchema = pgSchema('elt');
+// Data schema namespace (for sources table and ontology data)
+export const dataSchema = pgSchema('data');
 
 // ============================================================================
 // Type Definitions
@@ -91,77 +91,14 @@ export const chatSessions = appSchema.table('chat_sessions', {
 // ============================================================================
 
 // ============================================================================
-// Preferences Table
-// ============================================================================
-
-/**
- * User preferences table
- * Key-value store for user settings (name, system prompt, etc.)
- */
-export const preferences = appSchema.table('preferences', {
-	key: text('key').primaryKey(),
-	value: text('value').notNull(),
-	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
-});
-
-// ============================================================================
-// Dashboards Table
-// ============================================================================
-
-/**
- * Saved dashboards and visualizations
- */
-export const dashboards = appSchema.table('dashboards', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	name: text('name').notNull(),
-	description: text('description'),
-	layout: text('layout').notNull(), // JSON string with widget positions
-	isDefault: boolean('is_default').notNull().default(false),
-	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
-});
-
-// ============================================================================
-// Saved Queries Table
-// ============================================================================
-
-/**
- * Saved queries for exploring data
- */
-export const savedQueries = appSchema.table('saved_queries', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	name: text('name').notNull(),
-	description: text('description'),
-	query: text('query').notNull(), // SQL query string
-	sourceId: text('source_id'), // Optional: associated source from ELT schema
-	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
-});
-
-// ============================================================================
-// Recently Viewed Table
-// ============================================================================
-
-/**
- * Recently viewed sources (for quick access)
- */
-export const recentlyViewed = appSchema.table('recently_viewed', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	sourceId: text('source_id').notNull(), // References sources.id from elt schema
-	sourceName: text('source_name').notNull(),
-	provider: text('provider').notNull(),
-	viewedAt: timestamp('viewed_at', { withTimezone: true }).notNull().defaultNow()
-});
-
-// ============================================================================
-// Sources Table (from ELT schema)
+// Sources Table (from data schema)
 // ============================================================================
 
 /**
  * Data sources - supports both OAuth (Google, Notion) and Device (Mac, iOS)
  * Device pairing uses: device_id, device_token, pairing_status, device_info
  */
-export const sources = eltSchema.table('sources', {
+export const sources = dataSchema.table('sources', {
 	id: uuid('id').primaryKey().defaultRandom(),
 	provider: text('provider').notNull(),
 	name: text('name').notNull().unique(),
@@ -198,14 +135,14 @@ export const sources = eltSchema.table('sources', {
 });
 
 // ============================================================================
-// Assistant Profile Table (from ELT schema)
+// Assistant Profile Table (from app schema)
 // ============================================================================
 
 /**
  * Assistant profile - AI assistant preferences (singleton table)
  * Contains user's AI assistant configuration like name, default agent, default model
  */
-export const assistantProfile = eltSchema.table('assistant_profile', {
+export const assistantProfile = appSchema.table('assistant_profile', {
 	id: uuid('id').primaryKey(),
 	assistantName: text('assistant_name'),
 	defaultAgentId: text('default_agent_id'),

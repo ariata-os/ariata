@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO data.health_heart_rate\n                    (bpm, measurement_context, timestamp, source_stream_id, source_table, source_provider)\n                    VALUES ($1, $2, $3, $4, 'stream_seed_data', 'seed')\n                    ON CONFLICT DO NOTHING\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2a197926ef1ece09c55521e907fba55246b7e8769a9e8a8bbe09abd2aa61fba1"
+}

@@ -28,7 +28,7 @@ STUDIO_PORT := 4983
 
 # === PHONY TARGETS ===
 .PHONY: help dev dev-watch stop restart logs clean ps rebuild
-.PHONY: migrate migrate-rust prepare seed seed-rome
+.PHONY: migrate migrate-rust prepare seed prod-seed seed-rome
 .PHONY: db-reset db-status
 .PHONY: prod prod-build prod-restart
 .PHONY: env-check minio-setup
@@ -57,6 +57,7 @@ help:
 	@echo "  make migrate      Run database migrations (SQLx - manages both elt and app schemas)"
 	@echo "  make prepare      Regenerate SQLx .sqlx/ metadata (after schema changes)"
 	@echo "  make seed         Seed database with Monday in Rome reference dataset (real-world data)"
+	@echo "  make prod-seed    Seed production defaults (models, agents, tools, sample tags)"
 	@echo "  make db-reset     Reset all schemas (WARNING: deletes data)"
 	@echo "  make db-status    Check database schemas status"
 	@echo ""
@@ -256,6 +257,13 @@ seed:
 	@echo "   This tests the full pipeline: CSV → Archive → Transform → Ontology tables"
 	@cd core && SQLX_OFFLINE=false cargo run --bin ariata-seed
 	@echo "✅ Database seeding complete"
+
+# Seed production database with defaults (models, agents, tools, sample tags)
+prod-seed:
+	@echo "🌱 Seeding production database with defaults..."
+	@echo "   This seeds: LLM models, agents, tools, and sample axiology tags"
+	@cd core && SQLX_OFFLINE=false cargo run --bin ariata-prod-seed
+	@echo "✅ Production seeding complete"
 
 # Check database status
 db-status:

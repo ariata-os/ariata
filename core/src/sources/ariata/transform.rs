@@ -6,7 +6,7 @@
 //! ## Data Flow
 //!
 //! - **Source**: `stream_ariata_ai_chat` (JSONL in S3, written by AppChatExportStream)
-//! - **Target**: `elt.knowledge_ai_conversation` (normalized ontology table)
+//! - **Target**: `data.knowledge_ai_conversation` (normalized ontology table)
 //! - **Checkpoint**: `ariata_to_chat_conversation` (tracks S3 read progress)
 //!
 //! ## Naming Context
@@ -303,7 +303,7 @@ async fn execute_chat_conversation_batch_insert(
     ];
 
     let query_str = Database::build_batch_insert_query(
-        "elt.knowledge_ai_conversation",
+        "data.knowledge_ai_conversation",
         &columns,
         "source_stream_id",
         records.len(),

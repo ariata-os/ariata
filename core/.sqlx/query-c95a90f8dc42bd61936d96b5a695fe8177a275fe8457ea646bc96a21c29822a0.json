@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO data.health_workout\n                (activity_type, intensity, calories_burned, average_heart_rate,\n                 start_time, end_time, source_stream_id, source_table, source_provider)\n                VALUES ($1, $2, $3, $4, $5, $6, $7, 'stream_seed_data', 'seed')\n                ON CONFLICT DO NOTHING\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c95a90f8dc42bd61936d96b5a695fe8177a275fe8457ea646bc96a21c29822a0"
+}

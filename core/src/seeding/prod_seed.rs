@@ -2,95 +2,153 @@
 //!
 //! Seeds system defaults for models, agents, and sample axiology tags
 
+use super::config_loader;
 use crate::database::Database;
 use crate::Result;
+use chrono::Utc;
 use tracing::info;
 
-/// Seed system default models (user_id = NULL)
-pub async fn seed_default_models(db: &Database) -> Result<usize> {
-    let models = vec![
-        ("openai/gpt-oss-120b", "GPT OSS 120B", "OpenAI", 1),
-        ("openai/gpt-oss-20b", "GPT OSS 20B", "OpenAI", 2),
-        ("anthropic/claude-sonnet-4.5", "Claude Sonnet 4.5", "Anthropic", 3),
-        ("anthropic/claude-opus-4.1", "Claude Opus 4.1", "Anthropic", 4),
-        ("anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "Anthropic", 5),
-        ("openai/gpt-5", "GPT-5", "OpenAI", 6),
-        ("google/gemini-2.5-pro", "Gemini 2.5 Pro", "Google", 7),
-        ("google/gemini-2.5-flash", "Gemini 2.5 Flash", "Google", 8),
-        ("xai/grok-4", "Grok 4", "xAI", 9),
-        ("moonshotai/kimi-k2-thinking", "Kimi K2 Thinking", "Moonshot AI", 10),
-    ];
+/// Seed system default sources
+/// Loads source configurations from config/seeds/sources.json
+pub async fn seed_default_sources(db: &Database) -> Result<usize> {
+    let sources = config_loader::load_sources()?;
 
-    let count = models.len();
-    for (model_id, display_name, provider, sort_order) in &models {
+    let count = sources.len();
+    for source in &sources {
+        let now = Utc::now();
         sqlx::query!(
             r#"
-            INSERT INTO app.models (user_id, model_id, display_name, provider, enabled, sort_order)
-            VALUES (NULL, $1, $2, $3, true, $4)
-            ON CONFLICT (model_id) WHERE user_id IS NULL DO NOTHING
+            INSERT INTO data.sources (
+                id, provider, name, auth_type, is_active, is_internal, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (id) DO NOTHING
             "#,
-            model_id,
-            display_name,
-            provider,
-            sort_order
+            source.id,
+            &source.provider,
+            &source.name,
+            &source.auth_type,
+            source.is_active,
+            source.is_internal,
+            now,
+            now
         )
         .execute(db.pool())
         .await?;
     }
 
-    info!("✅ Seeded {} system default models", count);
+    info!("✅ Seeded {} system default sources from config", count);
+    Ok(count)
+}
+
+/// Seed system default streams
+/// Loads stream configurations from config/seeds/streams.json
+pub async fn seed_default_streams(db: &Database) -> Result<usize> {
+    let streams = config_loader::load_streams()?;
+
+    let count = streams.len();
+    for stream in &streams {
+        let now = Utc::now();
+        sqlx::query!(
+            r#"
+            INSERT INTO data.streams (
+                id, source_id, stream_name, table_name, is_enabled, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (id) DO NOTHING
+            "#,
+            stream.id,
+            stream.source_id,
+            &stream.stream_name,
+            &stream.table_name,
+            stream.is_enabled,
+            now,
+            now
+        )
+        .execute(db.pool())
+        .await?;
+    }
+
+    info!("✅ Seeded {} system default streams from config", count);
+    Ok(count)
+}
+
+/// Seed system default models (user_id = NULL)
+/// Loads model configurations from config/seeds/models.json
+pub async fn seed_default_models(db: &Database) -> Result<usize> {
+    let models = config_loader::load_models()?;
+
+    let count = models.len();
+    for model in &models {
+        sqlx::query!(
+            r#"
+            INSERT INTO app.models (
+                user_id, model_id, display_name, provider, enabled, sort_order,
+                context_window, max_output_tokens, supports_tools, is_default
+            )
+            VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (model_id) WHERE user_id IS NULL DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                provider = EXCLUDED.provider,
+                enabled = EXCLUDED.enabled,
+                sort_order = EXCLUDED.sort_order,
+                context_window = EXCLUDED.context_window,
+                max_output_tokens = EXCLUDED.max_output_tokens,
+                supports_tools = EXCLUDED.supports_tools,
+                is_default = EXCLUDED.is_default,
+                updated_at = NOW()
+            "#,
+            &model.model_id,
+            &model.display_name,
+            &model.provider,
+            model.enabled,
+            model.sort_order,
+            model.context_window,
+            model.max_output_tokens,
+            model.supports_tools,
+            model.is_default
+        )
+        .execute(db.pool())
+        .await?;
+    }
+
+    info!("✅ Seeded {} system default models from config", count);
     Ok(count)
 }
 
 /// Seed system default agents (user_id = NULL)
+/// Loads agent configurations from config/seeds/agents.json
 pub async fn seed_default_agents(db: &Database) -> Result<usize> {
-    let agents = vec![
-        (
-            "analytics",
-            "Analytics",
-            "Specializes in data exploration, location analysis, and visualizations",
-            "#3b82f6",
-            "ri:bar-chart-line",
-            1,
-        ),
-        (
-            "research",
-            "Research",
-            "Focuses on narratives, semantic search, values, and connecting ideas",
-            "#8b5cf6",
-            "ri:book-open-line",
-            2,
-        ),
-        (
-            "general",
-            "General",
-            "Adaptive assistant for general queries and mixed tasks",
-            "#6b7280",
-            "ri:chat-3-line",
-            3,
-        ),
-    ];
+    let agents = config_loader::load_agents()?;
 
     let count = agents.len();
-    for (agent_id, name, description, color, icon, sort_order) in &agents {
+    for agent in &agents {
         sqlx::query!(
             r#"
             INSERT INTO app.agents (user_id, agent_id, name, description, color, icon, enabled, sort_order)
-            VALUES (NULL, $1, $2, $3, $4, $5, true, $6)
-            ON CONFLICT (agent_id) WHERE user_id IS NULL DO NOTHING
+            VALUES (NULL, $1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (agent_id) WHERE user_id IS NULL DO UPDATE SET
+                name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                color = EXCLUDED.color,
+                icon = EXCLUDED.icon,
+                enabled = EXCLUDED.enabled,
+                sort_order = EXCLUDED.sort_order,
+                updated_at = NOW()
             "#,
-            agent_id,
-            name,
-            description,
-            color,
-            icon,
-            sort_order
+            &agent.agent_id,
+            &agent.name,
+            &agent.description,
+            &agent.color,
+            &agent.icon,
+            agent.enabled,
+            agent.sort_order
         )
         .execute(db.pool())
         .await?;
     }
 
-    info!("✅ Seeded {} system default agents", count);
+    info!("✅ Seeded {} system default agents from config", count);
     Ok(count)
 }
 
@@ -112,7 +170,7 @@ pub async fn seed_axiology_tags(db: &Database) -> Result<usize> {
     for (title, description, tags) in &sample_tasks {
         sqlx::query!(
             r#"
-            INSERT INTO elt.axiology_task (title, description, tags)
+            INSERT INTO data.actions_task (title, description, tags)
             VALUES ($1, $2, $3)
             "#,
             title,
@@ -123,35 +181,17 @@ pub async fn seed_axiology_tags(db: &Database) -> Result<usize> {
         .await?;
     }
 
-    info!("✅ Seeded {} sample axiology tasks with tags", count);
+    info!("✅ Seeded {} sample action tasks with tags", count);
     Ok(count)
 }
 
 /// Seed default tools metadata
+/// Loads tool configurations from config/seeds/tools.json
 pub async fn seed_default_tools(db: &Database) -> Result<usize> {
-    let tools = vec![
-        (
-            "queryLocationMap",
-            "Location Map",
-            "Visualize locations and places you've visited on an interactive map",
-            "analytics",
-            "mdi:map-marker",
-            true,
-            1,
-        ),
-        (
-            "queryPursuits",
-            "Tasks & Goals",
-            "View and manage your tasks, initiatives, and life pursuits",
-            "analytics",
-            "mdi:target",
-            true,
-            2,
-        ),
-    ];
+    let (tools, _defaults) = config_loader::load_tools()?;
 
     let count = tools.len();
-    for (id, name, description, category, icon, is_pinnable, display_order) in &tools {
+    for tool in &tools {
         sqlx::query!(
             r#"
             INSERT INTO app.tools (id, name, description, category, icon, is_pinnable, display_order)
@@ -165,29 +205,88 @@ pub async fn seed_default_tools(db: &Database) -> Result<usize> {
                 display_order = EXCLUDED.display_order,
                 updated_at = NOW()
             "#,
-            id,
-            name,
-            description,
-            category,
-            icon,
-            is_pinnable,
-            display_order
+            &tool.id,
+            &tool.name,
+            &tool.description,
+            &tool.category,
+            &tool.icon,
+            tool.is_pinnable,
+            tool.display_order
         )
         .execute(db.pool())
         .await?;
     }
 
-    info!("✅ Seeded {} default tools", count);
+    info!("✅ Seeded {} default tools from config", count);
     Ok(count)
+}
+
+/// Initialize enabled_tools with explicit default values
+/// DEPRECATED: Use seed_assistant_profile instead
+pub async fn seed_enabled_tools(db: &Database) -> Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE app.assistant_profile
+        SET enabled_tools = '{"query_location_map": true, "query_pursuits": true, "web_search": true}'::jsonb
+        WHERE enabled_tools = '{}'::jsonb OR enabled_tools IS NULL
+        "#
+    )
+    .execute(db.pool())
+    .await?;
+
+    info!("✅ Initialized enabled_tools with explicit defaults");
+    Ok(())
+}
+
+/// Seed assistant profile defaults
+/// Loads configuration from config/seeds/assistant_profile.json
+/// Updates the singleton assistant profile row with defaults if not already set
+pub async fn seed_assistant_profile(db: &Database) -> Result<()> {
+    let defaults = config_loader::load_assistant_profile_defaults()?;
+
+    // The assistant profile singleton UUID
+    let profile_id = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("Valid UUID constant");
+
+    // Update assistant profile with defaults, but only for NULL fields
+    // This preserves any user customizations while setting initial defaults
+    sqlx::query!(
+        r#"
+        UPDATE app.assistant_profile
+        SET
+            assistant_name = COALESCE(assistant_name, $1),
+            default_agent_id = COALESCE(default_agent_id, $2),
+            default_model_id = COALESCE(default_model_id, $3),
+            enabled_tools = COALESCE(enabled_tools, $4),
+            pinned_tool_ids = COALESCE(pinned_tool_ids, $5),
+            ui_preferences = COALESCE(ui_preferences, $6),
+            updated_at = NOW()
+        WHERE id = $7
+        "#,
+        defaults.assistant_name.as_deref(),
+        &defaults.default_agent_id,
+        &defaults.default_model_id,
+        &defaults.enabled_tools,
+        &defaults.pinned_tool_ids,
+        &defaults.ui_preferences,
+        profile_id
+    )
+    .execute(db.pool())
+    .await?;
+
+    info!("✅ Seeded assistant profile defaults from config");
+    Ok(())
 }
 
 /// Seed all production defaults
 pub async fn seed_production_data(db: &Database) -> Result<()> {
     info!("🌱 Seeding production defaults...");
 
+    seed_default_sources(db).await?;
+    seed_default_streams(db).await?;
     seed_default_models(db).await?;
     seed_default_agents(db).await?;
     seed_default_tools(db).await?;
+    seed_assistant_profile(db).await?;
     seed_axiology_tags(db).await?;
 
     info!("✅ Production seeding completed successfully");

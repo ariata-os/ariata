@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 
+/* Add Streamdown styles to Tailwind build */
+@source "../node_modules/svelte-streamdown/**/*";
+
 @font-face {
   font-family: 'Lora';
   src: url('/fonts/Lora-VariableFont_wght.ttf') format('truetype');
@@ -42,37 +45,37 @@
 }
 
 .markdown h1 {
-	@apply text-2xl font-serif mt-8 mb-6;
+	@apply text-2xl font-light font-serif mb-6;
 	color: var(--color-navy);
 	line-height: 1.4;
 }
 
 .markdown h2 {
-	@apply text-xl  font-serif mt-7 mb-5;
+	@apply text-xl font-light font-serif mb-5;
 	color: var(--color-navy);
 	line-height: 1.4;
 }
 
 .markdown h3 {
-	@apply text-xl font-serif mt-6 mb-4;
+	@apply text-xl font-light font-serif mb-4;
 	color: var(--color-navy);
 	line-height: 1.4;
 }
 
 .markdown h4 {
-	@apply text-lg  font-serif mt-3 mb-2;
+	@apply text-lg font-light font-serif mb-2;
 	color: var(--color-navy-light);
 	line-height: 1.4;
 }
 
 .markdown h5 {
-	@apply text-base font-serif mt-2 mb-1;
+	@apply text-base font-light font-serif mb-1;
 	color: var(--color-navy-light);
 	line-height: 1.4;
 }
 
 .markdown h6 {
-	@apply text-sm font-medium font-serif mt-2 mb-1;
+	@apply text-sm font-light font-serif mb-1;
 	color: var(--color-stone-700);
 	line-height: 1.4;
 }
@@ -90,16 +93,24 @@
 	@apply italic;
 }
 
-.markdown code {
+/* Inline code styling - block code is handled by Streamdown */
+.markdown :not(pre) > code {
 	@apply px-1.5 py-0.5 rounded text-stone-800 text-xs font-mono bg-stone-200;
 }
 
-.markdown pre {
-	@apply p-4 rounded-lg overflow-x-auto mb-4 bg-paper-dark border border-navy/15;
+/* Size SVG icons in code block action buttons */
+.markdown [data-streamdown-code] button svg {
+	width: 1rem;
+	height: 1rem;
 }
 
-.markdown pre code {
-	@apply bg-transparent p-0 text-xs;
+/* Remove duplicate padding and styling from streamdown's wrapper div */
+.markdown [data-streamdown-code] > div:last-child {
+	padding: 0;
+	margin: 0;
+	border: none;
+	border-radius: 0;
+	background: transparent;
 }
 
 .markdown ul {
@@ -139,11 +150,26 @@
 	border-color: var(--color-stone-300);
 }
 
+/* Override Streamdown's table wrapper styling to match our theme */
+.markdown [data-streamdown-table] {
+	border-color: var(--color-stone-300) !important;
+	background-color: transparent !important;
+}
+
+/* Override Streamdown's thead background to match our theme */
+.markdown [data-streamdown-thead] {
+	background-color: var(--color-stone-200) !important;
+}
+
+/* Override Streamdown's row hover to match our theme */
+.markdown [data-streamdown-tr]:hover {
+	background-color: var(--color-paper) !important;
+}
+
 .markdown table {
-	@apply w-full mb-4 text-sm rounded-lg overflow-hidden;
+	@apply w-full text-sm;
 	border-collapse: separate;
 	border-spacing: 0;
-	border: 1px solid var(--color-stone-300);
 }
 
 .markdown th {

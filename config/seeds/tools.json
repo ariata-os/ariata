@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "tools": [
+    {
+      "id": "query_location_map",
+      "name": "Location Map",
+      "description": "Visualize location data on an interactive map over a time range",
+      "category": "analytics",
+      "icon": "ri:map-pin-line",
+      "is_pinnable": true,
+      "display_order": 1
+    },
+    {
+      "id": "query_pursuits",
+      "name": "Tasks & Goals",
+      "description": "Query tasks, initiatives, and aspirations from axiology system",
+      "category": "analytics",
+      "icon": "ri:task-line",
+      "is_pinnable": true,
+      "display_order": 2
+    },
+    {
+      "id": "web_search",
+      "name": "Web Search",
+      "description": "Search the web using Exa AI for recent information, research, and domain knowledge",
+      "category": "shared",
+      "icon": "ri:search-line",
+      "is_pinnable": true,
+      "display_order": 3
+    },
+    {
+      "id": "ariata_query_ontology",
+      "name": "Query Ontology",
+      "description": "Execute SQL queries against the ontology database tables",
+      "category": "shared",
+      "icon": "ri:database-2-line",
+      "is_pinnable": false,
+      "display_order": 4
+    },
+    {
+      "id": "ariata_list_ontology_tables",
+      "name": "List Ontology Tables",
+      "description": "List all available ontology tables and their descriptions",
+      "category": "shared",
+      "icon": "ri:file-list-3-line",
+      "is_pinnable": false,
+      "display_order": 5
+    },
+    {
+      "id": "ariata_get_table_schema",
+      "name": "Get Table Schema",
+      "description": "Get detailed schema information for a specific ontology table",
+      "category": "shared",
+      "icon": "ri:file-info-line",
+      "is_pinnable": false,
+      "display_order": 6
+    },
+    {
+      "id": "ariata_query_narratives",
+      "name": "Query Narratives",
+      "description": "Search and retrieve narrative entries from personal journals and notes",
+      "category": "research",
+      "icon": "ri:book-2-line",
+      "is_pinnable": false,
+      "display_order": 7
+    },
+    {
+      "id": "ariata_query_axiology",
+      "name": "Query Axiology",
+      "description": "Query values, beliefs, and philosophical orientations",
+      "category": "research",
+      "icon": "ri:compass-3-line",
+      "is_pinnable": false,
+      "display_order": 8
+    },
+    {
+      "id": "ariata_trigger_sync",
+      "name": "Trigger Sync",
+      "description": "Trigger manual data synchronization for a source",
+      "category": "action",
+      "icon": "ri:refresh-line",
+      "is_pinnable": false,
+      "display_order": 9
+    }
+  ],
+  "default_enabled_tools": {
+    "query_location_map": true,
+    "query_pursuits": true,
+    "web_search": true
+  }
+}

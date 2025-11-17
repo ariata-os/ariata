@@ -44,7 +44,7 @@ pub async fn seed_ontologies(db: &Database) -> Result<usize> {
 async fn get_or_create_seed_stream(pool: &PgPool, source_id: Uuid) -> Result<Uuid> {
     let stream_id = sqlx::query_scalar!(
         r#"
-        INSERT INTO elt.streams (source_id, stream_name, table_name, is_enabled)
+        INSERT INTO data.streams (source_id, stream_name, table_name, is_enabled)
         VALUES ($1, 'seed_data', 'stream_seed_data', true)
         ON CONFLICT (source_id, stream_name)
         DO UPDATE SET updated_at = NOW()
@@ -94,7 +94,7 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 
                 sqlx::query!(
                     r#"
-                    INSERT INTO elt.health_heart_rate
+                    INSERT INTO data.health_heart_rate
                     (bpm, measurement_context, timestamp, source_stream_id, source_table, source_provider)
                     VALUES ($1, $2, $3, $4, 'stream_seed_data', 'seed')
                     ON CONFLICT DO NOTHING
@@ -122,7 +122,7 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 
         sqlx::query!(
             r#"
-            INSERT INTO elt.health_sleep
+            INSERT INTO data.health_sleep
             (total_duration_minutes, sleep_quality_score, start_time, end_time,
              source_stream_id, source_table, source_provider)
             VALUES ($1, $2, $3, $4, $5, 'stream_seed_data', 'seed')
@@ -154,7 +154,7 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 
             sqlx::query!(
                 r#"
-                INSERT INTO elt.health_workout
+                INSERT INTO data.health_workout
                 (activity_type, intensity, calories_burned, average_heart_rate,
                  start_time, end_time, source_stream_id, source_table, source_provider)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'stream_seed_data', 'seed')
@@ -182,7 +182,7 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
             .and_utc();
         sqlx::query!(
             r#"
-            INSERT INTO elt.health_steps
+            INSERT INTO data.health_steps
             (step_count, timestamp, source_stream_id, source_table, source_provider)
             VALUES ($1, $2, $3, 'stream_seed_data', 'seed')
             ON CONFLICT DO NOTHING
@@ -232,7 +232,7 @@ async fn seed_social_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
             let directions = vec!["sent", "received"];
             sqlx::query!(
                 r#"
-                INSERT INTO elt.social_email
+                INSERT INTO data.social_email
                 (message_id, subject, from_address, from_name, to_addresses, direction, timestamp,
                  source_stream_id, source_table, source_provider)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'stream_seed_data', 'seed')
@@ -267,7 +267,7 @@ async fn seed_social_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 
             sqlx::query!(
                 r#"
-                INSERT INTO elt.social_message
+                INSERT INTO data.social_message
                 (message_id, channel, body, from_identifier, direction, timestamp,
                  source_stream_id, source_table, source_provider)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'stream_seed_data', 'seed')
@@ -279,44 +279,6 @@ async fn seed_social_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                 PhoneNumber().fake::<String>(),
                 directions[rng.gen_range(0..directions.len())],
                 timestamp,
-                stream_id
-            )
-            .execute(pool)
-            .await?;
-
-            count += 1;
-        }
-
-        // Calls (1-3 per day = ~60 total)
-        let call_count = rng.gen_range(1..4);
-        for _ in 0..call_count {
-            let start_time = base_time
-                .date_naive()
-                .and_hms_opt(rng.gen_range(9..20), rng.gen_range(0..60), 0)
-                .unwrap()
-                .and_utc();
-            let duration = rng.gen_range(60..1800); // 1-30 minutes
-            let end_time = start_time + Duration::seconds(duration);
-
-            let call_types = vec!["voice", "video"];
-            let directions = vec!["incoming", "outgoing"];
-            let statuses = vec!["answered", "missed", "declined"];
-
-            sqlx::query!(
-                r#"
-                INSERT INTO elt.social_call
-                (call_type, direction, call_status, caller_identifier, duration_seconds,
-                 start_time, end_time, source_stream_id, source_table, source_provider)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'stream_seed_data', 'seed')
-                ON CONFLICT DO NOTHING
-                "#,
-                call_types[rng.gen_range(0..call_types.len())],
-                directions[rng.gen_range(0..directions.len())],
-                statuses[rng.gen_range(0..statuses.len())],
-                PhoneNumber().fake::<String>(),
-                duration as i32,
-                start_time,
-                end_time,
                 stream_id
             )
             .execute(pool)
@@ -357,10 +319,10 @@ async fn seed_location_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 
             sqlx::query!(
                 r#"
-                INSERT INTO elt.location_point
+                INSERT INTO data.location_point
                 (latitude, longitude, coordinates, accuracy_meters, timestamp,
                  source_stream_id, source_table, source_provider)
-                VALUES ($1, $2, ST_GeogFromText($3), $4, $5, $6, 'stream_seed_data', 'seed')
+                VALUES ($1, $2, data.ST_GeogFromText($3), $4, $5, $6, 'stream_seed_data', 'seed')
                 ON CONFLICT DO NOTHING
                 "#,
                 lat,
@@ -396,10 +358,10 @@ async fn seed_location_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
         //
         //     sqlx::query!(
         //         r#"
-        //         INSERT INTO elt.location_visit
+        //         INSERT INTO data.location_visit
         //         (latitude, longitude, centroid_coordinates, start_time, end_time,
         //          source_stream_id, source_table, source_provider)
-        //         VALUES ($1, $2, ST_GeogFromText($3), $4, $5, $6, 'stream_seed_data', 'seed')
+        //         VALUES ($1, $2, data.ST_GeogFromText($3), $4, $5, $6, 'stream_seed_data', 'seed')
         //         ON CONFLICT DO NOTHING
         //         "#,
         //         lat,
@@ -450,7 +412,7 @@ async fn seed_activity_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 
             sqlx::query!(
                 r#"
-                INSERT INTO elt.activity_calendar_entry
+                INSERT INTO data.activity_calendar_entry
                 (title, calendar_name, start_time, end_time, is_all_day,
                  source_stream_id, source_table, source_provider)
                 VALUES ($1, $2, $3, $4, $5, $6, 'stream_seed_data', 'seed')
@@ -491,7 +453,7 @@ async fn seed_activity_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 
             sqlx::query!(
                 r#"
-                INSERT INTO elt.activity_app_usage
+                INSERT INTO data.activity_app_usage
                 (app_name, app_category, start_time, end_time,
                  source_stream_id, source_table, source_provider)
                 VALUES ($1, $2, $3, $4, $5, 'stream_seed_data', 'seed')

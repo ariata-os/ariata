@@ -1,14 +1,19 @@
 <script lang="ts">
-	import { Page } from "$lib";
+	import Page from "$lib/components/Page.svelte";
 	import ChatInput from "$lib/components/ChatInput.svelte";
 	import ModelPicker from "$lib/components/ModelPicker.svelte";
 	import AgentPicker from "$lib/components/AgentPicker.svelte";
 	import PinnedToolsBar from "$lib/components/PinnedToolsBar.svelte";
+	import ContextIndicator from "$lib/components/ContextIndicator.svelte";
+	import type { ModelOption } from "$lib/config/models";
 	import {
-		DEFAULT_MODEL,
-		models,
-		type ModelOption,
-	} from "$lib/config/models";
+		getModels,
+		getSelectedModel,
+		setSelectedModel,
+		initializeSelectedModel,
+		getInitializationPromise,
+		isLoading as isModelsLoading,
+	} from "$lib/stores/models.svelte";
 	import Markdown from "$lib/components/Markdown.svelte";
 	import ToolCall from "$lib/components/ToolCall.svelte";
 	import ThinkingIndicator from "$lib/components/ThinkingIndicator.svelte";
@@ -30,12 +35,21 @@
 	let enableTransitions = $state(false);
 	let streamingMessageId = $state<string | null>(null);
 
+	// UI preferences from assistant profile
+	let uiPreferences = $state<{
+		contextIndicator?: {
+			alwaysVisible?: boolean;
+			showThreshold?: number;
+		};
+	}>({});
+
 	// Thinking state for animated indicator
 	let thinkingState = $state<{
 		isThinking: boolean;
 		label: string;
 		messageId: string;
 	} | null>(null);
+	let labelRotationInterval: ReturnType<typeof setInterval> | null = null;
 
 	// Keep a map of message metadata (agentId, provider, etc.) for rendering
 	let messageMetadata = $state<
@@ -104,7 +118,7 @@
 					"[prepareSendMessagesRequest] Preparing request with:",
 					{
 						conversationId,
-						selectedModelId: selectedModel.id,
+						selectedModelId: selectedModel?.id,
 						selectedAgentId: selectedAgent,
 						messageCount: messages.length,
 					},
@@ -112,7 +126,7 @@
 				return {
 					body: {
 						sessionId: conversationId,
-						model: selectedModel.id,
+						model: selectedModel?.id || "openai/gpt-oss-120b",
 						agentId: selectedAgent,
 						messages,
 					},
@@ -135,7 +149,6 @@
 	// Local input state for ChatInput component
 	let input = $state("");
 	let inputFocused = $state(false);
-
 
 	// Track the last loaded conversation ID to avoid overwriting messages during active chat
 	// Initialize to null to ensure first load always triggers the effect
@@ -193,46 +206,97 @@
 	const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes
 
 	// Model selection state
-	let selectedModel: ModelOption = $state(
-		data.conversation?.model
-			? models.find((m) => m.id === data.conversation.model) ||
-					DEFAULT_MODEL
-			: DEFAULT_MODEL,
-	);
+	const models = getModels();
+	const selectedModel = $derived(getSelectedModel());
 	let modelLocked = $state(!data.isNew);
+
+	// Initialize selectedModel once models are loaded
+	$effect(() => {
+		if (models.length > 0 && !selectedModel) {
+			console.log("[+page.svelte] Initializing selected model");
+			initializeSelectedModel(data.conversation?.model);
+		}
+	});
 
 	// Agent selection state (default to 'auto' for intelligent routing)
 	let selectedAgent = $state("auto");
 
+	// Context tracking - estimate tokens from message content
+	// Rough estimate: ~4 characters per token
+	let cumulativeTokens = $state(0);
+
+	// Calculate cumulative tokens from messages
+	// Only run after each turn completes (not during streaming) to avoid expensive recalculation
+	$effect(() => {
+		if (chat.status !== "streaming") {
+			if (chat.messages.length > 0) {
+				const totalChars = chat.messages.reduce((sum, msg) => {
+					const content = msg.parts
+						.filter((p: any) => p.type === "text")
+						.map((p: any) => p.text)
+						.join(" ");
+					return sum + content.length;
+				}, 0);
+				// Rough estimate: 4 chars per token
+				cumulativeTokens = Math.ceil(totalChars / 4);
+			} else {
+				cumulativeTokens = 0;
+			}
+		}
+	});
+
 	// Load assistant profile defaults on mount for new conversations
 	onMount(async () => {
-		if (data.isNew) {
-			try {
-				const response = await fetch("/api/assistant-profile");
-				if (response.ok) {
-					const profile = await response.json();
+		// Wait for models to load first
+		await getInitializationPromise();
 
+		try {
+			const response = await fetch("/api/assistant-profile");
+			if (response.ok) {
+				const profile = await response.json();
+
+				// Load UI preferences (for all conversations)
+				if (profile.ui_preferences) {
+					uiPreferences = profile.ui_preferences;
+				}
+
+				// Apply defaults only for new conversations
+				if (data.isNew) {
 					// Apply default agent if set
 					if (profile.default_agent_id) {
 						selectedAgent = profile.default_agent_id;
 					}
 
 					// Apply default model if set and conversation is new (not locked)
-					if (profile.default_model_id && !modelLocked) {
-						const foundModel = models.find(
-							(m) => m.id === profile.default_model_id,
+					if (
+						profile.default_model_id &&
+						!modelLocked &&
+						!selectedModel
+					) {
+						initializeSelectedModel(
+							data.conversation?.model,
+							profile.default_model_id,
 						);
-						if (foundModel) {
-							selectedModel = foundModel;
-						}
 					}
 				}
-			} catch (error) {
-				console.error(
-					"Failed to load assistant profile defaults:",
-					error,
-				);
-				// Continue with hardcoded defaults if profile fetch fails
+			}
+		} catch (error) {
+			console.error("Failed to load assistant profile defaults:", error);
+			// Continue with hardcoded defaults if profile fetch fails
+		}
+	});
+
+	// Clear thinking state once assistant starts responding
+	$effect(() => {
+		if (thinkingState?.isThinking && chat.status === "streaming") {
+			const lastMessage = chat.messages[chat.messages.length - 1];
+			if (lastMessage?.role === "assistant" && lastMessage.parts.some((p: any) => p.type === "text" && p.text)) {
+				console.log("[effect] Clearing thinking state - assistant is responding");
+				if (labelRotationInterval) {
+					clearInterval(labelRotationInterval);
+					labelRotationInterval = null;
+				}
+				thinkingState = null;
 			}
 		}
 	});
@@ -255,23 +319,15 @@
 
 	let greeting = $state(getTimeBasedGreeting());
 
-	// Auto-scroll to bottom when new messages arrive
-	$effect(() => {
-		if (chat.messages.length > 0 && scrollContainer) {
-			scrollContainer.scrollTo({
-				top: scrollContainer.scrollHeight,
-				behavior: "smooth",
-			});
-		}
-	});
-
 	// Debug: Track selectedModel changes
 	$effect(() => {
-		console.log("[chat/[conversationId]] selectedModel changed:", {
-			id: selectedModel.id,
-			displayName: selectedModel.displayName,
-			timestamp: Date.now(),
-		});
+		if (selectedModel) {
+			console.log("[chat/[conversationId]] selectedModel changed:", {
+				id: selectedModel.id,
+				displayName: selectedModel.displayName,
+				timestamp: Date.now(),
+			});
+		}
 	});
 
 	// Generate title after first assistant response
@@ -365,7 +421,7 @@
 		};
 
 		// Rotate thinking label every 5 seconds
-		const labelRotationInterval = setInterval(() => {
+		labelRotationInterval = setInterval(() => {
 			if (thinkingState?.isThinking) {
 				thinkingState.label = getRandomThinkingLabel();
 			}
@@ -374,7 +430,7 @@
 		try {
 			console.log(
 				"[handleChatSubmit] Starting message send with model:",
-				selectedModel.id,
+				selectedModel?.id || "loading...",
 			);
 
 			// Send message using Chat class (handles streaming automatically)
@@ -403,7 +459,10 @@
 			// Show error state to user if needed
 		} finally {
 			// Always clear thinking state
-			clearInterval(labelRotationInterval);
+			if (labelRotationInterval) {
+				clearInterval(labelRotationInterval);
+				labelRotationInterval = null;
+			}
 			thinkingState = null;
 		}
 	}
@@ -434,6 +493,10 @@
 							data-role={message.role}
 							data-agent-id={messageMetadata.get(message.id)
 								?.agentId || "general"}
+							data-loading={message.role === "assistant" &&
+								!message.parts.some(
+									(p) => p.type === "text" && p.text,
+								)}
 						>
 							{#if message.role === "assistant"}
 								<!-- Show thinking indicator if message has no content yet -->
@@ -444,10 +507,19 @@
 								{/if}
 
 								<!-- Render message parts from AI SDK -->
-								{#each message.parts as part, partIndex (partIndex)}
+								{#each message.parts as part, partIndex (part.type.startsWith("tool-") ? (part as any).toolCallId : `text-${partIndex}`)}
 									{#if part.type === "text"}
 										<div class="text-base text-neutral-900">
-											<Markdown content={part.text} />
+											<Markdown
+												content={part.text}
+												isStreaming={chat.status ===
+													"streaming" &&
+													message.id ===
+														chat.messages[
+															chat.messages
+																.length - 1
+														]?.id}
+											/>
 										</div>
 									{:else if part.type.startsWith("tool-")}
 										<!-- Tool invocation rendering based on state -->
@@ -481,7 +553,7 @@
 							{:else}
 								<!-- User messages: concatenate text parts -->
 								<div
-									class="text-base whitespace-pre-wrap text-neutral-900"
+									class="text-base whitespace-pre-wrap font-serif text-blue"
 								>
 									{#each message.parts as part}
 										{#if part.type === "text"}
@@ -495,7 +567,7 @@
 				{/each}
 
 				<!-- Show thinking indicator if waiting for assistant message to be created -->
-				{#if thinkingState?.isThinking && !chat.messages.find((m) => m.id === thinkingState.messageId)}
+				{#if thinkingState?.isThinking && !chat.messages.find((m) => m.id === thinkingState!.messageId)}
 					<div class="flex justify-start">
 						<div class="w-full py-3">
 							<ThinkingIndicator label={thinkingState.label} />
@@ -505,34 +577,65 @@
 
 				<!-- Error message with retry button -->
 				{#if chat.error}
+					{@const isRateLimitError =
+						chat.error.message?.includes("Rate limit exceeded") ||
+						chat.error.message?.includes("rate limit") ||
+						chat.error.message?.includes("429")}
 					<div class="flex justify-start">
-						<div class="error-container">
+						<div
+							class="error-container"
+							class:rate-limit-error={isRateLimitError}
+						>
 							<div class="error-icon">
 								<iconify-icon
-									icon="ri:error-warning-line"
+									icon={isRateLimitError
+										? "ri:time-line"
+										: "ri:error-warning-line"}
 									width="20"
 								></iconify-icon>
 							</div>
 							<div class="error-content">
-								<div class="error-title">An error occurred</div>
-								<div class="error-message">
-									{chat.error.message ||
-										"Something went wrong. Please try again."}
+								<div class="error-title">
+									{isRateLimitError
+										? "Rate Limit Reached"
+										: "An error occurred"}
 								</div>
-								<button
-									type="button"
-									class="retry-button"
-									onclick={() => {
-										// Clear error and retry last message
-										chat.regenerate();
-									}}
-								>
-									<iconify-icon
-										icon="ri:refresh-line"
-										width="16"
-									></iconify-icon>
-									Retry
-								</button>
+								<div class="error-message">
+									{#if isRateLimitError}
+										You've reached your API usage limit.
+										Please wait for the limit to reset or
+										check your usage dashboard for details.
+									{:else}
+										{chat.error.message ||
+											"Something went wrong. Please try again."}
+									{/if}
+								</div>
+								<div class="error-actions">
+									{#if isRateLimitError}
+										<a href="/usage" class="usage-link">
+											<iconify-icon
+												icon="ri:bar-chart-line"
+												width="16"
+											></iconify-icon>
+											View Usage Dashboard
+										</a>
+									{:else}
+										<button
+											type="button"
+											class="retry-button"
+											onclick={() => {
+												// Clear error and retry last message
+												chat.regenerate();
+											}}
+										>
+											<iconify-icon
+												icon="ri:refresh-line"
+												width="16"
+											></iconify-icon>
+											Retry
+										</button>
+									{/if}
+								</div>
 							</div>
 						</div>
 					</div>
@@ -544,6 +647,7 @@
 		<div
 			class="chat-input-wrapper"
 			class:is-empty={isEmpty}
+			class:has-messages={!isEmpty}
 			class:transitions-enabled={enableTransitions}
 			class:focused={inputFocused}
 		>
@@ -576,9 +680,22 @@
 				{/snippet}
 				{#snippet modelPicker()}
 					<ModelPicker
-						bind:value={selectedModel}
+						value={selectedModel}
 						disabled={modelLocked}
+						onSelect={setSelectedModel}
 					/>
+				{/snippet}
+				{#snippet contextIndicator()}
+					{#if selectedModel}
+						<ContextIndicator
+							{cumulativeTokens}
+							contextWindow={selectedModel.contextWindow}
+							alwaysVisible={uiPreferences.contextIndicator
+								?.alwaysVisible ?? false}
+							showThreshold={uiPreferences.contextIndicator
+								?.showThreshold ?? 70}
+						/>
+					{/if}
 				{/snippet}
 			</ChatInput>
 
@@ -655,6 +772,11 @@
 		transform: translateY(-50%);
 	}
 
+	/* Reduce bottom padding when there are active messages */
+	.chat-input-wrapper.has-messages {
+		padding-bottom: 1.5rem;
+	}
+
 	/* When not empty, make it sticky so it doesn't scroll */
 	.page-container:not(.is-empty) .chat-input-wrapper {
 		position: sticky;
@@ -714,6 +836,11 @@
 		border-radius: 9999px;
 		left: -0.5rem;
 		top: 1.3rem;
+	}
+
+	/* Hide dot when message is still loading */
+	.message-wrapper[data-loading="true"]::before {
+		display: none;
 	}
 
 	/* Blue dot for user messages - simple alignment */
@@ -780,6 +907,28 @@
 		line-height: 1.5;
 	}
 
+	/* Rate limit specific error styles */
+	.error-container.rate-limit-error {
+		background-color: rgb(254 252 232); /* yellow-50 */
+		border-color: rgb(254 249 195); /* yellow-100 */
+	}
+
+	.error-container.rate-limit-error .error-icon {
+		color: rgb(202 138 4); /* yellow-700 */
+	}
+
+	.error-container.rate-limit-error .error-title {
+		color: rgb(120 53 15); /* yellow-900 */
+	}
+
+	.error-container.rate-limit-error .error-message {
+		color: rgb(113 63 18); /* yellow-950 */
+	}
+
+	.error-actions {
+		margin-top: 0.5rem;
+	}
+
 	.retry-button {
 		display: inline-flex;
 		align-items: center;
@@ -802,6 +951,32 @@
 	}
 
 	.retry-button:active {
+		transform: scale(0.98);
+	}
+
+	.usage-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.375rem 0.75rem;
+		background-color: var(--color-white);
+		border: 1px solid rgb(253 224 71); /* yellow-300 */
+		border-radius: 0.375rem;
+		color: rgb(120 53 15); /* yellow-900 */
+		font-size: 0.875rem;
+		font-weight: 500;
+		text-decoration: none;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		align-self: flex-start;
+	}
+
+	.usage-link:hover {
+		background-color: rgb(254 252 232); /* yellow-50 */
+		border-color: rgb(250 204 21); /* yellow-400 */
+	}
+
+	.usage-link:active {
 		transform: scale(0.98);
 	}
 
@@ -835,7 +1010,7 @@
 		color: var(--color-navy);
 		-webkit-text-fill-color: transparent;
 		text-fill-color: transparent;
-		animation: shiny-title 2.5s ease-out forwards;
+		animation: shiny-title 1.5s ease-out forwards;
 	}
 
 	@keyframes shiny-title {

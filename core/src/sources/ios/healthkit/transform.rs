@@ -1088,7 +1088,7 @@ async fn execute_heart_rate_batch_insert(
     }
 
     let query_str = Database::build_batch_insert_query(
-        "elt.health_heart_rate",
+        "data.health_heart_rate",
         &[
             "bpm",
             "measurement_context",
@@ -1132,7 +1132,7 @@ async fn execute_hrv_batch_insert(
     }
 
     let query_str = Database::build_batch_insert_query(
-        "elt.health_hrv",
+        "data.health_hrv",
         &[
             "hrv_ms",
             "measurement_type",
@@ -1176,7 +1176,7 @@ async fn execute_steps_batch_insert(
     }
 
     let query_str = Database::build_batch_insert_query(
-        "elt.health_steps",
+        "data.health_steps",
         &[
             "step_count",
             "timestamp",
@@ -1226,7 +1226,7 @@ async fn execute_sleep_batch_insert(
     }
 
     let query_str = Database::build_batch_insert_query(
-        "elt.health_sleep",
+        "data.health_sleep",
         &[
             "sleep_stages",
             "total_duration_minutes",
@@ -1295,7 +1295,7 @@ async fn execute_workout_batch_insert(
     }
 
     let query_str = Database::build_batch_insert_query(
-        "elt.health_workout",
+        "data.health_workout",
         &[
             "activity_type",
             "intensity",

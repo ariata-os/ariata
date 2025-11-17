@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COALESCE(SUM(estimated_cost_usd), 0) as \"total_cost!\"\n        FROM app.api_usage\n        WHERE day_bucket = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total_cost!",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "722d4a57a75955403f2986eebba966f45aa6956df4f3f19d40f114f71fef9be9"
+}

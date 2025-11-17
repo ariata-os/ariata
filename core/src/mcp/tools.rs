@@ -231,20 +231,25 @@ pub struct QueryAxiologyResponse {
 }
 
 /// Rewrite query to fix common table name mistakes
-/// LLMs often use shorthand table names like "goals" instead of "axiology.axiology_goal"
+/// LLMs often use shorthand table names like "tasks" instead of "actions.actions_task"
 fn rewrite_axiology_table_names(query: &str) -> String {
     use regex::Regex;
 
     // Define table name mappings (shorthand -> actual table name)
     let mappings = [
-        ("goals", "elt.axiology_goal"),
-        ("habits", "elt.axiology_habit"),
-        ("values", "elt.axiology_value"),
-        ("virtues", "elt.axiology_virtue"),
-        ("vices", "elt.axiology_vice"),
-        ("temperaments", "elt.axiology_temperament"),
-        ("preferences", "elt.axiology_preference"),
-        ("telos", "elt.axiology_telos"),
+        // Actions tables
+        ("tasks", "data.actions_task"),
+        ("initiatives", "data.actions_initiative"),
+        ("aspirations", "data.actions_aspiration"),
+        ("goals", "data.actions_task"),  // Legacy mapping
+        // Axiology tables
+        ("habits", "data.axiology_habit"),
+        ("values", "data.axiology_value"),
+        ("virtues", "data.axiology_virtue"),
+        ("vices", "data.axiology_vice"),
+        ("temperaments", "data.axiology_temperament"),
+        ("preferences", "data.axiology_preference"),
+        ("telos", "data.axiology_telos"),
     ];
 
     let mut rewritten = query.to_string();
@@ -263,8 +268,9 @@ fn rewrite_axiology_table_names(query: &str) -> String {
     rewritten
 }
 
-/// Execute a read-only SQL query against axiology tables
-/// (values, telos, goals, virtues, vices, habits, temperaments, preferences)
+/// Execute a read-only SQL query against axiology and actions tables
+/// Actions: tasks, initiatives, aspirations
+/// Axiology: values, telos, virtues, vices, habits, temperaments, preferences
 pub async fn query_axiology(
     pool: &PgPool,
     request: QueryAxiologyRequest,
@@ -446,7 +452,7 @@ pub async fn list_ontology_tables(pool: &PgPool) -> Result<ListOntologyTablesRes
 
         // Get row count
         let row_count: Option<i64> =
-            sqlx::query_scalar(&format!("SELECT COUNT(*) FROM elt.{}", table_name))
+            sqlx::query_scalar(&format!("SELECT COUNT(*) FROM data.{}", table_name))
                 .fetch_optional(pool)
                 .await
                 .ok()
@@ -513,7 +519,7 @@ pub async fn trigger_sync(
     // Get streams to sync
     let streams: Vec<(String,)> = if let Some(stream_name) = &request.stream_name {
         sqlx::query_as(
-            "SELECT name FROM elt.streams WHERE source_id = $1 AND name = $2 AND enabled = true",
+            "SELECT name FROM data.streams WHERE source_id = $1 AND name = $2 AND enabled = true",
         )
         .bind(source_uuid)
         .bind(stream_name)
@@ -521,7 +527,7 @@ pub async fn trigger_sync(
         .await
         .map_err(|e| e.to_string())?
     } else {
-        sqlx::query_as("SELECT name FROM elt.streams WHERE source_id = $1 AND enabled = true")
+        sqlx::query_as("SELECT name FROM data.streams WHERE source_id = $1 AND enabled = true")
             .bind(source_uuid)
             .fetch_all(pool)
             .await
@@ -540,7 +546,7 @@ pub async fn trigger_sync(
 
         sqlx::query(
             r#"
-            INSERT INTO elt.jobs (id, source_id, stream_name, job_type, status, created_at)
+            INSERT INTO data.jobs (id, source_id, stream_name, job_type, status, created_at)
             VALUES ($1, $2, $3, 'sync', 'pending', NOW())
             "#,
         )
@@ -608,7 +614,7 @@ pub async fn query_narratives(
     // Build the query dynamically based on filters
     let mut query = String::from(
         "SELECT narrative_text, narrative_type, time_start, time_end, confidence_score \
-         FROM elt.narrative_chunks \
+         FROM data.narrative_chunks \
          WHERE time_start >= $1 AND time_end <= $2",
     );
 
@@ -677,12 +683,12 @@ pub struct ManageAxiologyResponse {
     pub message: String,
 }
 
-/// Manage axiology entities (CRUD operations for all entity types)
+/// Manage axiology and actions entities (CRUD operations for all entity types)
 pub async fn manage_axiology(
     pool: &PgPool,
     request: ManageAxiologyRequest,
 ) -> Result<ManageAxiologyResponse, String> {
-    use crate::api::axiology;
+    use crate::api::{actions, axiology};
 
     // Validate operation
     let valid_operations = ["create", "read", "update", "delete", "list"];
@@ -700,7 +706,7 @@ pub async fn manage_axiology(
     match (request.entity_type.as_str(), request.operation.as_str()) {
         // ========== TASKS ==========
         ("task", "list") => {
-            let tasks = axiology::list_tasks(pool).await.map_err(|e| e.to_string())?;
+            let tasks = actions::list_tasks(pool).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: None,
@@ -710,7 +716,7 @@ pub async fn manage_axiology(
         },
         ("task", "read") => {
             let id = parse_uuid(&request.id)?;
-            let task = axiology::get_task(pool, id).await.map_err(|e| e.to_string())?;
+            let task = actions::get_task(pool, id).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: Some(serde_json::to_value(task).unwrap()),
@@ -720,8 +726,8 @@ pub async fn manage_axiology(
         },
         ("task", "create") => {
             let data = request.data.ok_or("Missing data for create operation")?;
-            let req: axiology::CreateTaskRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
-            let task = axiology::create_task(pool, req).await.map_err(|e| e.to_string())?;
+            let req: actions::CreateTaskRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
+            let task = actions::create_task(pool, req).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: Some(serde_json::to_value(task).unwrap()),
@@ -732,8 +738,8 @@ pub async fn manage_axiology(
         ("task", "update") => {
             let id = parse_uuid(&request.id)?;
             let data = request.data.ok_or("Missing data for update operation")?;
-            let req: axiology::UpdateTaskRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
-            let task = axiology::update_task(pool, id, req).await.map_err(|e| e.to_string())?;
+            let req: actions::UpdateTaskRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
+            let task = actions::update_task(pool, id, req).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: Some(serde_json::to_value(task).unwrap()),
@@ -743,7 +749,7 @@ pub async fn manage_axiology(
         },
         ("task", "delete") => {
             let id = parse_uuid(&request.id)?;
-            axiology::delete_task(pool, id).await.map_err(|e| e.to_string())?;
+            actions::delete_task(pool, id).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: None,
@@ -754,7 +760,7 @@ pub async fn manage_axiology(
 
         // ========== INITIATIVES ==========
         ("initiative", "list") => {
-            let items = axiology::list_initiatives(pool).await.map_err(|e| e.to_string())?;
+            let items = actions::list_initiatives(pool).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: None,
@@ -764,7 +770,7 @@ pub async fn manage_axiology(
         },
         ("initiative", "read") => {
             let id = parse_uuid(&request.id)?;
-            let item = axiology::get_initiative(pool, id).await.map_err(|e| e.to_string())?;
+            let item = actions::get_initiative(pool, id).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: Some(serde_json::to_value(item).unwrap()),
@@ -774,8 +780,8 @@ pub async fn manage_axiology(
         },
         ("initiative", "create") => {
             let data = request.data.ok_or("Missing data for create operation")?;
-            let req: axiology::CreateTaskRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
-            let item = axiology::create_initiative(pool, req).await.map_err(|e| e.to_string())?;
+            let req: actions::CreateTaskRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
+            let item = actions::create_initiative(pool, req).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: Some(serde_json::to_value(item).unwrap()),
@@ -786,8 +792,8 @@ pub async fn manage_axiology(
         ("initiative", "update") => {
             let id = parse_uuid(&request.id)?;
             let data = request.data.ok_or("Missing data for update operation")?;
-            let req: axiology::UpdateTaskRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
-            let item = axiology::update_initiative(pool, id, req).await.map_err(|e| e.to_string())?;
+            let req: actions::UpdateTaskRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
+            let item = actions::update_initiative(pool, id, req).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: Some(serde_json::to_value(item).unwrap()),
@@ -797,7 +803,7 @@ pub async fn manage_axiology(
         },
         ("initiative", "delete") => {
             let id = parse_uuid(&request.id)?;
-            axiology::delete_initiative(pool, id).await.map_err(|e| e.to_string())?;
+            actions::delete_initiative(pool, id).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: None,
@@ -808,7 +814,7 @@ pub async fn manage_axiology(
 
         // ========== ASPIRATIONS ==========
         ("aspiration", "list") => {
-            let items = axiology::list_aspirations(pool).await.map_err(|e| e.to_string())?;
+            let items = actions::list_aspirations(pool).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: None,
@@ -818,7 +824,7 @@ pub async fn manage_axiology(
         },
         ("aspiration", "read") => {
             let id = parse_uuid(&request.id)?;
-            let item = axiology::get_aspiration(pool, id).await.map_err(|e| e.to_string())?;
+            let item = actions::get_aspiration(pool, id).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: Some(serde_json::to_value(item).unwrap()),
@@ -828,8 +834,8 @@ pub async fn manage_axiology(
         },
         ("aspiration", "create") => {
             let data = request.data.ok_or("Missing data for create operation")?;
-            let req: axiology::CreateAspirationRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
-            let item = axiology::create_aspiration(pool, req).await.map_err(|e| e.to_string())?;
+            let req: actions::CreateAspirationRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
+            let item = actions::create_aspiration(pool, req).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: Some(serde_json::to_value(item).unwrap()),
@@ -840,8 +846,8 @@ pub async fn manage_axiology(
         ("aspiration", "update") => {
             let id = parse_uuid(&request.id)?;
             let data = request.data.ok_or("Missing data for update operation")?;
-            let req: axiology::UpdateAspirationRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
-            let item = axiology::update_aspiration(pool, id, req).await.map_err(|e| e.to_string())?;
+            let req: actions::UpdateAspirationRequest = serde_json::from_value(data).map_err(|e| e.to_string())?;
+            let item = actions::update_aspiration(pool, id, req).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: Some(serde_json::to_value(item).unwrap()),
@@ -851,7 +857,7 @@ pub async fn manage_axiology(
         },
         ("aspiration", "delete") => {
             let id = parse_uuid(&request.id)?;
-            axiology::delete_aspiration(pool, id).await.map_err(|e| e.to_string())?;
+            actions::delete_aspiration(pool, id).await.map_err(|e| e.to_string())?;
             Ok(ManageAxiologyResponse {
                 success: true,
                 entity: None,

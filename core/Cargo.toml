@@ -28,12 +28,8 @@ name = "ariata-mcp-server"
 path = "src/bin/mcp-server.rs"
 
 [[bin]]
-name = "test_clustering"
-path = "src/bin/test_clustering.rs"
-
-[[bin]]
-name = "test_place_resolution"
-path = "src/bin/test_place_resolution.rs"
+name = "ariata-prod-seed"
+path = "src/bin/prod_seed.rs"
 
 [dependencies]
 # CLI

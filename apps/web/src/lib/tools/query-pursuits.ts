@@ -74,7 +74,7 @@ export async function createPursuitsTool(pool: Pool) {
 							is_active,
 							created_at,
 							updated_at
-						FROM elt.axiology_task
+						FROM data.actions_task
 						WHERE ${whereConditions}
 						ORDER BY created_at DESC
 						LIMIT $${paramIndex}
@@ -128,7 +128,7 @@ export async function createPursuitsTool(pool: Pool) {
 							is_active,
 							created_at,
 							updated_at
-						FROM elt.axiology_initiative
+						FROM data.actions_initiative
 						WHERE ${whereConditions}
 						ORDER BY created_at DESC
 						LIMIT $${paramIndex}
@@ -185,7 +185,7 @@ export async function createPursuitsTool(pool: Pool) {
 							is_active,
 							created_at,
 							updated_at
-						FROM elt.axiology_aspiration
+						FROM data.actions_aspiration
 						WHERE ${whereConditions}
 						ORDER BY created_at DESC
 						LIMIT $${paramIndex}

@@ -111,7 +111,7 @@ pub async fn complete_device_pairing(
     let source = sqlx::query!(
         r#"
         SELECT id, provider, code_expires_at
-        FROM sources
+        FROM data.sources
         WHERE pairing_code = $1 AND pairing_status = 'pending'
         "#,
         code
@@ -178,7 +178,7 @@ pub async fn check_pairing_status(db: &PgPool, source_id: Uuid) -> Result<Pairin
     let source = sqlx::query!(
         r#"
         SELECT pairing_status, device_info
-        FROM sources
+        FROM data.sources
         WHERE id = $1
         "#,
         source_id
@@ -213,7 +213,7 @@ pub async fn list_pending_pairings(db: &PgPool) -> Result<Vec<PendingPairing>> {
             pairing_code as "code!",
             code_expires_at as "expires_at!",
             created_at
-        FROM sources
+        FROM data.sources
         WHERE pairing_status = 'pending'
         ORDER BY created_at DESC
         "#

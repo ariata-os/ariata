@@ -1,11 +1,8 @@
 /**
- * API Client for Rust ELT Library
+ * API Client for Rust Core Library
  *
  * All calls to /api/* are proxied to Rust backend (localhost:8000)
  * via Vite proxy (see vite.config.ts).
- *
- * Exception: /api/preferences and /api/dashboards are handled by SvelteKit
- * and use the Postgres app database (ariata_app).
  */
 
 const API_BASE = '/api';

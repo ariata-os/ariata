@@ -44,8 +44,8 @@ pub async fn list_available_ontologies(db: &PgPool) -> Result<Vec<String>> {
     let rows = sqlx::query!(
         r#"
         SELECT DISTINCT s.table_name
-        FROM elt.streams s
-        JOIN elt.sources src ON s.source_id = src.id
+        FROM data.streams s
+        JOIN data.sources src ON s.source_id = src.id
         WHERE s.is_enabled = true
           AND src.is_active = true
         "#
@@ -111,7 +111,7 @@ pub async fn get_ontologies_overview(db: &PgPool) -> Result<Vec<OntologyOverview
         let domain = extract_domain(&table_name);
 
         // Get record count
-        let count_query = format!("SELECT COUNT(*) as count FROM elt.{}", table_name);
+        let count_query = format!("SELECT COUNT(*) as count FROM data.{}", table_name);
         let count_result = sqlx::query_scalar::<_, i64>(&count_query)
             .fetch_one(db)
             .await;
@@ -131,7 +131,7 @@ pub async fn get_ontologies_overview(db: &PgPool) -> Result<Vec<OntologyOverview
         // Get one random sample record if records exist
         let sample_record = if record_count > 0 {
             let sample_query = format!(
-                "SELECT row_to_json(t) as record FROM (SELECT * FROM elt.{} ORDER BY RANDOM() LIMIT 1) t",
+                "SELECT row_to_json(t) as record FROM (SELECT * FROM data.{} ORDER BY RANDOM() LIMIT 1) t",
                 table_name
             );
 

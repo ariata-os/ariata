@@ -1,5 +1,12 @@
 <script lang="ts">
     import { page } from "$app/state";
+    import type { ChatSessions } from "$lib/stores/chatSessions.svelte";
+
+    interface Props {
+        chatSessions: ChatSessions;
+    }
+
+    let { chatSessions }: Props = $props();
 
     interface BreadcrumbItem {
         label: string;
@@ -12,7 +19,21 @@
 
         const items: BreadcrumbItem[] = [{ label: "Chat", href: "/" }];
 
-        // Build breadcrumb path
+        // If on root path with conversationId, add conversation title
+        if (path === "/" && page.url.searchParams.has("conversationId")) {
+            const conversationId = page.url.searchParams.get("conversationId");
+            const conversation = chatSessions.sessions.find(
+                (s) => s.conversation_id === conversationId
+            );
+            if (conversation && conversation.title) {
+                items.push({
+                    label: conversation.title,
+                    href: `/?conversationId=${conversationId}`
+                });
+            }
+        }
+
+        // Build breadcrumb path for other routes
         let currentPath = "";
         for (const segment of segments) {
             currentPath += `/${segment}`;

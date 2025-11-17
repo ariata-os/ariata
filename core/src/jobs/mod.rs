@@ -64,7 +64,7 @@ pub async fn has_active_sync_job(db: &PgPool, source_id: Uuid, stream_name: &str
     let result = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
-            SELECT 1 FROM elt.jobs
+            SELECT 1 FROM data.jobs
             WHERE source_id = $1
               AND stream_name = $2
               AND job_type = 'sync'
@@ -84,7 +84,7 @@ pub async fn has_active_sync_job(db: &PgPool, source_id: Uuid, stream_name: &str
 pub async fn create_job(db: &PgPool, request: CreateJobRequest) -> Result<Job> {
     let row = sqlx::query(
         r#"
-        INSERT INTO elt.jobs (
+        INSERT INTO data.jobs (
             job_type,
             status,
             source_id,
@@ -119,7 +119,7 @@ pub async fn create_job(db: &PgPool, request: CreateJobRequest) -> Result<Job> {
 pub async fn get_job(db: &PgPool, job_id: Uuid) -> Result<Job> {
     let row = sqlx::query(
         r#"
-        SELECT * FROM elt.jobs
+        SELECT * FROM data.jobs
         WHERE id = $1
         "#,
     )
@@ -147,7 +147,7 @@ pub async fn update_job_status(
     let query = if is_terminal {
         sqlx::query(
             r#"
-            UPDATE elt.jobs
+            UPDATE data.jobs
             SET status = $1,
                 error_message = $2,
                 completed_at = NOW()
@@ -157,7 +157,7 @@ pub async fn update_job_status(
     } else {
         sqlx::query(
             r#"
-            UPDATE elt.jobs
+            UPDATE data.jobs
             SET status = $1,
                 error_message = $2
             WHERE id = $3
@@ -182,7 +182,7 @@ pub async fn query_jobs(
     statuses: Option<Vec<JobStatus>>,
     limit: Option<i64>,
 ) -> Result<Vec<Job>> {
-    let mut query = String::from("SELECT * FROM elt.jobs WHERE 1=1");
+    let mut query = String::from("SELECT * FROM data.jobs WHERE 1=1");
     let mut bind_count = 0;
 
     if source_id.is_some() {
@@ -239,7 +239,7 @@ pub async fn query_jobs(
 pub async fn cancel_job(db: &PgPool, job_id: Uuid) -> Result<()> {
     let rows_affected = sqlx::query(
         r#"
-        UPDATE elt.jobs
+        UPDATE data.jobs
         SET status = 'cancelled',
             completed_at = NOW()
         WHERE id = $1
@@ -316,7 +316,7 @@ pub async fn create_chained_transform_job(
 pub async fn get_child_jobs(db: &PgPool, parent_job_id: Uuid) -> Result<Vec<Job>> {
     let rows = sqlx::query(
         r#"
-        SELECT * FROM elt.jobs
+        SELECT * FROM data.jobs
         WHERE parent_job_id = $1
         ORDER BY created_at ASC
         "#,

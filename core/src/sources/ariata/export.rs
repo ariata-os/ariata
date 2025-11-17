@@ -6,7 +6,7 @@
 //! ## Naming Architecture
 //!
 //! This export follows the three-tier naming convention:
-//! - **Stream Name**: `app_export` (registered in elt.streams)
+//! - **Stream Name**: `app_export` (registered in data.streams)
 //! - **Stream Table**: `stream_ariata_ai_chat` (object storage destination)
 //! - **Ontology Table**: `knowledge_ai_conversation` (final transformed data)
 //!

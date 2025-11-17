@@ -58,7 +58,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
 
         let day_narrative_id: Uuid = sqlx::query_scalar(
             r#"
-            INSERT INTO elt.narrative_chunks
+            INSERT INTO data.narrative_chunks
             (narrative_text, narrative_type, time_start, time_end, time_granularity,
              ontology_primitive_ids, embedding, token_count, confidence_score,
              generation_model, generated_by)
@@ -144,7 +144,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
 
             let event_id: Uuid = sqlx::query_scalar(
                 r#"
-                INSERT INTO elt.narrative_chunks
+                INSERT INTO data.narrative_chunks
                 (narrative_text, narrative_type, time_start, time_end, time_granularity,
                  parent_narrative_id, ontology_primitive_ids, embedding, token_count,
                  confidence_score, generation_model, generated_by)
@@ -206,7 +206,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
 
                     let action_id: Uuid = sqlx::query_scalar(
                         r#"
-                        INSERT INTO elt.narrative_chunks
+                        INSERT INTO data.narrative_chunks
                         (narrative_text, narrative_type, time_start, time_end, time_granularity,
                          parent_narrative_id, ontology_primitive_ids, embedding, token_count,
                          confidence_score, generation_model, generated_by)
@@ -236,7 +236,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
                 // Update event with child action IDs
                 sqlx::query(
                     r#"
-                    UPDATE elt.narrative_chunks
+                    UPDATE data.narrative_chunks
                     SET child_narrative_ids = $1
                     WHERE id = $2
                     "#,
@@ -251,7 +251,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
         // Update day narrative with child event IDs
         sqlx::query(
             r#"
-            UPDATE elt.narrative_chunks
+            UPDATE data.narrative_chunks
             SET child_narrative_ids = $1
             WHERE id = $2
             "#,
@@ -296,7 +296,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
 
     sqlx::query(
         r#"
-        INSERT INTO elt.narrative_chunks
+        INSERT INTO data.narrative_chunks
         (narrative_text, narrative_type, time_start, time_end, time_granularity,
          ontology_primitive_ids, embedding, token_count, confidence_score,
          generation_model, generated_by)
@@ -327,7 +327,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
 async fn get_sample_ontology_ids(pool: &PgPool, table: &str, limit: i64) -> Result<Vec<Uuid>> {
     // Use dynamic query since we're querying different tables
     let query = format!(
-        "SELECT id FROM elt.{} WHERE source_provider = 'seed' ORDER BY created_at DESC LIMIT $1",
+        "SELECT id FROM data.{} WHERE source_provider = 'seed' ORDER BY created_at DESC LIMIT $1",
         table
     );
 
@@ -336,7 +336,7 @@ async fn get_sample_ontology_ids(pool: &PgPool, table: &str, limit: i64) -> Resu
         Err(e) => {
             // Log warning and return empty vector if table doesn't exist or query fails
             tracing::warn!(
-                "Could not fetch ontology IDs from elt.{}: {}. Skipping this primitive type.",
+                "Could not fetch ontology IDs from data.{}: {}. Skipping this primitive type.",
                 table,
                 e
             );
@@ -442,7 +442,7 @@ pub async fn seed_rome_monday_narrative(db: &Database) -> Result<usize> {
     // Insert narrative chunk
     sqlx::query(
         r#"
-        INSERT INTO elt.narrative_chunks
+        INSERT INTO data.narrative_chunks
         (narrative_text, narrative_type, time_start, time_end, time_granularity,
          ontology_primitive_ids, embedding, token_count, confidence_score,
          generation_model, generated_by, generation_prompt_version)

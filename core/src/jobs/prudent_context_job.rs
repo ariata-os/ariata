@@ -6,7 +6,7 @@
 //! The job:
 //! 1. Gathers raw data from axiology (values) and ontology (facts) tables
 //! 2. Uses Claude to curate what matters MOST right now (not just what's recent)
-//! 3. Stores structured context in elt.prudent_context_snapshot
+//! 3. Stores structured context in data.prudent_context_snapshot
 //! 4. Context is automatically loaded via MCP resources in AI conversations
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
@@ -15,6 +15,7 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::api::rate_limit::{check_rate_limit, record_usage, RateLimits, TokenUsage};
 use crate::llm::{LLMClient, LLMRequest};
 
 /// Prudent context structure returned by LLM
@@ -37,7 +38,7 @@ pub struct TimeContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValuesContext {
     pub active_telos: Option<TelosItem>,
-    pub prioritized_goals: Vec<GoalItem>,
+    pub prioritized_tasks: Vec<TaskItem>,
     pub todays_habits: Vec<HabitItem>,
     pub relevant_virtues: Vec<VirtueItem>,
     pub active_vices: Vec<ViceItem>,
@@ -65,10 +66,11 @@ pub struct TelosItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GoalItem {
+pub struct TaskItem {
     pub id: String,
     pub title: String,
-    pub goal_type: String,
+    pub tags: Vec<String>,
+    pub status: String,
     pub why_now: String,
 }
 
@@ -117,9 +119,9 @@ pub struct UpcomingItem {
 /// Raw data gathered from database before LLM curation
 #[derive(Debug, Clone, Serialize)]
 struct RawContextData {
-    // Axiology
+    // Axiology & Actions
     telos: Option<serde_json::Value>,
-    goals: Vec<serde_json::Value>,
+    tasks: Vec<serde_json::Value>,
     habits: Vec<serde_json::Value>,
     virtues: Vec<serde_json::Value>,
     vices: Vec<serde_json::Value>,
@@ -166,7 +168,7 @@ impl PrudentContextJob {
 
         // Get active telos (should be singular)
         let telos_row = sqlx::query(
-            "SELECT id, title, description FROM axiology_telos WHERE is_active = true LIMIT 1",
+            "SELECT id, title, description FROM data.axiology_telos WHERE is_active = true LIMIT 1",
         )
         .fetch_optional(self.pool.as_ref())
         .await
@@ -181,22 +183,24 @@ impl PrudentContextJob {
             })
         });
 
-        // Get active goals
-        let goal_rows = sqlx::query(
-            "SELECT id, title, goal_type, description FROM axiology_goal WHERE is_active = true ORDER BY created_at DESC"
+        // Get active tasks (short-term goals)
+        let task_rows = sqlx::query(
+            "SELECT id, title, tags, description, status, progress_percent FROM data.actions_task WHERE is_active = true ORDER BY created_at DESC"
         )
         .fetch_all(self.pool.as_ref())
         .await
-        .map_err(|e| format!("Failed to fetch goals: {}", e))?;
+        .map_err(|e| format!("Failed to fetch tasks: {}", e))?;
 
-        let goals: Vec<serde_json::Value> = goal_rows
+        let tasks: Vec<serde_json::Value> = task_rows
             .into_iter()
             .map(|row| {
                 use sqlx::Row;
                 serde_json::json!({
                     "id": row.get::<uuid::Uuid, _>("id"),
                     "title": row.get::<String, _>("title"),
-                    "goal_type": row.get::<String, _>("goal_type"),
+                    "tags": row.get::<Option<Vec<String>>, _>("tags"),
+                    "status": row.get::<Option<String>, _>("status"),
+                    "progress_percent": row.get::<Option<i32>, _>("progress_percent"),
                     "description": row.get::<Option<String>, _>("description")
                 })
             })
@@ -204,7 +208,7 @@ impl PrudentContextJob {
 
         // Get habits
         let habit_rows = sqlx::query(
-            "SELECT id, title, description, frequency FROM axiology_habit WHERE is_active = true",
+            "SELECT id, title, description, frequency FROM data.axiology_habit WHERE is_active = true",
         )
         .fetch_all(self.pool.as_ref())
         .await
@@ -225,7 +229,7 @@ impl PrudentContextJob {
 
         // Get virtues
         let virtue_rows = sqlx::query(
-            "SELECT id, title, description FROM axiology_virtue WHERE is_active = true",
+            "SELECT id, title, description FROM data.axiology_virtue WHERE is_active = true",
         )
         .fetch_all(self.pool.as_ref())
         .await
@@ -245,7 +249,7 @@ impl PrudentContextJob {
 
         // Get vices to watch for
         let vice_rows =
-            sqlx::query("SELECT id, title, description FROM axiology_vice WHERE is_active = true")
+            sqlx::query("SELECT id, title, description FROM data.axiology_vice WHERE is_active = true")
                 .fetch_all(self.pool.as_ref())
                 .await
                 .map_err(|e| format!("Failed to fetch vices: {}", e))?;
@@ -322,7 +326,7 @@ impl PrudentContextJob {
 
         Ok(RawContextData {
             telos,
-            goals,
+            tasks,
             habits,
             virtues,
             vices,
@@ -373,8 +377,8 @@ Determine the "right context at the right time" - what matters MOST right now? W
 
 **Guidelines:**
 1. Prioritize by PRUDENCE (what's timely and relevant), not just recency
-2. Cross-reference facts with values (e.g., calendar event aligns with which goal?)
-3. Keep it lightweight: top 3-5 goals, top 5 salient events/habits
+2. Cross-reference facts with values (e.g., calendar event aligns with which task?)
+3. Keep it lightweight: top 3-5 tasks, top 5 salient events/habits
 4. For each item, explain WHY it matters right now
 5. Generate actionable cross-references between facts and values
 6. Write a concise summary (2-3 sentences) of today's focus
@@ -389,8 +393,8 @@ Determine the "right context at the right time" - what matters MOST right now? W
   }},
   "values": {{
     "active_telos": {{"id": "...", "title": "...", "description": "..."}},
-    "prioritized_goals": [
-      {{"id": "...", "title": "...", "goal_type": "work|character|experiential|relational", "why_now": "Explain why this goal matters TODAY"}}
+    "prioritized_tasks": [
+      {{"id": "...", "title": "...", "tags": ["work", "creative"], "status": "active", "why_now": "Explain why this task matters TODAY"}}
     ],
     "todays_habits": [
       {{"id": "...", "title": "...", "frequency": "daily|weekly"}}
@@ -433,7 +437,7 @@ Return ONLY the JSON, no other text."#,
             } else {
                 "none set"
             },
-            raw.goals.len(),
+            raw.tasks.len(),
             raw.habits.len(),
             raw.virtues.len(),
             raw.vices.len(),
@@ -445,6 +449,11 @@ Return ONLY the JSON, no other text."#,
             time_of_day,
             day_of_week
         );
+
+        // Check rate limit before making LLM call
+        check_rate_limit(self.pool.as_ref(), "background_job", &RateLimits::default())
+            .await
+            .map_err(|e| format!("Rate limit exceeded: {}", e))?;
 
         tracing::debug!("Calling LLM for context curation");
 
@@ -466,6 +475,19 @@ Return ONLY the JSON, no other text."#,
             response.usage.input_tokens,
             response.usage.output_tokens
         );
+
+        // Record API usage for rate limiting and cost tracking
+        record_usage(
+            self.pool.as_ref(),
+            "background_job",
+            TokenUsage {
+                input: response.usage.input_tokens as u32,
+                output: response.usage.output_tokens as u32,
+                model: "anthropic/claude-sonnet-4".to_string(),
+            },
+        )
+        .await
+        .map_err(|e| format!("Failed to record usage: {}", e))?;
 
         // Parse the JSON response
         let context: PrudentContext = serde_json::from_str(&response.content).map_err(|e| {
@@ -493,7 +515,7 @@ Return ONLY the JSON, no other text."#,
 
         sqlx::query(
             r#"
-            INSERT INTO elt.prudent_context_snapshot
+            INSERT INTO data.prudent_context_snapshot
             (id, computed_at, expires_at, context_data, llm_model, token_count)
             VALUES ($1, $2, $3, $4, $5, $6)
             "#,

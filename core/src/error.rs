@@ -65,6 +65,10 @@ pub enum Error {
     #[error("HTTP client error: {0}")]
     Reqwest(#[from] reqwest::Error),
 
+    /// Anyhow errors (from config loading, etc.)
+    #[error("Error: {0}")]
+    Anyhow(#[from] anyhow::Error),
+
     /// Generic errors
     #[error("{0}")]
     Other(String),
@@ -94,6 +98,7 @@ impl Error {
                 | Error::S3(_)
                 | Error::Sql(_)
                 | Error::Io(_)
+                | Error::Anyhow(_)
                 | Error::Other(_)
         )
     }

@@ -138,7 +138,9 @@
 			const streams = await api.listStreams(sourceId);
 			availableStreams = streams;
 			// Select all streams by default
-			selectedStreams = new Set(streams.map((s: Stream) => s.stream_name));
+			selectedStreams = new Set(
+				streams.map((s: Stream) => s.stream_name),
+			);
 			// Move to step 3
 			currentStep = 3;
 		} catch (e) {
@@ -301,7 +303,7 @@
 										</span>
 										{#if source.auth_type === "device"}
 											<span
-												class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded"
+												class="text-xs px-2 py-0.5 bg-blue-100 text-blue rounded"
 											>
 												Device
 											</span>
@@ -316,7 +318,9 @@
 
 						{#if selectedSource}
 							<div class="pt-4 border-t border-neutral-200">
-								<p class="text-sm text-neutral-600 leading-relaxed">
+								<p
+									class="text-sm text-neutral-600 leading-relaxed"
+								>
 									{selectedSource.description}
 								</p>
 								<p class="text-sm text-neutral-500 mt-2">
@@ -350,7 +354,9 @@
 							<!-- Device Pairing Flow -->
 							<div class="space-y-6">
 								<div>
-									<label class="block text-sm text-neutral-700 mb-2">
+									<label
+										class="block text-sm text-neutral-700 mb-2"
+									>
 										Device Name
 									</label>
 									<input
@@ -366,7 +372,9 @@
 								</div>
 
 								{#if !devicePairingInfo && sourceName.trim()}
-									<div class="pt-6 border-t border-neutral-200">
+									<div
+										class="pt-6 border-t border-neutral-200"
+									>
 										<DevicePairing
 											deviceType={selectedSource.name}
 											deviceName={sourceName}
@@ -375,7 +383,9 @@
 										/>
 									</div>
 								{:else if devicePairingInfo}
-									<div class="pt-6 border-t border-neutral-200">
+									<div
+										class="pt-6 border-t border-neutral-200"
+									>
 										<p class="text-sm text-neutral-600">
 											✓ Device paired: {devicePairingInfo.device_name}
 										</p>
@@ -386,7 +396,9 @@
 							<!-- OAuth Flow -->
 							<div class="space-y-6">
 								<div>
-									<label class="block text-sm text-neutral-700 mb-2">
+									<label
+										class="block text-sm text-neutral-700 mb-2"
+									>
 										Source Name
 									</label>
 									<input
@@ -401,7 +413,9 @@
 								</div>
 
 								{#if currentStep === 2}
-									<div class="pt-6 border-t border-neutral-200">
+									<div
+										class="pt-6 border-t border-neutral-200"
+									>
 										<p
 											class="text-sm text-neutral-600 mb-4 leading-relaxed"
 										>
@@ -411,7 +425,8 @@
 										</p>
 										<Button
 											onclick={handleAuthorize}
-											disabled={isLoading || !sourceName.trim()}
+											disabled={isLoading ||
+												!sourceName.trim()}
 										>
 											{#if isLoading}
 												Authorizing...
@@ -421,7 +436,9 @@
 										</Button>
 									</div>
 								{:else if currentStep > 2}
-									<div class="pt-6 border-t border-neutral-200">
+									<div
+										class="pt-6 border-t border-neutral-200"
+									>
 										<p class="text-sm text-neutral-600">
 											✓ Connected as "{sourceName}"
 										</p>

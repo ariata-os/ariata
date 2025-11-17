@@ -31,7 +31,7 @@
 			succeeded: "bg-green-50 text-green-700 border border-green-200",
 			failed: "bg-red-50 text-red-700 border border-red-200",
 			cancelled: "bg-amber-50 text-amber-700 border border-amber-200",
-			running: "bg-blue-50 text-blue-700 border border-blue-200",
+			running: "bg-blue-50 text-blue border border-blue-200",
 			pending: "bg-neutral-50 text-neutral-600 border border-neutral-200",
 		};
 		return (

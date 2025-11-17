@@ -40,7 +40,7 @@ pub async fn get_profile(db: &PgPool) -> Result<UserProfile> {
     let profile = sqlx::query_as::<_, UserProfile>(
         r#"
         SELECT *
-        FROM elt.user_profile
+        FROM data.user_profile
         LIMIT 1
         "#,
     )
@@ -62,7 +62,7 @@ pub async fn update_profile(db: &PgPool, request: UpdateProfileRequest) -> Resul
 
     // Build dynamic UPDATE query based on which fields are present
     let mut updates = Vec::new();
-    let mut query = "UPDATE elt.user_profile SET ".to_string();
+    let mut query = "UPDATE data.user_profile SET ".to_string();
 
     // Identity fields
     if request.full_name.is_some() {

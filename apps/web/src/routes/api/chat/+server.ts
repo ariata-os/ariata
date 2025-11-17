@@ -4,7 +4,7 @@ import { env } from '$env/dynamic/private';
 import { getAgent, initializeAgents } from '$lib/server/agents/registry';
 import { routeToAgent, isValidAgentId } from '$lib/server/routing/intent-router';
 import { getDb, getPool } from '$lib/server/db';
-import { chatSessions, preferences, assistantProfile, type ChatMessage } from '$lib/server/schema';
+import { chatSessions, assistantProfile, type ChatMessage } from '$lib/server/schema';
 import { eq, sql } from 'drizzle-orm';
 import {
 	isTextUIPart,
@@ -14,6 +14,7 @@ import {
 	type UIMessage
 } from 'ai';
 import type { AgentId } from '$lib/server/agents/types';
+import { checkRateLimit, recordUsage, RateLimitError } from '$lib/server/rate-limit';
 
 // Constants
 const MAX_TITLE_LENGTH = 50;
@@ -52,6 +53,29 @@ export const config: Config = {
  */
 export const POST: RequestHandler = async ({ request }) => {
 	try {
+		// CHECK RATE LIMIT FIRST (before any processing)
+		try {
+			await checkRateLimit('chat');
+		} catch (error) {
+			if (error instanceof RateLimitError) {
+				console.warn('[API] Rate limit exceeded:', error.message);
+				return new Response(
+					JSON.stringify({
+						error: 'Rate limit exceeded',
+						message: error.message,
+						current: error.current,
+						limit: error.limit,
+						resetAt: error.resetAt?.toISOString()
+					}),
+					{
+						status: 429,
+						headers: { 'Content-Type': 'application/json' }
+					}
+				);
+			}
+			throw error;
+		}
+
 		const body = await request.json();
 		const {
 			messages,
@@ -110,7 +134,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			return new Response(
 				JSON.stringify({
 					error: 'Invalid agentId',
-					allowed: ['auto', 'analytics', 'research', 'general', 'action']
+					allowed: ['auto', 'agent', 'chat']
 				}),
 				{
 					status: 400,
@@ -145,17 +169,14 @@ export const POST: RequestHandler = async ({ request }) => {
 			console.log('[API] Created new session:', sessionId, 'with title:', autoTitle);
 		}
 
-		// Load user preferences for personalization
-		const prefs = await db.select().from(preferences);
-		const userName = prefs.find((p) => p.key === 'user_name')?.value || 'User';
-
 		// Load assistant profile for AI personalization
 		const assistantProfiles = await db.select().from(assistantProfile).limit(1);
 		const assistantName = assistantProfiles[0]?.assistantName || 'Ariata';
 
-		// Initialize agents with user and assistant names from database
+		// Initialize agents with assistant name from database
+		// Note: userName could be loaded from data.user_profile.preferred_name via Rust API if needed
 		// Smart caching: only reinitializes if settings have changed
-		await initializeAgents(userName, assistantName);
+		await initializeAgents('User', assistantName);
 
 		// === AGENT ROUTING ===
 		// Determine which agent should handle this request
@@ -202,7 +223,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			parts: [
 				{
 					type: 'text',
-					text: `User: ${userName}\nCurrent date: ${currentDate} (YYYY-MM-DD format)`,
+					text: `User: User\nCurrent date: ${currentDate} (YYYY-MM-DD format)`,
 				},
 			],
 		};
@@ -223,10 +244,20 @@ export const POST: RequestHandler = async ({ request }) => {
 				prefix: 'msg',
 				size: 16
 			}),
-			onFinish: async ({ messages: completeMessages }) => {
+			onFinish: async ({ messages: completeMessages, usage }) => {
 				try {
 					// Save messages along with agent metadata
 					await saveMessagesToSession(sessionId, completeMessages, model, selectedAgentId);
+
+					// Record API usage for rate limiting and cost tracking
+					if (usage) {
+						await recordUsage('chat', {
+							input: usage.promptTokens || 0,
+							output: usage.completionTokens || 0,
+							model
+						});
+						console.log('[API] Recorded usage:', usage.promptTokens, 'input,', usage.completionTokens, 'output tokens');
+					}
 				} catch (error) {
 					console.error('[API] Failed to save messages to session:', error);
 				}
@@ -235,13 +266,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			onError: (error) => {
 				console.error('[API] Stream error:', error);
 
-				// Return sanitized error message to client
-				// Don't expose internal details in production
-				if (error instanceof Error) {
-					return `An error occurred: ${error.message}`;
-				}
-
-				return 'An unexpected error occurred. Please try again.';
+				// Only expose safe error types to prevent information disclosure
+				// Log the full error internally, but return generic message to client
+				// Note: RateLimitError should be caught earlier, so this handles streaming errors
+				return 'An unexpected error occurred during streaming. Please try again.';
 			},
 		});
 	} catch (error) {

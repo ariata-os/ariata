@@ -1,60 +1,64 @@
+/**
+ * Model configuration fetched from database via API
+ * This provides a single source of truth for model metadata including context window limits
+ */
+
 export interface ModelOption {
 	id: string;
 	displayName: string;
 	provider: string;
+	contextWindow: number | null;
+	maxOutputTokens: number | null;
+	supportsTools: boolean | null;
+	enabled: boolean;
+	sortOrder: number;
+	isDefault?: boolean;
 }
 
-export const models: ModelOption[] = [
-	{
-		id: 'openai/gpt-oss-120b',
-		displayName: 'GPT OSS 120B',
-		provider: 'OpenAI'
-	},
-	{
-		id: 'openai/gpt-oss-20b',
-		displayName: 'GPT OSS 20B',
-		provider: 'OpenAI'
-	},
-	{
-		id: 'anthropic/claude-sonnet-4.5',
-		displayName: 'Claude Sonnet 4.5',
-		provider: 'Anthropic'
-	},
-	{
-		id: 'anthropic/claude-opus-4.1',
-		displayName: 'Claude Opus 4.1',
-		provider: 'Anthropic'
-	},
-	{
-		id: 'anthropic/claude-haiku-4.5',
-		displayName: 'Claude Haiku 4.5',
-		provider: 'Anthropic'
-	},
-	{
-		id: 'openai/gpt-5',
-		displayName: 'GPT-5',
-		provider: 'OpenAI'
-	},
-	{
-		id: 'google/gemini-2.5-pro',
-		displayName: 'Gemini 2.5 Pro',
-		provider: 'Google'
-	},
-	{
-		id: 'google/gemini-2.5-flash',
-		displayName: 'Gemini 2.5 Flash',
-		provider: 'Google'
-	},
-	{
-		id: 'xai/grok-4',
-		displayName: 'Grok 4',
-		provider: 'xAI'
-	},
-	{
-		id: 'moonshotai/kimi-k2-thinking',
-		displayName: 'Kimi K2 Thinking',
-		provider: 'Moonshot AI'
+/**
+ * Fetch all models from API
+ */
+export async function fetchModels(): Promise<ModelOption[]> {
+	const response = await fetch('/api/models');
+	if (!response.ok) {
+		throw new Error(`Failed to fetch models: ${response.statusText}`);
 	}
-];
+	const data = await response.json();
 
-export const DEFAULT_MODEL = models[0]; // GPT OSS 120B
+	// Transform API response to ModelOption format
+	return data.map((model: any) => ({
+		id: model.model_id,
+		displayName: model.display_name,
+		provider: model.provider,
+		contextWindow: model.context_window,
+		maxOutputTokens: model.max_output_tokens,
+		supportsTools: model.supports_tools,
+		enabled: model.enabled,
+		sortOrder: model.sort_order,
+		isDefault: model.is_default || false
+	}));
+}
+
+/**
+ * Get model configuration by ID from API
+ */
+export async function getModelById(modelId: string): Promise<ModelOption | null> {
+	const response = await fetch(`/api/models/${encodeURIComponent(modelId)}`);
+	if (!response.ok) {
+		if (response.status === 404) return null;
+		throw new Error(`Failed to fetch model: ${response.statusText}`);
+	}
+	const model = await response.json();
+
+	return {
+		id: model.model_id,
+		displayName: model.display_name,
+		provider: model.provider,
+		contextWindow: model.context_window,
+		maxOutputTokens: model.max_output_tokens,
+		supportsTools: model.supports_tools,
+		enabled: model.enabled,
+		sortOrder: model.sort_order,
+		isDefault: model.is_default || false
+	};
+}

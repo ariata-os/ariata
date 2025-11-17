@@ -99,6 +99,7 @@ pub struct AssistantProfile {
     pub default_model_id: Option<String>,
     pub enabled_tools: Option<serde_json::Value>,
     pub pinned_tool_ids: Option<Vec<String>>,
+    pub ui_preferences: Option<serde_json::Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }

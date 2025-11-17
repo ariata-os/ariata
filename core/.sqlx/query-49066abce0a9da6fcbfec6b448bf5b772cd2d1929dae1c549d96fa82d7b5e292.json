@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE app.api_usage\n        SET\n            token_count = token_count + $3,\n            input_tokens = input_tokens + $4,\n            output_tokens = output_tokens + $5,\n            estimated_cost_usd = estimated_cost_usd + $6,\n            updated_at = NOW()\n        WHERE endpoint = $1 AND day_bucket = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Date",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Numeric"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "49066abce0a9da6fcbfec6b448bf5b772cd2d1929dae1c549d96fa82d7b5e292"
+}

@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "streams": [
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "source_id": "00000000-0000-0000-0000-000000000001",
+      "stream_name": "ai_chat",
+      "table_name": "stream_ariata_ai_chat",
+      "is_enabled": true
+    }
+  ]
+}

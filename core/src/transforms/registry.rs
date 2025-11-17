@@ -91,6 +91,24 @@ pub fn get_transform_route(stream_name: &str) -> Result<TransformRoute> {
             domain: "location",
             transform_stage: "location_normalization",
         }),
+        "stream_mac_apps" => Ok(TransformRoute {
+            source_table: "stream_mac_apps",
+            target_tables: vec!["activity_app_usage"],
+            domain: "activity",
+            transform_stage: "app_usage_normalization",
+        }),
+        "stream_mac_browser" => Ok(TransformRoute {
+            source_table: "stream_mac_browser",
+            target_tables: vec!["activity_web_browsing"],
+            domain: "activity",
+            transform_stage: "web_browsing_normalization",
+        }),
+        "stream_mac_imessage" => Ok(TransformRoute {
+            source_table: "stream_mac_imessage",
+            target_tables: vec!["social_message"],
+            domain: "social",
+            transform_stage: "message_normalization",
+        }),
         "location_point" => Ok(TransformRoute {
             source_table: "location_point",
             target_tables: vec!["location_visit"],
@@ -104,7 +122,7 @@ pub fn get_transform_route(stream_name: &str) -> Result<TransformRoute> {
             transform_stage: "semantic_parsing",
         }),
         _ => Err(Error::InvalidInput(format!(
-            "Unknown stream for transform: '{}'. Valid streams: stream_ios_microphone, stream_google_gmail, stream_google_calendar, stream_notion_pages, stream_ariata_ai_chat, stream_ios_healthkit, stream_ios_location, location_point, speech_transcription",
+            "Unknown stream for transform: '{}'. Valid streams: stream_ios_microphone, stream_google_gmail, stream_google_calendar, stream_notion_pages, stream_ariata_ai_chat, stream_ios_healthkit, stream_ios_location, stream_mac_apps, stream_mac_browser, stream_mac_imessage, location_point, speech_transcription",
             stream_name
         ))),
     }
@@ -116,6 +134,9 @@ pub fn list_transform_streams() -> Vec<&'static str> {
         "stream_ios_microphone",
         "stream_ios_healthkit",
         "stream_ios_location",
+        "stream_mac_apps",
+        "stream_mac_browser",
+        "stream_mac_imessage",
         "location_point",
         "stream_google_gmail",
         "stream_google_calendar",
@@ -130,7 +151,7 @@ pub fn list_transform_streams() -> Vec<&'static str> {
 /// ## Naming Convention
 ///
 /// The system uses a three-tier naming architecture:
-/// 1. **Stream Name** (registered in elt.streams) - e.g., "app_export", "gmail"
+/// 1. **Stream Name** (registered in data.streams) - e.g., "app_export", "gmail"
 /// 2. **Stream Table** (object storage) - e.g., "stream_ariata_ai_chat", "stream_google_gmail"
 /// 3. **Ontology Table** (elt schema) - e.g., "knowledge_ai_conversation", "social_email"
 ///
@@ -165,6 +186,11 @@ pub fn normalize_stream_name(name: &str) -> String {
             "microphone" => "stream_ios_microphone",
             "healthkit" => "stream_ios_healthkit",
             "location" => "stream_ios_location",
+
+            // macOS device streams
+            "apps" => "stream_mac_apps",
+            "browser" => "stream_mac_browser",
+            "messages" => "stream_mac_imessage",
 
             _ => name, // Return as-is if unknown
         }

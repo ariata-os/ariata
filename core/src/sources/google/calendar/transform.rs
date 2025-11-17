@@ -357,7 +357,7 @@ async fn execute_calendar_batch_insert(
     }
 
     let query_str = Database::build_batch_insert_query(
-        "elt.activity_calendar_entry",
+        "data.activity_calendar_entry",
         &[
             "title",
             "description",

@@ -1,53 +1,7 @@
-// Axiology Types - Temporal Pursuits Management
+// Axiology Types - Values and Character Patterns
 //
 // "What you do reveals what you value"
-// Axiology tracks your values across different time horizons
-
-export interface Task {
-	id: string;
-	title: string;
-	description?: string | null;
-	tags?: string[] | null;
-	topic_id?: string | null;
-	status?: string | null; // 'active', 'on_hold', 'completed', 'abandoned'
-	progress_percent?: number | null; // 0-100
-	start_date?: string | null;
-	target_date?: string | null;
-	completed_date?: string | null;
-	is_active?: boolean | null;
-	created_at: string;
-	updated_at: string;
-}
-
-export interface Initiative {
-	id: string;
-	title: string;
-	description?: string | null;
-	tags?: string[] | null;
-	topic_id?: string | null;
-	status?: string | null; // 'planning', 'active', 'on_hold', 'completed', 'abandoned'
-	progress_percent?: number | null; // 0-100
-	start_date?: string | null;
-	target_date?: string | null;
-	completed_date?: string | null;
-	is_active?: boolean | null;
-	created_at: string;
-	updated_at: string;
-}
-
-export interface Aspiration {
-	id: string;
-	title: string;
-	description?: string | null;
-	tags?: string[] | null;
-	topic_id?: string | null;
-	status?: string | null; // 'dreaming', 'planning', 'pursuing', 'achieved', 'let_go'
-	target_timeframe?: string | null; // e.g. "next 5 years", "by age 50", "someday"
-	achieved_date?: string | null;
-	is_active?: boolean | null;
-	created_at: string;
-	updated_at: string;
-}
+// Axiology tracks your value system and character development
 
 export interface Telos {
 	id: string;
@@ -57,67 +11,6 @@ export interface Telos {
 	topic_id?: string | null;
 	created_at: string;
 	updated_at: string;
-}
-
-// Request types for creating/updating entities
-export interface CreateTaskRequest {
-	title: string;
-	description?: string;
-	tags?: string[];
-	topic_id?: string;
-	start_date?: string;
-	target_date?: string;
-}
-
-export interface UpdateTaskRequest {
-	title?: string;
-	description?: string;
-	tags?: string[];
-	topic_id?: string;
-	status?: string;
-	progress_percent?: number;
-	start_date?: string;
-	target_date?: string;
-	completed_date?: string;
-}
-
-export interface CreateInitiativeRequest {
-	title: string;
-	description?: string;
-	tags?: string[];
-	topic_id?: string;
-	start_date?: string;
-	target_date?: string;
-}
-
-export interface UpdateInitiativeRequest {
-	title?: string;
-	description?: string;
-	tags?: string[];
-	topic_id?: string;
-	status?: string;
-	progress_percent?: number;
-	start_date?: string;
-	target_date?: string;
-	completed_date?: string;
-}
-
-export interface CreateAspirationRequest {
-	title: string;
-	description?: string;
-	tags?: string[];
-	topic_id?: string;
-	target_timeframe?: string;
-}
-
-export interface UpdateAspirationRequest {
-	title?: string;
-	description?: string;
-	tags?: string[];
-	topic_id?: string;
-	status?: string;
-	target_timeframe?: string;
-	achieved_date?: string;
 }
 
 export interface UpdateTelosRequest {
@@ -143,6 +36,34 @@ export interface Virtue extends SimpleAxiologyItem {}
 export interface Vice extends SimpleAxiologyItem {}
 export interface Value extends SimpleAxiologyItem {}
 
+export interface Habit {
+	id: string;
+	title: string;
+	description?: string | null;
+	frequency?: string | null; // 'daily', 'weekly', 'monthly'
+	time_of_day?: string | null; // 'morning', 'afternoon', 'evening', 'night'
+	topic_id?: string | null;
+	streak_count?: number | null;
+	last_completed_date?: string | null;
+	is_active?: boolean | null;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface Preference {
+	id: string;
+	title: string;
+	description?: string | null;
+	preference_domain?: string | null; // 'work_environment', 'people', 'places', 'communication', 'activities'
+	valence?: string | null; // 'strong_preference', 'mild_preference', 'neutral', 'mild_aversion', 'strong_aversion'
+	person_id?: string | null;
+	place_id?: string | null;
+	topic_id?: string | null;
+	is_active?: boolean | null;
+	created_at: string;
+	updated_at: string;
+}
+
 // Request types for simple axiology items
 export interface CreateSimpleRequest {
 	title: string;
@@ -156,8 +77,40 @@ export interface UpdateSimpleRequest {
 	topic_id?: string;
 }
 
-// Discriminated union type for temporal pursuits widget
-export type TemporalPursuit =
-	| { type: 'task'; data: Task }
-	| { type: 'initiative'; data: Initiative }
-	| { type: 'aspiration'; data: Aspiration };
+export interface CreateHabitRequest {
+	title: string;
+	description?: string;
+	frequency?: string;
+	time_of_day?: string;
+	topic_id?: string;
+}
+
+export interface UpdateHabitRequest {
+	title?: string;
+	description?: string;
+	frequency?: string;
+	time_of_day?: string;
+	topic_id?: string;
+	streak_count?: number;
+	last_completed_date?: string;
+}
+
+export interface CreatePreferenceRequest {
+	title: string;
+	description?: string;
+	preference_domain?: string;
+	valence?: string;
+	person_id?: string;
+	place_id?: string;
+	topic_id?: string;
+}
+
+export interface UpdatePreferenceRequest {
+	title?: string;
+	description?: string;
+	preference_domain?: string;
+	valence?: string;
+	person_id?: string;
+	place_id?: string;
+	topic_id?: string;
+}

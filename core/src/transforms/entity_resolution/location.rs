@@ -202,7 +202,7 @@ async fn fetch_unresolved_visits(db: &Database) -> Result<Vec<LocationVisit>> {
             longitude as centroid_lon,
             start_time,
             end_time
-        FROM elt.location_visit
+        FROM data.location_visit
         WHERE place_id IS NULL
         ORDER BY start_time DESC
         LIMIT 100
@@ -278,15 +278,15 @@ async fn find_nearby_place(db: &Database, lat: f64, lon: f64) -> Result<Option<U
     let row = sqlx::query!(
         r#"
         SELECT id
-        FROM elt.entities_place
-        WHERE ST_DWithin(
-            geo_center::geography,
-            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+        FROM data.entities_place
+        WHERE data.ST_DWithin(
+            geo_center::data.geography,
+            data.ST_SetSRID(data.ST_MakePoint($1, $2), 4326)::data.geography,
             $3
         )
-        ORDER BY ST_Distance(
-            geo_center::geography,
-            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+        ORDER BY data.ST_Distance(
+            geo_center::data.geography,
+            data.ST_SetSRID(data.ST_MakePoint($1, $2), 4326)::data.geography
         )
         LIMIT 1
         "#,
@@ -493,7 +493,7 @@ async fn create_place_entity(db: &Database, place_info: &PlaceInfo) -> Result<Uu
 
     sqlx::query!(
         r#"
-        INSERT INTO elt.entities_place (
+        INSERT INTO data.entities_place (
             id,
             canonical_name,
             category,
@@ -503,7 +503,7 @@ async fn create_place_entity(db: &Database, place_info: &PlaceInfo) -> Result<Uu
             created_at,
             updated_at
         ) VALUES (
-            $1, $2, NULL, ST_SetSRID(ST_GeomFromText($3), 4326), NULL, $4, NOW(), NOW()
+            $1, $2, NULL, data.ST_SetSRID(data.ST_GeomFromText($3), 4326), NULL, $4, NOW(), NOW()
         )
         "#,
         place_id,
@@ -521,7 +521,7 @@ async fn create_place_entity(db: &Database, place_info: &PlaceInfo) -> Result<Uu
 async fn link_visit_to_place(db: &Database, visit_id: Uuid, place_id: Uuid) -> Result<()> {
     sqlx::query!(
         r#"
-        UPDATE elt.location_visit
+        UPDATE data.location_visit
         SET place_id = $1,
             updated_at = NOW()
         WHERE id = $2

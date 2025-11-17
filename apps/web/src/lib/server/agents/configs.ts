@@ -2,61 +2,33 @@
  * Agent configuration definitions
  */
 import type { AgentMetadata } from './types';
-import { ToolCategory } from '../tools/types';
 
 /**
  * Agent configurations
- * These define the metadata and capabilities of each specialized agent
+ * Simplified 2-agent system:
+ * - agent: Has all tools, can perform actions
+ * - chat: No tools, simple conversation only
  */
 export const AGENT_CONFIGS: AgentMetadata[] = [
 	{
-		id: 'analytics',
-		name: 'Analytics Agent',
-		description: 'Analyzes location patterns, data visualizations, and explores data structures. Best for spatial analysis, data exploration, and understanding what data is available.',
-		color: '#3b82f6', // Blue
-		icon: '📊',
-		defaultModel: 'openai/gpt-oss-120b', // Fast, good for analytical tasks
-		toolCategories: [ToolCategory.SHARED, ToolCategory.ANALYTICS],
-		maxSteps: 5,
-		enabled: true,
-	},
-	{
-		id: 'research',
-		name: 'Research Agent',
-		description: 'Searches narratives, explores memories, and connects ideas. Best for biographical questions, semantic search, and understanding values and beliefs.',
-		color: '#8b5cf6', // Purple
-		icon: '🔍',
-		defaultModel: 'anthropic/claude-opus-4.1', // Deep reasoning for research
-		toolCategories: [ToolCategory.SHARED, ToolCategory.RESEARCH],
-		maxSteps: 7, // May need more steps for deep research
-		enabled: true,
-	},
-	{
-		id: 'general',
-		name: 'General Assistant',
-		description: 'Versatile assistant with access to all tools. Best for general conversation, unclear intents, and multi-domain queries.',
+		id: 'agent',
+		name: 'Agent',
+		description: 'Intelligent assistant with access to all available tools. Can query data, search the web, visualize information, and help with tasks.',
 		color: '#6b7280', // Gray
-		icon: '💬',
-		defaultModel: 'anthropic/claude-sonnet-4.5', // Balanced, good all-arounder
-		toolCategories: [
-			ToolCategory.SHARED,
-			ToolCategory.ANALYTICS,
-			ToolCategory.RESEARCH,
-			ToolCategory.ACTION,
-		],
+		icon: '🤖',
+		defaultModel: 'anthropic/claude-sonnet-4.5',
 		maxSteps: 5,
 		enabled: true,
 	},
 	{
-		id: 'action',
-		name: 'Action Agent',
-		description: 'Handles system operations like data synchronization. Best for maintenance tasks and system operations.',
-		color: '#10b981', // Green
-		icon: '⚡',
-		defaultModel: 'openai/gpt-oss-120b', // Fast, reliable
-		toolCategories: [ToolCategory.SHARED, ToolCategory.ACTION],
-		maxSteps: 3, // Actions are usually straightforward
-		enabled: false, // Not enabled yet - coming soon
+		id: 'chat',
+		name: 'Chat',
+		description: 'Simple conversational assistant without tool access. Best for quick questions and general conversation.',
+		color: '#64748b', // Slate
+		icon: '💬',
+		defaultModel: 'anthropic/claude-sonnet-4.5',
+		maxSteps: 1, // No tools, so only one step
+		enabled: true,
 	},
 ];
 
@@ -79,8 +51,8 @@ export function getEnabledAgentConfigs(): AgentMetadata[] {
 
 /**
  * Get default agent ID
- * @returns ID of the default agent (general)
+ * @returns ID of the default agent
  */
 export function getDefaultAgentId(): string {
-	return 'general';
+	return 'agent';
 }

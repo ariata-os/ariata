@@ -1,0 +1,106 @@
+{
+  "version": "1.0.0",
+  "models": [
+    {
+      "model_id": "openai/gpt-oss-120b",
+      "display_name": "GPT OSS 120B",
+      "provider": "OpenAI",
+      "sort_order": 1,
+      "enabled": true,
+      "context_window": 128000,
+      "max_output_tokens": 16384,
+      "supports_tools": true
+    },
+    {
+      "model_id": "openai/gpt-oss-20b",
+      "display_name": "GPT OSS 20B",
+      "provider": "OpenAI",
+      "sort_order": 2,
+      "enabled": true,
+      "context_window": 128000,
+      "max_output_tokens": 16384,
+      "supports_tools": true
+    },
+    {
+      "model_id": "anthropic/claude-sonnet-4.5",
+      "display_name": "Claude Sonnet 4.5",
+      "provider": "Anthropic",
+      "sort_order": 3,
+      "enabled": true,
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "supports_tools": true
+    },
+    {
+      "model_id": "anthropic/claude-opus-4.1",
+      "display_name": "Claude Opus 4.1",
+      "provider": "Anthropic",
+      "sort_order": 4,
+      "enabled": true,
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "supports_tools": true
+    },
+    {
+      "model_id": "anthropic/claude-haiku-4.5",
+      "display_name": "Claude Haiku 4.5",
+      "provider": "Anthropic",
+      "sort_order": 5,
+      "enabled": true,
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "supports_tools": true,
+      "is_default": true
+    },
+    {
+      "model_id": "openai/gpt-5",
+      "display_name": "GPT-5",
+      "provider": "OpenAI",
+      "sort_order": 6,
+      "enabled": true,
+      "context_window": 200000,
+      "max_output_tokens": 16384,
+      "supports_tools": true
+    },
+    {
+      "model_id": "google/gemini-2.5-pro",
+      "display_name": "Gemini 2.5 Pro",
+      "provider": "Google",
+      "sort_order": 7,
+      "enabled": true,
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_tools": true
+    },
+    {
+      "model_id": "google/gemini-2.5-flash",
+      "display_name": "Gemini 2.5 Flash",
+      "provider": "Google",
+      "sort_order": 8,
+      "enabled": true,
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "supports_tools": true
+    },
+    {
+      "model_id": "xai/grok-4",
+      "display_name": "Grok 4",
+      "provider": "xAI",
+      "sort_order": 9,
+      "enabled": true,
+      "context_window": 128000,
+      "max_output_tokens": 16384,
+      "supports_tools": true
+    },
+    {
+      "model_id": "moonshotai/kimi-k2-thinking",
+      "display_name": "Kimi K2 Thinking",
+      "provider": "Moonshot AI",
+      "sort_order": 10,
+      "enabled": true,
+      "context_window": 200000,
+      "max_output_tokens": 4096,
+      "supports_tools": true
+    }
+  ]
+}

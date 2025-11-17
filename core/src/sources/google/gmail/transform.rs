@@ -395,7 +395,7 @@ async fn execute_email_batch_insert(
     }
 
     let query_str = Database::build_batch_insert_query(
-        "elt.social_email",
+        "data.social_email",
         &[
             "message_id",
             "thread_id",

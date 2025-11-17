@@ -839,6 +839,96 @@ pub async fn list_tags_handler(State(state): State<AppState>) -> Response {
 }
 
 // =============================================================================
+// Actions API - Initiatives
+// =============================================================================
+
+/// List all active initiatives
+pub async fn list_initiatives_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::list_initiatives(state.db.pool()).await)
+}
+
+/// Get a specific initiative by ID
+pub async fn get_initiative_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    api_response(crate::api::get_initiative(state.db.pool(), id).await)
+}
+
+/// Create a new initiative
+pub async fn create_initiative_handler(
+    State(state): State<AppState>,
+    Json(request): Json<crate::api::CreateTaskRequest>,
+) -> Response {
+    api_response(crate::api::create_initiative(state.db.pool(), request).await)
+}
+
+/// Update an existing initiative
+pub async fn update_initiative_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<crate::api::UpdateTaskRequest>,
+) -> Response {
+    api_response(crate::api::update_initiative(state.db.pool(), id, request).await)
+}
+
+/// Delete an initiative (soft delete)
+pub async fn delete_initiative_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    match crate::api::delete_initiative(state.db.pool(), id).await {
+        Ok(_) => success_message("Initiative deleted successfully"),
+        Err(e) => error_response(e),
+    }
+}
+
+// =============================================================================
+// Actions API - Aspirations
+// =============================================================================
+
+/// List all active aspirations
+pub async fn list_aspirations_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::list_aspirations(state.db.pool()).await)
+}
+
+/// Get a specific aspiration by ID
+pub async fn get_aspiration_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    api_response(crate::api::get_aspiration(state.db.pool(), id).await)
+}
+
+/// Create a new aspiration
+pub async fn create_aspiration_handler(
+    State(state): State<AppState>,
+    Json(request): Json<crate::api::CreateAspirationRequest>,
+) -> Response {
+    api_response(crate::api::create_aspiration(state.db.pool(), request).await)
+}
+
+/// Update an existing aspiration
+pub async fn update_aspiration_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<crate::api::UpdateAspirationRequest>,
+) -> Response {
+    api_response(crate::api::update_aspiration(state.db.pool(), id, request).await)
+}
+
+/// Delete an aspiration (soft delete)
+pub async fn delete_aspiration_handler(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Response {
+    match crate::api::delete_aspiration(state.db.pool(), id).await {
+        Ok(_) => success_message("Aspiration deleted successfully"),
+        Err(e) => error_response(e),
+    }
+}
+
+// =============================================================================
 // Axiology API - Temperaments
 // =============================================================================
 
@@ -1030,4 +1120,38 @@ pub async fn update_tool_handler(
 /// Get pinned tools with full metadata
 pub async fn get_pinned_tools_handler(State(state): State<AppState>) -> Response {
     api_response(crate::api::get_pinned_tools(state.db.pool()).await)
+}
+
+// =============================================================================
+// Models API
+// =============================================================================
+
+/// List all available models
+pub async fn list_models_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::list_models(state.db.pool()).await)
+}
+
+/// Get a specific model by ID
+pub async fn get_model_handler(
+    State(state): State<AppState>,
+    Path(model_id): Path<String>,
+) -> Response {
+    api_response(crate::api::get_model(state.db.pool(), &model_id).await)
+}
+
+// =============================================================================
+// Agents API
+// =============================================================================
+
+/// List all available agents
+pub async fn list_agents_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::list_agents(state.db.pool()).await)
+}
+
+/// Get a specific agent by ID
+pub async fn get_agent_handler(
+    State(state): State<AppState>,
+    Path(agent_id): Path<String>,
+) -> Response {
+    api_response(crate::api::get_agent(state.db.pool(), &agent_id).await)
 }
