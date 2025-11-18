@@ -23,6 +23,7 @@ class BatchUploadCoordinator: ObservableObject {
     private let configProvider: ConfigurationProvider
     private let storageProvider: StorageProvider
     private let networkManager: NetworkManager
+    private let networkMonitor: NetworkMonitor
 
     private var uploadTimer: ReliableTimer?
     private let uploadInterval: TimeInterval = 300 // 5 minutes
@@ -36,10 +37,12 @@ class BatchUploadCoordinator: ObservableObject {
     /// Initialize with dependency injection
     init(configProvider: ConfigurationProvider,
          storageProvider: StorageProvider,
-         networkManager: NetworkManager) {
+         networkManager: NetworkManager,
+         networkMonitor: NetworkMonitor = NetworkMonitor.shared) {
         self.configProvider = configProvider
         self.storageProvider = storageProvider
         self.networkManager = networkManager
+        self.networkMonitor = networkMonitor
 
         loadLastUploadDate()
         loadLastSuccessfulSyncDate()
@@ -139,8 +142,13 @@ class BatchUploadCoordinator: ObservableObject {
             }
         }
         
-        // Get ALL pending uploads from SQLite queue
-        let pendingEvents = storageProvider.dequeueNext(limit: 1000) // Get more events for batching
+        // Get pending uploads with adaptive batch size based on network conditions
+        let batchSize = networkMonitor.getRecommendedBatchSize()
+        let pendingEvents = storageProvider.dequeueNext(limit: batchSize)
+
+        #if DEBUG
+        print("Using adaptive batch size: \(batchSize) events (network: \(networkMonitor.currentNetworkType.description))")
+        #endif
         
         if pendingEvents.isEmpty {
             return
@@ -151,10 +159,14 @@ class BatchUploadCoordinator: ObservableObject {
         
         // Track if any uploads succeeded
         var anyUploadSucceeded = false
-        
+
         // Process each stream group as a batch
         for (streamName, events) in groupedEvents {
             let success = await uploadBatchedEvents(streamName: streamName, events: events, to: ingestURL)
+
+            // Record upload result for adaptive batching
+            networkMonitor.recordUploadResult(success: success)
+
             if success {
                 anyUploadSucceeded = true
             }

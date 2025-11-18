@@ -203,23 +203,61 @@ class AudioManager: NSObject, ObservableObject {
 
     // MARK: - Audio Input Management
 
+    /// Refresh available audio inputs (call when opening Settings)
+    func refreshAvailableInputs() {
+        // Temporarily activate audio session to get full list of inputs
+        do {
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth])
+            try audioSession.setActive(true)
+
+            // Update the list
+            updateAvailableInputs()
+
+            // If not recording, deactivate to save resources
+            if !isRecording {
+                try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+            }
+        } catch {
+            print("Failed to refresh audio inputs: \(error)")
+        }
+    }
+
     private func updateAvailableInputs() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            
+
             // Get all available inputs
             self.availableAudioInputs = self.audioSession.availableInputs ?? []
-            
-            // If selected input is no longer available, reset to default
-            if let selectedInput = self.selectedAudioInput,
-               !self.availableAudioInputs.contains(where: { $0.uid == selectedInput.uid }) {
-                self.selectedAudioInput = nil
-                self.saveSelectedInput()
+
+            #if DEBUG
+            print("🎙️ Available audio inputs: \(self.availableAudioInputs.count)")
+            for input in self.availableAudioInputs {
+                print("   - \(input.portName) (\(input.portType.rawValue))")
             }
-            
-            // If no input selected, select the built-in mic
-            if self.selectedAudioInput == nil {
-                self.selectedAudioInput = self.availableAudioInputs.first(where: { 
+            #endif
+
+            // Check if we have a saved preference
+            if let savedUID = UserDefaults.standard.string(forKey: "selectedAudioInputUID") {
+                // Try to find the saved device in available inputs
+                if let matchingInput = self.availableAudioInputs.first(where: { $0.uid == savedUID }) {
+                    // Saved device is available - use it
+                    self.selectedAudioInput = matchingInput
+                    #if DEBUG
+                    print("Preferred audio input available: \(self.getDisplayName(for: matchingInput))")
+                    #endif
+                } else {
+                    // Saved device not available (disconnected) - use built-in mic temporarily
+                    // BUT keep the preference in UserDefaults for when it reconnects
+                    self.selectedAudioInput = self.availableAudioInputs.first(where: {
+                        $0.portType == .builtInMic
+                    })
+                    #if DEBUG
+                    print("Preferred audio input not available (temporarily using iPhone mic)")
+                    #endif
+                }
+            } else {
+                // No saved preference - default to built-in mic
+                self.selectedAudioInput = self.availableAudioInputs.first(where: {
                     $0.portType == .builtInMic
                 })
             }
@@ -244,8 +282,22 @@ class AudioManager: NSObject, ObservableObject {
         guard let savedInputUID = UserDefaults.standard.string(forKey: "selectedAudioInputUID") else {
             return
         }
-        
-        selectedAudioInput = availableAudioInputs.first(where: { $0.uid == savedInputUID })
+
+        // Try to find saved input in available inputs
+        if let matchingInput = availableAudioInputs.first(where: { $0.uid == savedInputUID }) {
+            selectedAudioInput = matchingInput
+            #if DEBUG
+            print("Restored saved audio input: \(getDisplayName(for: matchingInput))")
+            #endif
+        } else {
+            #if DEBUG
+            print("Saved audio input not available (UID: \(savedInputUID))")
+            print("   Device may be disconnected. Preference preserved for next connection.")
+            #endif
+            // Don't reset preference - keep it for when device reconnects
+            // Just use built-in mic temporarily
+            selectedAudioInput = availableAudioInputs.first(where: { $0.portType == .builtInMic })
+        }
     }
     
     private func saveSelectedInput() {

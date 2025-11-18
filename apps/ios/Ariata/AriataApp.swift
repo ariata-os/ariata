@@ -10,18 +10,24 @@ import BackgroundTasks
 
 @main
 struct AriataApp: App {
-    @StateObject private var deviceManager = DeviceManager.shared
-    @StateObject private var uploadCoordinator = BatchUploadCoordinator.shared
-    @StateObject private var healthKitManager = HealthKitManager.shared
-    @StateObject private var locationManager = LocationManager.shared
-    @StateObject private var audioManager = AudioManager.shared
     @AppStorage("isOnboardingComplete") private var isOnboardingComplete = false
-    
+    @StateObject private var lifecycleObserver = AppLifecycleObserver()
+
     init() {
         // Register background tasks on app launch
         registerBackgroundTasks()
+
+        // Initialize all managers to ensure singletons are created
+        _ = DeviceManager.shared
+        _ = NetworkMonitor.shared  // Initialize network monitoring early
+        _ = BatchUploadCoordinator.shared
+        _ = HealthKitManager.shared
+        _ = LocationManager.shared
+        _ = AudioManager.shared
+        _ = PermissionMonitor.shared
+        _ = LowPowerModeMonitor.shared
     }
-    
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -33,21 +39,6 @@ struct AriataApp: App {
                         }
                 } else {
                     OnboardingView(isOnboardingComplete: $isOnboardingComplete)
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                // Update stats when app comes to foreground
-                uploadCoordinator.updateUploadStats()
-
-                // Trigger health check for all services when returning to foreground
-                if isOnboardingComplete {
-                    // Delay slightly to ensure system is ready after returning to foreground
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        // Audio health check will handle any needed recovery
-                        _ = audioManager.performHealthCheck()
-                        // Location health check ensures tracking continues (especially important after network changes)
-                        _ = locationManager.performHealthCheck()
-                    }
                 }
             }
         }
@@ -74,32 +65,32 @@ struct AriataApp: App {
     private func handleBackgroundRefresh(task: BGAppRefreshTask) {
         // Schedule next refresh
         scheduleBackgroundRefresh()
-        
+
         // Perform quick sync
         let syncTask = Task {
-            await uploadCoordinator.performUpload()
+            await BatchUploadCoordinator.shared.performUpload()
         }
-        
+
         task.expirationHandler = {
             syncTask.cancel()
         }
-        
+
         Task {
             _ = await syncTask.result
             task.setTaskCompleted(success: true)
         }
     }
-    
+
     private func handleBackgroundProcessing(task: BGProcessingTask) {
         // Perform longer running tasks
         let processingTask = Task {
-            await uploadCoordinator.performUpload()
+            await BatchUploadCoordinator.shared.performUpload()
         }
-        
+
         task.expirationHandler = {
             processingTask.cancel()
         }
-        
+
         Task {
             _ = await processingTask.result
             task.setTaskCompleted(success: true)
@@ -120,6 +111,12 @@ struct AriataApp: App {
     }
     
     private func startAllServices() {
+        let deviceManager = DeviceManager.shared
+        let uploadCoordinator = BatchUploadCoordinator.shared
+        let locationManager = LocationManager.shared
+        let audioManager = AudioManager.shared
+        let healthKitManager = HealthKitManager.shared
+
         // Schedule background refresh task (required for background execution)
         scheduleBackgroundRefresh()
 
@@ -127,7 +124,7 @@ struct AriataApp: App {
         uploadCoordinator.startPeriodicUploads()
 
         let config = deviceManager.configuration
-        
+
         #if DEBUG
         print("🚀 Starting services with configuration:")
         print("   Stream configurations: \(config.streamConfigurations.count) streams")
@@ -135,17 +132,17 @@ struct AriataApp: App {
             print("     - \(key): enabled=\(streamConfig.enabled), initialSyncDays=\(streamConfig.initialSyncDays)")
         }
         #endif
-        
+
         // Start location tracking if authorized AND enabled
         if locationManager.hasPermission && config.isStreamEnabled("location") {
             locationManager.startTracking()
         }
-        
+
         // Start audio recording if authorized AND enabled
         if audioManager.hasPermission && config.isStreamEnabled("microphone") {
             audioManager.startRecording()
         }
-        
+
         // Start HealthKit monitoring if authorized AND enabled
         if healthKitManager.isAuthorized && config.isStreamEnabled("healthkit") {
             // Check if we have anchors (meaning initial sync was done)

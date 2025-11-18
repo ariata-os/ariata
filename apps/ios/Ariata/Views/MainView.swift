@@ -8,10 +8,11 @@
 import SwiftUI
 
 struct MainView: View {
-    @StateObject private var deviceManager = DeviceManager.shared
-    @StateObject private var healthKitManager = HealthKitManager.shared
-    @StateObject private var uploadCoordinator = BatchUploadCoordinator.shared
-    @StateObject private var lowPowerModeMonitor = LowPowerModeMonitor.shared
+    @ObservedObject private var deviceManager = DeviceManager.shared
+    @ObservedObject private var healthKitManager = HealthKitManager.shared
+    @ObservedObject private var uploadCoordinator = BatchUploadCoordinator.shared
+    @ObservedObject private var lowPowerModeMonitor = LowPowerModeMonitor.shared
+    @ObservedObject private var permissionMonitor = PermissionMonitor.shared
 
     @State private var showingSettings = false
     @State private var isManualSyncing = false
@@ -28,6 +29,14 @@ struct MainView: View {
                     if lowPowerModeMonitor.isLowPowerModeEnabled {
                         LowPowerModeWarningBanner()
                             .padding(.horizontal)
+                    }
+
+                    // Permission Issues Warning
+                    if permissionMonitor.hasIssues {
+                        ForEach(permissionMonitor.currentIssues) { issue in
+                            PermissionIssuesBanner(issue: issue)
+                                .padding(.horizontal)
+                        }
                     }
 
                     // Quick Stats
@@ -88,11 +97,26 @@ struct MainView: View {
 
 // MARK: - Status Card
 
+/// Timer container with guaranteed cleanup via deinit
+class CountdownTimerContainer: ObservableObject {
+    @Published var secondsUntilSync: Int = 0
+    var timer: Timer?
+
+    deinit {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    func invalidate() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
 struct StatusCard: View {
     @ObservedObject private var deviceManager = DeviceManager.shared
     @ObservedObject private var uploadCoordinator = BatchUploadCoordinator.shared
-    @State private var countdownTimer: Timer?
-    @State private var secondsUntilSync: Int = 0
+    @StateObject private var timerContainer = CountdownTimerContainer()
     
     var statusColor: Color {
         if !deviceManager.isConfigured {
@@ -115,8 +139,8 @@ struct StatusCard: View {
     }
     
     var countdownText: String {
-        let minutes = secondsUntilSync / 60
-        let seconds = secondsUntilSync % 60
+        let minutes = timerContainer.secondsUntilSync / 60
+        let seconds = timerContainer.secondsUntilSync % 60
         return String(format: "Next sync: %d:%02d", minutes, seconds)
     }
     
@@ -161,36 +185,47 @@ struct StatusCard: View {
         .onAppear {
             startCountdownTimer()
         }
-        .onDisappear {
-            countdownTimer?.invalidate()
-        }
         .onChange(of: uploadCoordinator.lastUploadDate) {
             updateCountdown()
         }
     }
-    
+
     private func startCountdownTimer() {
         updateCountdown()
-        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            updateCountdown()
+        timerContainer.timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [timerContainer, uploadCoordinator] _ in
+            // Update countdown - uses captured values safely
+            let syncInterval: TimeInterval = 300
+
+            if let lastUpload = uploadCoordinator.lastUploadDate {
+                let nextSyncTime = lastUpload.addingTimeInterval(syncInterval)
+                let remainingTime = nextSyncTime.timeIntervalSince(Date())
+
+                if remainingTime > 0 {
+                    timerContainer.secondsUntilSync = Int(remainingTime)
+                } else {
+                    timerContainer.secondsUntilSync = 0
+                }
+            } else {
+                timerContainer.secondsUntilSync = Int(syncInterval)
+            }
         }
     }
-    
+
     private func updateCountdown() {
         let syncInterval: TimeInterval = 300 // 5 minutes
-        
+
         if let lastUpload = uploadCoordinator.lastUploadDate {
             let nextSyncTime = lastUpload.addingTimeInterval(syncInterval)
             let remainingTime = nextSyncTime.timeIntervalSince(Date())
-            
+
             if remainingTime > 0 {
-                secondsUntilSync = Int(remainingTime)
+                timerContainer.secondsUntilSync = Int(remainingTime)
             } else {
-                secondsUntilSync = 0
+                timerContainer.secondsUntilSync = 0
             }
         } else {
             // If no last upload, assume sync will happen soon
-            secondsUntilSync = Int(syncInterval)
+            timerContainer.secondsUntilSync = Int(syncInterval)
         }
     }
 }
@@ -381,29 +416,44 @@ struct LowPowerModeWarningBanner: View {
 
 struct DebugInfoSection: View {
     @ObservedObject private var deviceManager = DeviceManager.shared
+    @ObservedObject private var networkMonitor = NetworkMonitor.shared
     @State private var isExpanded = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button(action: { isExpanded.toggle() }) {
                 HStack {
                     Label("Debug Info", systemImage: "hammer")
                         .h2Style()
-                    
+
                     Spacer()
-                    
+
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .foregroundColor(.secondary)
                 }
             }
-            
+
             if isExpanded {
-                Text(deviceManager.getDebugInfo())
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .padding()
-                    .background(Color.black.opacity(0.05))
-                    .cornerRadius(8)
+                VStack(alignment: .leading, spacing: 8) {
+                    // Network info
+                    Text("Network Quality: \(networkMonitor.networkQualityDescription)")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+
+                    Text("Batch Size: \(networkMonitor.currentBatchSize) events")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+
+                    Divider()
+
+                    // Device info
+                    Text(deviceManager.getDebugInfo())
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color.black.opacity(0.05))
+                .cornerRadius(8)
             }
         }
         .padding()

@@ -8,8 +8,8 @@
 import SwiftUI
 
 struct OnboardingView: View {
-    @StateObject private var deviceManager = DeviceManager.shared
-    @StateObject private var healthKitManager = HealthKitManager.shared
+    @ObservedObject private var deviceManager = DeviceManager.shared
+    @ObservedObject private var healthKitManager = HealthKitManager.shared
     
     @State private var currentStep = 1
     @State private var apiEndpoint = ""
@@ -447,9 +447,9 @@ struct EndpointConfigurationStep: View {
 // MARK: - Step 2: Permissions
 
 struct PermissionsStep: View {
-    @StateObject private var healthKitManager = HealthKitManager.shared
-    @StateObject private var locationManager = LocationManager.shared
-    @StateObject private var audioManager = AudioManager.shared
+    @ObservedObject private var healthKitManager = HealthKitManager.shared
+    @ObservedObject private var locationManager = LocationManager.shared
+    @ObservedObject private var audioManager = AudioManager.shared
     @Binding var hasRequestedPermissions: Bool
     let onNext: () -> Void
     
@@ -680,7 +680,7 @@ struct PermissionRow: View {
 struct InitialSyncStep: View {
     @Binding var syncProgress: Double
     let onComplete: () -> Void
-    @StateObject private var deviceManager = DeviceManager.shared
+    @ObservedObject private var deviceManager = DeviceManager.shared
     
     var progressPercentage: Int {
         Int(syncProgress * 100)
