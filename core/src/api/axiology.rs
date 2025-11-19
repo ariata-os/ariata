@@ -92,41 +92,8 @@ pub struct Telos {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-// Habit type (with frequency and streak tracking)
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct Habit {
-    pub id: Uuid,
-    pub title: String,
-    pub description: Option<String>,
-    pub frequency: Option<String>,
-    pub time_of_day: Option<String>,
-    pub topic_id: Option<Uuid>,
-    pub streak_count: Option<i32>,
-    pub last_completed_date: Option<chrono::NaiveDate>,
-    pub is_active: Option<bool>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateHabitRequest {
-    pub title: String,
-    pub description: Option<String>,
-    pub frequency: Option<String>,
-    pub time_of_day: Option<String>,
-    pub topic_id: Option<Uuid>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateHabitRequest {
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub frequency: Option<String>,
-    pub time_of_day: Option<String>,
-    pub topic_id: Option<Uuid>,
-    pub streak_count: Option<i32>,
-    pub last_completed_date: Option<chrono::NaiveDate>,
-}
+// Note: Habits have been moved to praxis domain as tasks with is_habit=true
+// See praxis_task table for habit functionality
 
 // Preference type (with entity references)
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -684,122 +651,9 @@ pub async fn delete_telos(pool: &PgPool, id: Uuid) -> Result<()> {
 }
 
 // ============================================================================
-// Habit CRUD Operations
-// ============================================================================
-
-pub async fn list_habits(pool: &PgPool) -> Result<Vec<Habit>> {
-    let items = sqlx::query_as!(
-        Habit,
-        r#"
-        SELECT id, title, description, frequency, time_of_day, topic_id,
-               streak_count, last_completed_date, is_active, created_at, updated_at
-        FROM data.axiology_habit
-        WHERE is_active = true
-        ORDER BY created_at DESC
-        "#
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| Error::Database(format!("Failed to list habits: {}", e)))?;
-
-    Ok(items)
-}
-
-pub async fn get_habit(pool: &PgPool, id: Uuid) -> Result<Habit> {
-    let item = sqlx::query_as!(
-        Habit,
-        r#"
-        SELECT id, title, description, frequency, time_of_day, topic_id,
-               streak_count, last_completed_date, is_active, created_at, updated_at
-        FROM data.axiology_habit
-        WHERE id = $1 AND is_active = true
-        "#,
-        id
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| Error::Database(format!("Failed to get habit: {}", e)))?
-    .ok_or_else(|| Error::NotFound(format!("Habit not found: {}", id)))?;
-
-    Ok(item)
-}
-
-pub async fn create_habit(pool: &PgPool, req: CreateHabitRequest) -> Result<Habit> {
-    let item = sqlx::query_as!(
-        Habit,
-        r#"
-        INSERT INTO data.axiology_habit
-            (title, description, frequency, time_of_day, topic_id)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, title, description, frequency, time_of_day, topic_id,
-                  streak_count, last_completed_date, is_active, created_at, updated_at
-        "#,
-        req.title,
-        req.description,
-        req.frequency,
-        req.time_of_day,
-        req.topic_id
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| Error::Database(format!("Failed to create habit: {}", e)))?;
-
-    Ok(item)
-}
-
-pub async fn update_habit(pool: &PgPool, id: Uuid, req: UpdateHabitRequest) -> Result<Habit> {
-    let item = sqlx::query_as!(
-        Habit,
-        r#"
-        UPDATE data.axiology_habit
-        SET title = COALESCE($2, title),
-            description = COALESCE($3, description),
-            frequency = COALESCE($4, frequency),
-            time_of_day = COALESCE($5, time_of_day),
-            topic_id = COALESCE($6, topic_id),
-            streak_count = COALESCE($7, streak_count),
-            last_completed_date = COALESCE($8, last_completed_date),
-            updated_at = NOW()
-        WHERE id = $1 AND is_active = true
-        RETURNING id, title, description, frequency, time_of_day, topic_id,
-                  streak_count, last_completed_date, is_active, created_at, updated_at
-        "#,
-        id,
-        req.title,
-        req.description,
-        req.frequency,
-        req.time_of_day,
-        req.topic_id,
-        req.streak_count,
-        req.last_completed_date
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| Error::Database(format!("Failed to update habit: {}", e)))?
-    .ok_or_else(|| Error::NotFound(format!("Habit not found: {}", id)))?;
-
-    Ok(item)
-}
-
-pub async fn delete_habit(pool: &PgPool, id: Uuid) -> Result<()> {
-    let result = sqlx::query!(
-        r#"
-        UPDATE data.axiology_habit
-        SET is_active = false, updated_at = NOW()
-        WHERE id = $1 AND is_active = true
-        "#,
-        id
-    )
-    .execute(pool)
-    .await
-    .map_err(|e| Error::Database(format!("Failed to delete habit: {}", e)))?;
-
-    if result.rows_affected() == 0 {
-        return Err(Error::NotFound(format!("Habit not found: {}", id)));
-    }
-
-    Ok(())
-}
+// Note: Habit CRUD Operations have been removed
+// Habits are now managed as tasks with is_habit=true in the praxis domain
+// See praxis_task table and praxis API for habit functionality
 
 // ============================================================================
 // Preference CRUD Operations

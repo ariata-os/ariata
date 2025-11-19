@@ -5,7 +5,7 @@ class MessageMonitor {
     private let queue: Queue
     private var lastSyncDate: Date?
     private let dbPath = NSString(string: "~/Library/Messages/chat.db").expandingTildeInPath
-    private var timer: Timer?
+    private var timer: DispatchSourceTimer?
     private let syncInterval: TimeInterval = 300 // 5 minutes
     
     // Configuration
@@ -27,22 +27,33 @@ class MessageMonitor {
     
     func start() {
         print("Starting message monitor...")
+        print("  Database path: \(dbPath)")
+        print("  Has Full Disk Access: \(hasFullDiskAccess)")
+        if let lastSync = lastSyncDate {
+            print("  Last sync date: \(ISO8601DateFormatter().string(from: lastSync))")
+        } else {
+            print("  Last sync date: nil (will perform initial \(initialSyncDays)-day sync)")
+        }
 
         // Perform initial sync asynchronously to avoid blocking caller
         DispatchQueue.global(qos: .background).async { [weak self] in
             self?.syncMessages()
         }
 
-        // Set up periodic sync
-        timer = Timer.scheduledTimer(withTimeInterval: syncInterval, repeats: true) { [weak self] _ in
+        // Set up periodic sync using DispatchSourceTimer (more reliable than Timer for background execution)
+        let syncTimer = DispatchSource.makeTimerSource(queue: .global(qos: .background))
+        syncTimer.schedule(deadline: .now() + syncInterval, repeating: syncInterval)
+        syncTimer.setEventHandler { [weak self] in
             self?.syncMessages()
         }
+        syncTimer.resume()
+        self.timer = syncTimer
 
         print("Message monitor started (syncing every \(Int(syncInterval)) seconds)")
     }
     
     func stop() {
-        timer?.invalidate()
+        timer?.cancel()
         timer = nil
         saveLastSyncDate()
         print("Message monitor stopped")
@@ -134,11 +145,12 @@ class MessageMonitor {
         
         // Query for messages
         let query = """
-            SELECT 
+            SELECT
                 m.guid as message_id,
                 c.guid as chat_id,
                 m.handle_id,
                 m.text,
+                m.attributedBody,
                 m.service,
                 m.is_from_me,
                 m.date,
@@ -231,56 +243,65 @@ class MessageMonitor {
         let chatId = sqlite3_column_type(statement, 1) != SQLITE_NULL
             ? String(cString: sqlite3_column_text(statement, 1))
             : ""
-        
-        let handleId: String? = sqlite3_column_type(statement, 2) != SQLITE_NULL 
+
+        let handleId: String? = sqlite3_column_type(statement, 2) != SQLITE_NULL
             ? String(cString: sqlite3_column_text(statement, 2))
             : nil
-        
-        let text: String? = sqlite3_column_type(statement, 3) != SQLITE_NULL
+
+        var text: String? = sqlite3_column_type(statement, 3) != SQLITE_NULL
             ? String(cString: sqlite3_column_text(statement, 3))
             : nil
-        
-        let service = sqlite3_column_type(statement, 4) != SQLITE_NULL
-            ? String(cString: sqlite3_column_text(statement, 4))
+
+        // Extract attributedBody blob for sent messages (column 4)
+        if text == nil, sqlite3_column_type(statement, 4) == SQLITE_BLOB {
+            if let blobPointer = sqlite3_column_blob(statement, 4) {
+                let blobSize = sqlite3_column_bytes(statement, 4)
+                let data = Data(bytes: blobPointer, count: Int(blobSize))
+                text = extractTextFromAttributedBody(data)
+            }
+        }
+
+        let service = sqlite3_column_type(statement, 5) != SQLITE_NULL
+            ? String(cString: sqlite3_column_text(statement, 5))
             : "iMessage"
-        
-        let isFromMe = sqlite3_column_int(statement, 5) != 0
-        
+
+        let isFromMe = sqlite3_column_int(statement, 6) != 0
+
         // Convert Core Data timestamps to Date
-        let dateTimestamp = Double(sqlite3_column_int64(statement, 6))
+        let dateTimestamp = Double(sqlite3_column_int64(statement, 7))
         let date = Message.dateFromCoreDataTimestamp(dateTimestamp)
-        
-        let dateRead: Date? = sqlite3_column_type(statement, 7) != SQLITE_NULL
-            ? Message.dateFromCoreDataTimestamp(Double(sqlite3_column_int64(statement, 7)))
-            : nil
-        
-        let dateDelivered: Date? = sqlite3_column_type(statement, 8) != SQLITE_NULL
+
+        let dateRead: Date? = sqlite3_column_type(statement, 8) != SQLITE_NULL
             ? Message.dateFromCoreDataTimestamp(Double(sqlite3_column_int64(statement, 8)))
             : nil
-        
-        let isRead = sqlite3_column_int(statement, 9) != 0
-        let isDelivered = sqlite3_column_int(statement, 10) != 0
-        let isSent = sqlite3_column_int(statement, 11) != 0
-        let cacheHasAttachments = sqlite3_column_int(statement, 12) != 0
-        
-        let groupTitle: String? = sqlite3_column_type(statement, 13) != SQLITE_NULL
-            ? String(cString: sqlite3_column_text(statement, 13))
+
+        let dateDelivered: Date? = sqlite3_column_type(statement, 9) != SQLITE_NULL
+            ? Message.dateFromCoreDataTimestamp(Double(sqlite3_column_int64(statement, 9)))
             : nil
-        
-        let associatedMessageGuid: String? = sqlite3_column_type(statement, 14) != SQLITE_NULL
+
+        let isRead = sqlite3_column_int(statement, 10) != 0
+        let isDelivered = sqlite3_column_int(statement, 11) != 0
+        let isSent = sqlite3_column_int(statement, 12) != 0
+        let cacheHasAttachments = sqlite3_column_int(statement, 13) != 0
+
+        let groupTitle: String? = sqlite3_column_type(statement, 14) != SQLITE_NULL
             ? String(cString: sqlite3_column_text(statement, 14))
             : nil
-        
-        let associatedMessageType: Int? = sqlite3_column_type(statement, 15) != SQLITE_NULL
-            ? Int(sqlite3_column_int(statement, 15))
+
+        let associatedMessageGuid: String? = sqlite3_column_type(statement, 15) != SQLITE_NULL
+            ? String(cString: sqlite3_column_text(statement, 15))
             : nil
-        
-        let expressiveSendStyleId: String? = sqlite3_column_type(statement, 16) != SQLITE_NULL
-            ? String(cString: sqlite3_column_text(statement, 16))
+
+        let associatedMessageType: Int? = sqlite3_column_type(statement, 16) != SQLITE_NULL
+            ? Int(sqlite3_column_int(statement, 16))
             : nil
-        
-        let attachmentCount: Int? = sqlite3_column_type(statement, 17) != SQLITE_NULL
-            ? Int(sqlite3_column_int(statement, 17))
+
+        let expressiveSendStyleId: String? = sqlite3_column_type(statement, 17) != SQLITE_NULL
+            ? String(cString: sqlite3_column_text(statement, 17))
+            : nil
+
+        let attachmentCount: Int? = sqlite3_column_type(statement, 18) != SQLITE_NULL
+            ? Int(sqlite3_column_int(statement, 18))
             : nil
         
         return Message(
@@ -305,7 +326,35 @@ class MessageMonitor {
             expressiveSendStyleId: expressiveSendStyleId
         )
     }
-    
+
+    /// Extract plain text from NSAttributedString blob stored in Messages database
+    /// The attributedBody field contains an archived NSAttributedString
+    private func extractTextFromAttributedBody(_ data: Data) -> String? {
+        guard !data.isEmpty else { return nil }
+
+        do {
+            // Try to unarchive the NSAttributedString from the blob
+            if let attributedString = try NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data) {
+                let text = attributedString.string
+                // Only return non-empty strings
+                return text.isEmpty ? nil : text
+            }
+        } catch {
+            // If decoding fails, try legacy unarchiver (for older macOS versions)
+            do {
+                if let attributedString = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(data) as? NSAttributedString {
+                    let text = attributedString.string
+                    return text.isEmpty ? nil : text
+                }
+            } catch {
+                // Silently fail - some messages may have unsupported formats
+                return nil
+            }
+        }
+
+        return nil
+    }
+
     private func dateToCoreDateTimestamp(_ date: Date) -> Double {
         // Convert Date to Core Data timestamp (nanoseconds since 2001-01-01)
         let coreDataEpochOffset: TimeInterval = 978307200
@@ -349,16 +398,33 @@ class MessageMonitor {
     }
     
     private func canAccessMessagesDB() -> Bool {
-        // Quick check if we can open the Messages database
-        var db: OpaquePointer?
-        defer {
-            if db != nil {
-                sqlite3_close(db)
+        // Check file exists first
+        guard FileManager.default.fileExists(atPath: dbPath) else {
+            print("⚠️ Messages database file does not exist at: \(dbPath)")
+            return false
+        }
+
+        // Try multiple times with small delays (WAL mode can cause transient locks)
+        for attempt in 1...3 {
+            var db: OpaquePointer?
+            defer {
+                if db != nil {
+                    sqlite3_close(db)
+                }
+            }
+
+            let result = sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil)
+            if result == SQLITE_OK {
+                return true
+            }
+
+            // If not last attempt, wait briefly and retry
+            if attempt < 3 {
+                Thread.sleep(forTimeInterval: 0.1)  // 100ms delay
             }
         }
-        
-        // Try to open the database
-        let result = sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil)
-        return result == SQLITE_OK
+
+        print("⚠️ Failed to open Messages database after 3 attempts")
+        return false
     }
 }

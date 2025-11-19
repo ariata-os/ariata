@@ -12,9 +12,9 @@ class PermissionsManager {
         let currentPath = Bundle.main.bundlePath
         let executablePath = Bundle.main.executablePath ?? "unknown"
 
-        print("🔍 Checking Accessibility permission")
-        print("   App bundle path: \(currentPath)")
-        print("   Executable path: \(executablePath)")
+        Logger.log("🔍 Checking Accessibility permission", level: .debug)
+        Logger.log("   App bundle path: \(currentPath)", level: .debug)
+        Logger.log("   Executable path: \(executablePath)", level: .debug)
 
         // Check if app was moved
         checkForAppPathChange(currentPath: currentPath)
@@ -24,23 +24,23 @@ class PermissionsManager {
         ]
         let isGranted = AXIsProcessTrustedWithOptions(options)
 
-        print("   Result: \(isGranted ? "✅ GRANTED" : "❌ NOT GRANTED")")
+        Logger.log("   Accessibility Result: \(isGranted ? "✅ GRANTED" : "❌ NOT GRANTED")", level: isGranted ? .success : .warning)
 
         return isGranted
     }
 
     /// Check if Full Disk Access permission is granted
     func checkFullDiskAccess() -> Bool {
-        print("🔍 Checking Full Disk Access permission")
+        Logger.log("🔍 Checking Full Disk Access permission", level: .debug)
 
         let messagesDB = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Messages/chat.db")
 
-        print("   Testing access to: \(messagesDB.path)")
+        Logger.log("   Testing access to: \(messagesDB.path)", level: .debug)
 
         // Check 1: File exists and is readable
         let canRead = FileManager.default.isReadableFile(atPath: messagesDB.path)
-        print("   Can read file: \(canRead)")
+        Logger.log("   Can read file: \(canRead)", level: .debug)
 
         // Check 2: Try to actually open the database (more reliable)
         var db: OpaquePointer?
@@ -52,10 +52,10 @@ class PermissionsManager {
             sqlite3_close(db)
         }
 
-        print("   Can open database: \(canOpen) (sqlite result: \(openResult))")
+        Logger.log("   Can open database: \(canOpen) (sqlite result: \(openResult))", level: .debug)
 
         let isGranted = canRead && canOpen
-        print("   Result: \(isGranted ? "✅ GRANTED" : "❌ NOT GRANTED")")
+        Logger.log("   Full Disk Access Result: \(isGranted ? "✅ GRANTED" : "❌ NOT GRANTED")", level: isGranted ? .success : .warning)
 
         return isGranted
     }
@@ -78,10 +78,10 @@ class PermissionsManager {
         let savedPath = UserDefaults.standard.string(forKey: appPathKey)
 
         if let savedPath = savedPath, savedPath != currentPath {
-            print("⚠️ WARNING: App path changed!")
-            print("   Previous path: \(savedPath)")
-            print("   Current path:  \(currentPath)")
-            print("   ⚠️ Permissions must be re-granted in System Settings")
+            Logger.log("⚠️ WARNING: App path changed!", level: .warning)
+            Logger.log("   Previous path: \(savedPath)", level: .warning)
+            Logger.log("   Current path:  \(currentPath)", level: .warning)
+            Logger.log("   ⚠️ Permissions must be re-granted in System Settings", level: .warning)
         }
 
         // Save current path
@@ -116,7 +116,7 @@ class PermissionsManager {
 
             App Location: \(appPath)
 
-            After granting permissions, you may need to restart Ariata.
+            Ariata will automatically detect when permissions are granted and start monitoring.
             """
             alert.addButton(withTitle: "OK")
             alert.addButton(withTitle: "Copy App Path")

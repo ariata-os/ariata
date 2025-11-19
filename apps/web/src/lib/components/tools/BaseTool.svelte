@@ -3,6 +3,8 @@
 	 * BaseTool - Accordion wrapper for all tool result displays
 	 * Provides consistent UI for expand/collapse, status, and timing
 	 */
+	import type { Snippet } from 'svelte';
+
 	interface BaseToolProps {
 		toolName: string;
 		displayName?: string;
@@ -12,6 +14,7 @@
 		timestamp: string;
 		autoExpand?: boolean;
 		errorMessage?: string;
+		children: Snippet;
 	}
 
 	let {

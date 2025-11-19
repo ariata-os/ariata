@@ -85,7 +85,7 @@ pub struct Job {
     pub status: JobStatus,
 
     // Sync job fields
-    pub source_id: Option<Uuid>,
+    pub source_connection_id: Option<Uuid>,
     pub stream_name: Option<String>,
     pub sync_mode: Option<String>, // 'full_refresh' or 'incremental'
 
@@ -136,7 +136,7 @@ pub struct CreateJobRequest {
     pub status: JobStatus,
 
     // Sync job fields
-    pub source_id: Option<Uuid>,
+    pub source_connection_id: Option<Uuid>,
     pub stream_name: Option<String>,
     pub sync_mode: Option<String>, // 'full_refresh' or 'incremental'
 
@@ -170,7 +170,7 @@ impl CreateJobRequest {
         Self {
             job_type: JobType::Sync,
             status: JobStatus::Pending,
-            source_id: Some(source_id),
+            source_connection_id: Some(source_id),
             stream_name: Some(stream_name),
             sync_mode: Some(sync_mode),
             transform_id: None,
@@ -186,7 +186,7 @@ impl CreateJobRequest {
         Self {
             job_type: JobType::Transform,
             status: JobStatus::Pending,
-            source_id: None,
+            source_connection_id: None,
             stream_name: None,
             sync_mode: None,
             transform_id: Some(transform_id),

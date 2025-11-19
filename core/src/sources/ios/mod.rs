@@ -8,7 +8,10 @@ pub mod location;
 pub mod microphone;
 pub mod registry;
 
-pub use healthkit::process as process_healthkit;
-pub use location::process as process_location;
-pub use microphone::process as process_microphone;
+// PushStream implementations
+pub use healthkit::IosHealthKitStream;
+pub use location::IosLocationStream;
+pub use microphone::IosMicrophoneStream;
+
+// Registry
 pub use registry::IosSource;

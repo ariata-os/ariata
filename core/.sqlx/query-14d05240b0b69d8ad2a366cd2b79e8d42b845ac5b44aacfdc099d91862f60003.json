@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO data.location_visit (\n            id,\n            place_id,\n            centroid_coordinates,\n            latitude,\n            longitude,\n            start_time,\n            end_time,\n            source_stream_id,\n            source_table,\n            source_provider,\n            metadata\n        ) VALUES (\n            $1, NULL, ST_GeogFromText($2), $3, $4, $5, $6, $7, $8, $9, $10\n        )\n        ON CONFLICT (id) DO UPDATE SET\n            end_time = EXCLUDED.end_time,\n            centroid_coordinates = EXCLUDED.centroid_coordinates,\n            latitude = EXCLUDED.latitude,\n            longitude = EXCLUDED.longitude,\n            metadata = EXCLUDED.metadata,\n            updated_at = NOW()\n        WHERE data.location_visit.end_time < EXCLUDED.end_time\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Float8",
+        "Float8",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "14d05240b0b69d8ad2a366cd2b79e8d42b845ac5b44aacfdc099d91862f60003"
+}

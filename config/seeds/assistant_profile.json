@@ -9,7 +9,6 @@
       "query_pursuits": true,
       "web_search": true
     },
-    "pinned_tool_ids": [],
     "ui_preferences": {
       "contextIndicator": {
         "alwaysVisible": false,

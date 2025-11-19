@@ -9,21 +9,73 @@ class APIClient {
 
     // MARK: - Data Models
 
-    struct StreamInfo: Codable {
-        let name: String
+    struct StreamInfo: Decodable {
+        let streamName: String
+        let displayName: String
+        let description: String
+        let tableName: String
         let isEnabled: Bool
+        let cronSchedule: String?
+        let config: [String: Any]?
         let lastSyncAt: Date?
+        let supportsIncremental: Bool
+        let supportsFullRefresh: Bool
+        let configSchema: [String: Any]?
+        let configExample: [String: Any]?
+        let defaultCronSchedule: String?
 
         enum CodingKeys: String, CodingKey {
-            case name
+            case streamName = "stream_name"
+            case displayName = "display_name"
+            case description
+            case tableName = "table_name"
             case isEnabled = "is_enabled"
+            case cronSchedule = "cron_schedule"
+            case config
             case lastSyncAt = "last_sync_at"
+            case supportsIncremental = "supports_incremental"
+            case supportsFullRefresh = "supports_full_refresh"
+            case configSchema = "config_schema"
+            case configExample = "config_example"
+            case defaultCronSchedule = "default_cron_schedule"
         }
-    }
 
-    struct StreamsResponse: Codable {
-        let success: Bool
-        let streams: [StreamInfo]
+        // Custom decoding for JSON values
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            streamName = try container.decode(String.self, forKey: .streamName)
+            displayName = try container.decode(String.self, forKey: .displayName)
+            description = try container.decode(String.self, forKey: .description)
+            tableName = try container.decode(String.self, forKey: .tableName)
+            isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+            cronSchedule = try container.decodeIfPresent(String.self, forKey: .cronSchedule)
+            lastSyncAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncAt)
+            supportsIncremental = try container.decode(Bool.self, forKey: .supportsIncremental)
+            supportsFullRefresh = try container.decode(Bool.self, forKey: .supportsFullRefresh)
+            defaultCronSchedule = try container.decodeIfPresent(String.self, forKey: .defaultCronSchedule)
+
+            // Decode JSON fields as generic dictionaries
+            if let configData = try? container.decode(Data.self, forKey: .config),
+               let configJSON = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] {
+                config = configJSON
+            } else {
+                config = nil
+            }
+
+            if let schemaData = try? container.decode(Data.self, forKey: .configSchema),
+               let schemaJSON = try? JSONSerialization.jsonObject(with: schemaData) as? [String: Any] {
+                configSchema = schemaJSON
+            } else {
+                configSchema = nil
+            }
+
+            if let exampleData = try? container.decode(Data.self, forKey: .configExample),
+               let exampleJSON = try? JSONSerialization.jsonObject(with: exampleData) as? [String: Any] {
+                configExample = exampleJSON
+            } else {
+                configExample = nil
+            }
+        }
     }
 
     struct SourceInfo: Codable {
@@ -90,8 +142,9 @@ class APIClient {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
-        let streamsResponse = try decoder.decode(StreamsResponse.self, from: data)
-        return streamsResponse.streams
+        // Backend returns an array directly, not a wrapped response
+        let streams = try decoder.decode([StreamInfo].self, from: data)
+        return streams
     }
 
     /// Fetch recent jobs for a specific stream

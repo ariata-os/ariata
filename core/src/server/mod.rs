@@ -103,6 +103,7 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
             get(api::list_pending_pairings_handler),
         )
         .route("/api/devices/verify", post(api::verify_device_handler))
+        .route("/api/devices/health", get(api::device_health_check_handler))
         .route("/api/sources/:id", get(api::get_source_handler))
         .route("/api/sources/:id", delete(api::delete_source_handler))
         .route("/api/sources/:id/pause", post(api::pause_source_handler))
@@ -178,10 +179,6 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
         .route(
             "/api/assistant-profile",
             put(api::update_assistant_profile_handler),
-        )
-        .route(
-            "/api/assistant-profile/pinned-tools",
-            get(api::get_pinned_tools_handler),
         )
         // Tools API
         .route("/api/tools", get(api::list_tools_handler))
@@ -308,10 +305,10 @@ fn validate_environment() -> Result<()> {
             ));
         }
 
-        tracing::info!("S3 configuration validated for bucket: {}", bucket);
+        tracing::debug!("S3 configuration validated for bucket: {}", bucket);
     }
 
-    tracing::info!("Environment validation passed");
+    tracing::debug!("Environment validation passed");
     Ok(())
 }
 

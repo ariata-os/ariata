@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "connections": [
+    {
+      "id": "72aa7531-836f-5161-aed6-24dcd7c27288",
+      "source_connection_id": "785e0301-b08e-598c-afcb-1f4e05bb159a",
+      "stream_name": "app_export",
+      "table_name": "stream_ariata_ai_chat",
+      "is_enabled": true
+    }
+  ]
+}

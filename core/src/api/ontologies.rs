@@ -15,12 +15,12 @@ use crate::transforms;
 /// using the transform registry as the single source of truth.
 /// Only returns tables that both (1) have enabled streams AND (2) actually exist in the database schema.
 pub async fn list_available_ontologies(db: &PgPool) -> Result<Vec<String>> {
-    // First, get all tables that actually exist in the elt schema
+    // First, get all tables that actually exist in the data schema
     let existing_tables = sqlx::query!(
         r#"
         SELECT table_name
         FROM information_schema.tables
-        WHERE table_schema = 'elt'
+        WHERE table_schema = 'data'
           AND table_name NOT LIKE 'stream_%'
           AND table_name NOT IN ('sources', 'streams', 'sync_logs')
           AND table_type = 'BASE TABLE'
@@ -44,8 +44,8 @@ pub async fn list_available_ontologies(db: &PgPool) -> Result<Vec<String>> {
     let rows = sqlx::query!(
         r#"
         SELECT DISTINCT s.table_name
-        FROM data.streams s
-        JOIN data.sources src ON s.source_id = src.id
+        FROM data.stream_connections s
+        JOIN data.source_connections src ON s.source_connection_id = src.id
         WHERE s.is_enabled = true
           AND src.is_active = true
         "#

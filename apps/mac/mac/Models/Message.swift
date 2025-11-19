@@ -72,7 +72,7 @@ struct Message {
             "message_id": messageId,
             "chat_id": chatId,
             "is_from_me": isFromMe,
-            "date": ISO8601DateFormatter().string(from: date),
+            "timestamp": ISO8601DateFormatter().string(from: date),
             "service": service,
             "is_read": isRead,
             "is_delivered": isDelivered,

@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getDb } from '$lib/server/db';
-import { sources } from '$lib/server/schema';
+import { sourceConnections } from '$lib/server/schema';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 
@@ -25,11 +25,11 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Check if device source already exists
 		const existingSources = await db
 			.select()
-			.from(sources)
+			.from(sourceConnections)
 			.where(
 				and(
-					eq(sources.deviceId, device_id),
-					eq(sources.authType, 'device')
+					eq(sourceConnections.deviceId, device_id),
+					eq(sourceConnections.authType, 'device')
 				)
 			)
 			.limit(1);
@@ -45,14 +45,14 @@ export const POST: RequestHandler = async ({ request }) => {
 			};
 
 			await db
-				.update(sources)
+				.update(sourceConnections)
 				.set({
 					pairingStatus: 'active',
 					lastSeenAt: new Date(),
 					deviceInfo: updatedDeviceInfo,
 					name: device_name || existing.name
 				})
-				.where(eq(sources.id, existing.id));
+				.where(eq(sourceConnections.id, existing.id));
 
 			console.log(`[/api/pairing/confirm] Device ${device_id} re-paired`);
 
@@ -66,8 +66,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		const deviceToken = randomUUID();
 		const sourceName = device_name || `${device_type === 'mac' ? 'Mac' : 'iOS'} Device`;
 
-		await db.insert(sources).values({
-			provider: device_type, // 'mac' or 'ios'
+		await db.insert(sourceConnections).values({
+			source: device_type, // 'mac' or 'ios'
 			name: sourceName,
 			authType: 'device',
 			deviceId: device_id,

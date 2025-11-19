@@ -27,13 +27,13 @@ MINIO_CONSOLE_PORT := 9001
 STUDIO_PORT := 4983
 
 # === PHONY TARGETS ===
-.PHONY: help dev dev-watch stop restart logs clean ps rebuild
-.PHONY: migrate migrate-rust prepare seed prod-seed seed-rome
+.PHONY: help dev dev-watch stop restart logs clean clean-all ps rebuild
+.PHONY: migrate migrate-rust prepare generate-seeds seed prod-seed seed-rome
 .PHONY: db-reset db-status
 .PHONY: prod prod-build prod-restart
 .PHONY: env-check minio-setup
 .PHONY: test test-rust test-web
-.PHONY: mac-build mac-install mac-run
+.PHONY: mac mac-debug mac-status mac-clean
 .PHONY: core-ngrok
 
 # === HELP ===
@@ -54,12 +54,13 @@ help:
 	@echo "  make ps           Show running services"
 	@echo ""
 	@echo "Database Commands:"
-	@echo "  make migrate      Run database migrations (SQLx - manages both elt and app schemas)"
-	@echo "  make prepare      Regenerate SQLx .sqlx/ metadata (after schema changes)"
-	@echo "  make seed         Seed database with Monday in Rome reference dataset (real-world data)"
-	@echo "  make prod-seed    Seed production defaults (models, agents, tools, sample tags)"
-	@echo "  make db-reset     Reset all schemas (WARNING: deletes data)"
-	@echo "  make db-status    Check database schemas status"
+	@echo "  make migrate         Run database migrations (SQLx - manages both data and app schemas)"
+	@echo "  make prepare         Regenerate SQLx .sqlx/ metadata (after schema changes)"
+	@echo "  make generate-seeds  Generate config/seeds/*.json from Rust registry (sources/streams)"
+	@echo "  make seed            Seed database with Monday in Rome reference dataset (real-world data)"
+	@echo "  make prod-seed       Seed production defaults (models, agents, tools, sample tags)"
+	@echo "  make db-reset        Reset all schemas (WARNING: deletes data)"
+	@echo "  make db-status       Check database schemas status"
 	@echo ""
 	@echo "Production Commands (Full Docker):"
 	@echo "  make prod         Start production environment"
@@ -71,8 +72,15 @@ help:
 	@echo "  make test-rust    Run Rust tests"
 	@echo "  make test-web     Run web tests"
 	@echo ""
+	@echo "Mac App Commands:"
+	@echo "  make mac          Build and install Mac.app (Release) to /Applications"
+	@echo "  make mac-debug    Build and install Mac.app (Debug - may have issues)"
+	@echo "  make mac-status   Show background service, pairing, and queue status"
+	@echo "  make mac-clean    Remove config/queue for fresh testing"
+	@echo ""
 	@echo "Maintenance Commands:"
 	@echo "  make clean        Remove all containers and volumes"
+	@echo "  make clean-all    Clean backend + Mac app (complete dev reset)"
 	@echo "  make rebuild      Rebuild all containers"
 	@echo ""
 	@echo "Development URLs:"
@@ -107,7 +115,7 @@ dev: env-check
 	@echo "🔄 Checking SQLx query cache..."
 	@if [ ! -f core/.sqlx/query-*.json ]; then \
 		echo "   Setting up database for SQLx..."; \
-		docker-compose -f docker-compose.dev.yml exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "ALTER ROLE $(DB_USER) IN DATABASE $(DB_NAME) SET search_path TO elt, public;" > /dev/null 2>&1; \
+		docker-compose -f docker-compose.dev.yml exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "ALTER ROLE $(DB_USER) IN DATABASE $(DB_NAME) SET search_path TO data, public;" > /dev/null 2>&1; \
 		echo "   Generating SQLx cache (first time setup)..."; \
 		$(MAKE) prepare; \
 	else \
@@ -116,8 +124,11 @@ dev: env-check
 	@echo ""
 	@$(MAKE) minio-setup
 	@echo ""
+	@echo "🌱 Seeding system defaults (models, agents, tools)..."
+	@$(MAKE) prod-seed
+	@echo ""
 	@if [ "$$SEED" = "true" ]; then \
-		echo "🌱 Seeding database..."; \
+		echo "🌱 Seeding reference dataset (Monday in Rome)..."; \
 		$(MAKE) seed; \
 		echo ""; \
 	fi
@@ -143,9 +154,14 @@ dev-servers:
 # Stop development infrastructure and servers
 stop:
 	@echo "🛑 Stopping development environment..."
+	@echo "   Stopping Docker containers..."
 	@docker-compose -f docker-compose.dev.yml down
+	@echo "   Killing backend processes..."
 	@pkill -f "cargo run" 2>/dev/null || true
+	@lsof -ti:$(API_PORT) | xargs kill -9 2>/dev/null || true
+	@echo "   Killing frontend processes..."
 	@pkill -f "vite dev" 2>/dev/null || true
+	@lsof -ti:$(WEB_PORT) | xargs kill -9 2>/dev/null || true
 	@echo "✅ Development stopped"
 
 # Restart development
@@ -225,12 +241,12 @@ core-ngrok:
 
 # === MIGRATION COMMANDS ===
 
-# Run all migrations (SQLx manages both elt and app schemas)
+# Run all migrations (SQLx manages both data and app schemas)
 migrate: migrate-rust
 
-# Run SQLx migrations (elt + app schemas) - works with native dev
+# Run SQLx migrations (data + app schemas) - works with native dev
 migrate-rust:
-	@echo "🗄️  Running SQLx migrations (elt + app schemas)..."
+	@echo "🗄️  Running SQLx migrations (data + app schemas)..."
 	@if docker ps | grep -q ariata-core; then \
 		docker-compose exec core ariata migrate; \
 	else \
@@ -245,9 +261,17 @@ migrate-rust:
 #  - Running migrations that change table schemas
 prepare:
 	@echo "🔄 Regenerating SQLx query metadata..."
-	@cd core && SQLX_OFFLINE=false cargo sqlx prepare --database-url "$(DB_URL)?options=-csearch_path%3Delt%2Cpublic"
+	@cd core && SQLX_OFFLINE=false cargo sqlx prepare --database-url "$(DB_URL)?options=-csearch_path%3Ddata%2Cpublic"
 	@echo "✅ SQLx metadata updated in core/.sqlx/"
 	@echo "💡 Remember to commit the updated .sqlx/ files"
+
+# Generate seed configuration files from registry
+generate-seeds:
+	@echo "🔧 Generating config/seeds/*.json from Rust registry..."
+	@echo "   Generates _generated_source_connections.json and _generated_stream_connections.json"
+	@cd core && cargo run --bin generate-seeds
+	@echo "✅ Seed files generated"
+	@echo "💡 Review the generated files in config/seeds/"
 
 # === DATABASE COMMANDS ===
 
@@ -259,7 +283,7 @@ seed:
 	@echo "✅ Database seeding complete"
 
 # Seed production database with defaults (models, agents, tools, sample tags)
-prod-seed:
+prod-seed: generate-seeds
 	@echo "🌱 Seeding production database with defaults..."
 	@echo "   This seeds: LLM models, agents, tools, and sample axiology tags"
 	@cd core && SQLX_OFFLINE=false cargo run --bin ariata-prod-seed
@@ -269,9 +293,9 @@ prod-seed:
 db-status:
 	@echo "📊 Database Status (ariata):"
 	@echo ""
-	@echo "ELT Schema (elt):"
-	@docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt elt.*" 2>/dev/null || \
-		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt elt.*" 2>/dev/null || echo "  ❌ Not accessible"
+	@echo "Data Schema (data):"
+	@docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt data.*" 2>/dev/null || \
+		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt data.*" 2>/dev/null || echo "  ❌ Not accessible"
 	@echo ""
 	@echo "App Schema (app):"
 	@docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "\\dt app.*" 2>/dev/null || \
@@ -280,26 +304,19 @@ db-status:
 # Reset database (WARNING: destructive)
 db-reset:
 	@echo "⚠️  WARNING: This will delete ALL data in all schemas!"
-	@echo "Database: $(DB_NAME) (schemas: elt, app)"
+	@echo "Database: $(DB_NAME) (schemas: data, app)"
 	@read -p "Continue? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		echo "🗑️  Dropping schemas..."; \
-		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS elt CASCADE;" 2>/dev/null || \
-			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS elt CASCADE;" 2>/dev/null || true; \
+		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS data CASCADE;" 2>/dev/null || \
+			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS data CASCADE;" 2>/dev/null || true; \
 		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS app CASCADE;" 2>/dev/null || \
 			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS app CASCADE;" 2>/dev/null || true; \
-		echo "🆕 Recreating schemas..."; \
-		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE SCHEMA elt;" || \
-			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE SCHEMA elt;" || exit 1; \
-		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE SCHEMA app;" || \
-			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "CREATE SCHEMA app;" || exit 1; \
-		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "GRANT ALL ON SCHEMA elt TO $(DB_USER);" || \
-			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "GRANT ALL ON SCHEMA elt TO $(DB_USER);" || exit 1; \
-		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "GRANT ALL ON SCHEMA app TO $(DB_USER);" || \
-			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "GRANT ALL ON SCHEMA app TO $(DB_USER);" || exit 1; \
-		echo "✅ Schemas recreated"; \
-		echo "📝 Running migrations..."; \
+		echo "🗑️  Dropping old elt schema (deprecated)..."; \
+		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS elt CASCADE;" 2>/dev/null || \
+			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS elt CASCADE;" 2>/dev/null || true; \
+		echo "📝 Running migrations (will create schemas)..."; \
 		$(MAKE) migrate; \
 		echo "✨ Database reset complete!"; \
 	else \
@@ -371,6 +388,32 @@ test-web:
 
 # === MAINTENANCE COMMANDS ===
 
+# Clean everything - backend AND Mac app (for complete dev reset)
+clean-all:
+	@echo "🧹 Cleaning EVERYTHING (backend + Mac app)..."
+	@echo ""
+	@echo "This will:"
+	@echo "  - Stop and remove all Docker containers + volumes"
+	@echo "  - Delete Mac app config, credentials, and queue"
+	@echo ""
+	@read -p "Continue? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "🧹 Cleaning backend..."; \
+		$(MAKE) clean || true; \
+		echo ""; \
+		echo "🧹 Cleaning Mac app..."; \
+		$(MAKE) mac-clean || true; \
+		echo ""; \
+		echo "✅ Full cleanup complete!"; \
+		echo ""; \
+		echo "📋 Next steps:"; \
+		echo "  1. make dev           (start fresh backend)"; \
+		echo "  2. open Mac app       (re-pair device)"; \
+	else \
+		echo "❌ Cancelled"; \
+	fi
+
 # Show service status
 ps:
 	@echo "Development Infrastructure:"
@@ -408,48 +451,100 @@ clean:
 		echo "❌ Cancelled"; \
 	fi
 
-# === MAC CLI COMMANDS ===
+# === MAC APP COMMANDS ===
 
-# Build Mac CLI for development
-mac-build:
-	@echo "🔨 Building Mac CLI..."
-	@cd apps/mac && swift build
-	@echo "✅ Mac CLI built"
+# Build Mac.app and install to /Applications (stable path for permissions)
+mac:
+	@echo "🔨 Building Mac.app (Release)..."
+	@cd apps/mac && xcodebuild \
+		-project mac.xcodeproj \
+		-scheme mac \
+		-configuration Release \
+		-derivedDataPath ./build \
+		clean build
+	@echo "📦 Installing to /Applications..."
+	@sudo rm -rf /Applications/ariata-mac.app
+	@sudo cp -R apps/mac/build/Build/Products/Release/mac.app /Applications/ariata-mac.app
+	@echo "✅ Installed to /Applications/ariata-mac.app"
+	@echo "💡 Launch with: open /Applications/ariata-mac.app"
 
-# Build Mac CLI release (universal binary)
-mac-release:
-	@echo "📦 Building Mac CLI release..."
-	@cd apps/mac && ./Scripts/build-release.sh
-	@echo "✅ Release build complete"
+# Build Mac.app in Debug mode (may have code signing issues with debug dylib)
+mac-debug:
+	@echo "🔨 Building Mac.app (Debug)..."
+	@cd apps/mac && xcodebuild \
+		-project mac.xcodeproj \
+		-scheme mac \
+		-configuration Debug \
+		-derivedDataPath ./build \
+		clean build
+	@echo "📦 Installing to /Applications..."
+	@sudo rm -rf /Applications/ariata-mac.app
+	@sudo cp -R apps/mac/build/Build/Products/Debug/mac.app /Applications/ariata-mac.app
+	@echo "⚠️  Debug build may crash due to code signing - use 'make mac' for Release build"
+	@echo "✅ Installed to /Applications/ariata-mac.app"
+	@echo "💡 Launch with: open /Applications/ariata-mac.app"
 
-# Install Mac CLI locally
-mac-install:
-	@echo "📦 Installing Mac CLI to /usr/local/bin..."
-	@cd apps/mac && swift build -c release
-	@sudo cp apps/mac/.build/release/ariata-mac /usr/local/bin/
-	@echo "✅ Installed. Run 'ariata-mac --help'"
+# Show Mac app status (daemon, pairing, queue)
+mac-status:
+	@echo "📊 Mac App Status:"
+	@echo ""
+	@echo "App Process:"
+	@if ps aux | grep -i "ariata-mac.app/Contents/MacOS/mac" | grep -v grep > /dev/null 2>&1; then \
+		echo "  ✅ Running (PID: $$(ps aux | grep -i 'ariata-mac.app/Contents/MacOS/mac' | grep -v grep | awk '{print $$2}' | head -1))"; \
+	else \
+		echo "  ❌ Not running"; \
+	fi
+	@echo ""
+	@echo "Background Service:"
+	@if [ -f ~/.ariata/logs/mac-app.log ]; then \
+		if tail -50 ~/.ariata/logs/mac-app.log | grep -q "✅ Daemon started successfully"; then \
+			LAST_START=$$(tail -100 ~/.ariata/logs/mac-app.log | grep "Daemon started successfully" | tail -1 | cut -d']' -f1 | tr -d '['); \
+			echo "  ✅ Running (started: $$LAST_START)"; \
+			if tail -50 ~/.ariata/logs/mac-app.log | grep -q "📤 Upload completed successfully"; then \
+				LAST_UPLOAD=$$(tail -100 ~/.ariata/logs/mac-app.log | grep "Upload completed successfully" | tail -1 | cut -d']' -f1 | tr -d '['); \
+				echo "  📤 Last upload: $$LAST_UPLOAD"; \
+			else \
+				echo "  ⏳ No uploads yet"; \
+			fi; \
+		elif tail -50 ~/.ariata/logs/mac-app.log | grep -q "Cannot start"; then \
+			ERROR=$$(tail -100 ~/.ariata/logs/mac-app.log | grep "Cannot start" | tail -1 | cut -d']' -f2- | xargs); \
+			echo "  ❌ Failed to start: $$ERROR"; \
+		else \
+			echo "  ❓ Unknown (check log: ~/.ariata/logs/mac-app.log)"; \
+		fi; \
+	else \
+		echo "  ❓ No log file found"; \
+	fi
+	@echo ""
+	@echo "Pairing:"
+	@if [ -f ~/.ariata/config.json ]; then \
+		echo "  ✅ Paired"; \
+		cat ~/.ariata/config.json | jq -r '"  Device: " + .deviceId, "  API: " + .apiEndpoint' 2>/dev/null || cat ~/.ariata/config.json; \
+	else \
+		echo "  ❌ Not paired"; \
+	fi
+	@echo ""
+	@echo "Queue:"
+	@if [ -f ~/.ariata/activity.db ]; then \
+		echo "  Events: $$(sqlite3 ~/.ariata/activity.db 'SELECT COUNT(*) FROM events WHERE uploaded = 0;' 2>/dev/null || echo 'N/A')"; \
+		echo "  Messages: $$(sqlite3 ~/.ariata/activity.db 'SELECT COUNT(*) FROM messages WHERE uploaded = 0;' 2>/dev/null || echo 'N/A')"; \
+	else \
+		echo "  ❌ Queue not initialized"; \
+	fi
+	@echo ""
+	@echo "💡 Tip: View full log with: tail -f ~/.ariata/logs/mac-app.log"
 
-# Test Mac CLI
-mac-test:
-	@echo "🧪 Testing Mac CLI..."
-	@cd apps/mac && swift test
-	@echo "✅ Mac CLI tests complete"
-
-# Run Mac CLI
-mac-run:
-	@echo "🖥️  Running Mac CLI..."
-	@cd apps/mac && swift run ariata-mac
-
-# Build and install Mac CLI locally for testing
-mac-local:
-	@echo "🛠️  Building and installing Mac CLI locally..."
-	@pkill -f "ariata-mac" 2>/dev/null || true
+# Clean Mac app config and queue (for fresh testing)
+mac-clean:
+	@echo "🧹 Cleaning Mac app..."
+	@pkill -f "/Applications/ariata-mac.app" 2>/dev/null || true
 	@if launchctl list | grep -q "com.ariata.mac" 2>/dev/null; then \
 		launchctl unload ~/Library/LaunchAgents/com.ariata.mac.plist 2>/dev/null || true; \
 	fi
-	@cd apps/mac && swift build -c release
-	@cd apps/mac && ./Scripts/installer.sh --local
-	@echo "✅ Local installation complete"
+	@rm -rf ~/.ariata
+	@rm -f ~/Library/LaunchAgents/com.ariata.mac.plist
+	@security delete-generic-password -s "com.ariata.mac" -a "device-token" 2>/dev/null || true
+	@echo "✅ Cleaned (permissions must be manually revoked in System Settings)"
 
 # === DRIZZLE STUDIO ===
 

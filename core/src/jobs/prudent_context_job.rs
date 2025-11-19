@@ -185,7 +185,7 @@ impl PrudentContextJob {
 
         // Get active tasks (short-term goals)
         let task_rows = sqlx::query(
-            "SELECT id, title, tags, description, status, progress_percent FROM data.actions_task WHERE is_active = true ORDER BY created_at DESC"
+            "SELECT id, title, tags, description, status, progress_percent FROM data.praxis_task WHERE is_active = true ORDER BY created_at DESC"
         )
         .fetch_all(self.pool.as_ref())
         .await
@@ -206,9 +206,9 @@ impl PrudentContextJob {
             })
             .collect();
 
-        // Get habits
+        // Get habits (now stored as tasks with is_habit = true)
         let habit_rows = sqlx::query(
-            "SELECT id, title, description, frequency FROM data.axiology_habit WHERE is_active = true",
+            "SELECT id, title, description, recurrence_rule, current_streak, best_streak FROM data.praxis_task WHERE is_habit = true AND is_active = true",
         )
         .fetch_all(self.pool.as_ref())
         .await
@@ -222,7 +222,9 @@ impl PrudentContextJob {
                     "id": row.get::<uuid::Uuid, _>("id"),
                     "title": row.get::<String, _>("title"),
                     "description": row.get::<Option<String>, _>("description"),
-                    "frequency": row.get::<Option<String>, _>("frequency")
+                    "frequency": row.get::<Option<String>, _>("recurrence_rule"),
+                    "current_streak": row.get::<Option<i32>, _>("current_streak"),
+                    "best_streak": row.get::<Option<i32>, _>("best_streak")
                 })
             })
             .collect();
@@ -267,11 +269,11 @@ impl PrudentContextJob {
             .collect();
 
         // Get today's calendar events (if available in ontology)
-        // Note: This queries calendar events - table may not exist yet
+        // Note: This queries calendar events from praxis_calendar table
         let todays_events_rows = sqlx::query(
             r#"
             SELECT title, description, start_time, end_time
-            FROM social_calendar_event
+            FROM data.praxis_calendar
             WHERE DATE(start_time) = CURRENT_DATE
             ORDER BY start_time
             LIMIT 20
@@ -302,7 +304,7 @@ impl PrudentContextJob {
         let upcoming_events_rows = sqlx::query(
             r#"
             SELECT title, description, start_time
-            FROM social_calendar_event
+            FROM data.praxis_calendar
             WHERE start_time > NOW() AND start_time < NOW() + INTERVAL '7 days'
             ORDER BY start_time
             LIMIT 10

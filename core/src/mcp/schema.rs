@@ -1,7 +1,7 @@
 //! Dynamic schema introspection for ontology tables
 //!
 //! This module provides utilities to dynamically discover and describe
-//! the schema of ontology tables in the `elt` schema.
+//! the schema of ontology tables in the `data` schema.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ pub struct TableSchema {
     pub description: Option<String>,
 }
 
-/// Get the schema for a specific table in the elt schema
+/// Get the schema for a specific table in the data schema
 pub async fn get_table_schema(pool: &PgPool, table_name: &str) -> Result<TableSchema, sqlx::Error> {
     let rows = sqlx::query(
         r#"
@@ -34,7 +34,7 @@ pub async fn get_table_schema(pool: &PgPool, table_name: &str) -> Result<TableSc
             is_nullable,
             column_default
         FROM information_schema.columns
-        WHERE table_schema = 'elt'
+        WHERE table_schema = 'data'
         AND table_name = $1
         ORDER BY ordinal_position
         "#,
@@ -60,13 +60,13 @@ pub async fn get_table_schema(pool: &PgPool, table_name: &str) -> Result<TableSc
     })
 }
 
-/// List all ontology tables in the elt schema
+/// List all ontology tables in the data schema
 pub async fn list_ontology_tables(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
     let tables: Vec<(String,)> = sqlx::query_as(
         r#"
         SELECT table_name
         FROM information_schema.tables
-        WHERE table_schema = 'elt'
+        WHERE table_schema = 'data'
         AND table_name NOT IN ('sources', 'streams', 'jobs', 'devices', 'pending_device_pairings')
         ORDER BY table_name
         "#,

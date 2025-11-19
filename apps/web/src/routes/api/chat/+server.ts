@@ -51,7 +51,9 @@ export const config: Config = {
  * and saves both user and assistant messages to app.chat_sessions (operational schema).
  * Export to ELT happens asynchronously via scheduled job (every 5 minutes).
  */
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async (event) => {
+	const { request, fetch } = event;
+
 	try {
 		// CHECK RATE LIMIT FIRST (before any processing)
 		try {
@@ -191,7 +193,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					? Array.isArray(lastMessage.parts)
 						? lastMessage.parts
 								.filter(isTextUIPart)
-								.map((p) => p.text)
+								.map((p: any) => p.text)
 								.join('')
 						: lastMessage.content || ''
 					: '';
@@ -258,6 +260,9 @@ export const POST: RequestHandler = async ({ request }) => {
 						});
 						console.log('[API] Recorded usage:', usage.promptTokens, 'input,', usage.completionTokens, 'output tokens');
 					}
+
+					// Generate subject for the completed exchange
+					generateExchangeSubject(sessionId, completeMessages, fetch).catch(err => console.error("[API] Failed to generate subject:", err));
 				} catch (error) {
 					console.error('[API] Failed to save messages to session:', error);
 				}
@@ -386,4 +391,74 @@ async function saveMessagesToSession(
 	console.log(
 		`[saveMessages] Saved ${allMessages.length} messages to session ${sessionId} (total: ${updateResult[0].messageCount})`
 	);
+}
+
+/**
+ * Generate subject for the most recent completed exchange
+ *
+ * Called after an assistant response completes. Checks if the current exchange
+ * needs a subject and triggers generation via the subject API endpoint.
+ */
+async function generateExchangeSubject(sessionId: string, completeMessages: UIMessage[], fetchFn: typeof fetch) {
+	try {
+		// Count user messages to determine current exchange index
+		const userMessageCount = completeMessages.filter((m) => m.role === 'user').length;
+
+		// Need at least one user message to have an exchange
+		if (userMessageCount === 0) {
+			return;
+		}
+
+		// Current exchange is the last user message (0-indexed)
+		const currentExchangeIndex = userMessageCount - 1;
+
+		// Fetch the session to check if subject already exists
+		const pool = getPool();
+		const sessionResult = await pool.query(
+			'SELECT messages FROM app.chat_sessions WHERE id = $1',
+			[sessionId]
+		);
+
+		if (sessionResult.rows.length === 0) {
+			console.error('[generateExchangeSubject] Session not found:', sessionId);
+			return;
+		}
+
+		const messages: ChatMessage[] = sessionResult.rows[0].messages;
+		const userMessages = messages.filter((m) => m.role === 'user');
+
+		// Check if the current exchange already has a subject
+		if (currentExchangeIndex < userMessages.length && userMessages[currentExchangeIndex].subject) {
+			console.log('[generateExchangeSubject] Subject already exists for exchange', currentExchangeIndex);
+			return;
+		}
+
+		// Generate subject by calling the subject API endpoint
+		const apiUrl = `/api/sessions/${sessionId}/subject`;
+		console.log('[generateExchangeSubject] Generating subject for exchange', currentExchangeIndex, 'via', apiUrl);
+
+		const response = await fetchFn(apiUrl, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({
+				exchangeIndex: currentExchangeIndex
+			})
+		});
+
+		console.log('[generateExchangeSubject] Response status:', response.status);
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			console.error('[generateExchangeSubject] Failed to generate subject:', errorText);
+			return;
+		}
+
+		const result = await response.json();
+		console.log('[generateExchangeSubject] Generated subject:', result.subject);
+	} catch (error) {
+		console.error('[generateExchangeSubject] Error:', error);
+		// Don't throw - subject generation failure shouldn't break the chat flow
+	}
 }

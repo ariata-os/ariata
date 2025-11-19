@@ -572,7 +572,7 @@ pub struct CompletePairingRequest {
 pub struct CompletePairingResponse {
     pub source_id: Uuid,
     pub device_token: String,
-    pub available_streams: Vec<crate::registry::StreamDescriptor>,
+    pub available_streams: Vec<crate::registry::RegisteredStream>,
 }
 
 /// Complete device pairing with a valid pairing code
@@ -681,6 +681,64 @@ pub async fn list_pending_pairings_handler(State(state): State<AppState>) -> Res
             })),
         )
             .into_response(),
+    }
+}
+
+/// Health check endpoint for devices to validate their authentication
+///
+/// This lightweight endpoint allows devices to verify their token is still valid
+/// without creating any side effects. Used for startup validation and periodic health checks.
+pub async fn device_health_check_handler(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    // Extract device token from Authorization header or X-Device-Token header
+    let token = if let Some(value) = headers.get(axum::http::header::AUTHORIZATION) {
+        let auth_str = value.to_str().unwrap_or("");
+        if let Some(t) = auth_str.strip_prefix("Bearer ") {
+            t.to_string()
+        } else {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "Invalid Authorization header format. Expected: Bearer <token>"
+                })),
+            )
+                .into_response();
+        }
+    } else if let Some(value) = headers.get("X-Device-Token") {
+        value.to_str().unwrap_or("").to_string()
+    } else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "error": "Missing authentication header. Provide Authorization: Bearer <token> or X-Device-Token: <token>"
+            })),
+        )
+            .into_response();
+    };
+
+    // Validate the device token
+    match crate::api::device_pairing::validate_device_token(state.db.pool(), &token).await {
+        Ok(source_id) => {
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "status": "active",
+                    "source_id": source_id,
+                })),
+            )
+                .into_response()
+        }
+        Err(_) => {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "Invalid or revoked device token"
+                })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -1115,11 +1173,6 @@ pub async fn update_tool_handler(
     Json(request): Json<crate::api::UpdateToolRequest>,
 ) -> Response {
     api_response(crate::api::update_tool(state.db.pool(), id, request).await)
-}
-
-/// Get pinned tools with full metadata
-pub async fn get_pinned_tools_handler(State(state): State<AppState>) -> Response {
-    api_response(crate::api::get_pinned_tools(state.db.pool()).await)
 }
 
 // =============================================================================

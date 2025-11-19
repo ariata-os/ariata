@@ -2,110 +2,117 @@
 
 pub mod transform;
 
-use serde_json::Value;
+use async_trait::async_trait;
+use chrono::Utc;
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use crate::{
-    database::Database,
     error::{Error, Result},
-    sources::base::{
-        validate_heart_rate, validate_percentage, validate_positive,
-        validate_timestamp_reasonable,
+    sources::{
+        base::{
+            validate_heart_rate, validate_percentage,
+            validate_positive, validate_timestamp_reasonable,
+        },
+        push_stream::{IngestPayload, PushResult, PushStream},
     },
-    storage::{stream_writer::StreamWriter, Storage},
+    storage::stream_writer::StreamWriter,
 };
-use uuid::Uuid;
 
 pub use transform::{
     HealthKitHRVTransform, HealthKitHeartRateTransform, HealthKitSleepTransform,
     HealthKitStepsTransform, HealthKitWorkoutTransform,
 };
 
-/// Process iOS HealthKit data
+/// iOS HealthKit stream implementing PushStream trait
 ///
-/// Parses and stores health metrics from iOS devices including heart rate, steps,
-/// sleep data, workouts, and other HealthKit measurements.
-///
-/// # Arguments
-/// * `source_id` - Validated source ID from the ingest endpoint
-/// * `db` - Database connection
-/// * `_storage` - Storage layer (unused for HealthKit, but kept for API consistency)
-/// * `stream_writer` - StreamWriter for writing to S3/object storage
-/// * `record` - JSON record from the device
-#[tracing::instrument(
-    skip(source_id, _db, _storage, stream_writer, record),
-    fields(source = "ios", stream = "healthkit", source_id = %source_id)
-)]
-pub async fn process(
-    source_id: Uuid,
-    _db: &Database,
-    _storage: &Arc<Storage>,
-    stream_writer: &Arc<Mutex<StreamWriter>>,
-    record: &Value,
-) -> Result<()> {
-    // Get device_id for logging
-    let device_id = record
-        .get("device_id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::Other("Missing device_id".into()))?;
+/// Receives health data pushed from iOS devices via /ingest endpoint.
+pub struct IosHealthKitStream {
+    db: PgPool,
+    stream_writer: Arc<Mutex<StreamWriter>>,
+}
 
-    // Parse timestamp
-    let timestamp = record
-        .get("timestamp")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::Other("Missing timestamp".into()))?;
-
-    // Extract health metrics for validation (all optional)
-    let heart_rate = record.get("heart_rate").and_then(|v| v.as_f64());
-    let hrv = record.get("hrv").and_then(|v| v.as_f64());
-    let resting_heart_rate = record.get("resting_heart_rate").and_then(|v| v.as_f64());
-    let steps = record
-        .get("steps")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32);
-    let distance = record.get("distance").and_then(|v| v.as_f64());
-    let body_fat_percentage = record.get("body_fat_percentage").and_then(|v| v.as_f64());
-
-    // Validate timestamp
-    let timestamp_dt = chrono::DateTime::parse_from_rfc3339(timestamp)
-        .map_err(|e| Error::Other(format!("Invalid timestamp format: {e}")))?
-        .with_timezone(&chrono::Utc);
-    validate_timestamp_reasonable(timestamp_dt)?;
-
-    // Validate health metrics if present
-    if let Some(hr) = heart_rate {
-        validate_heart_rate(hr)?;
+impl IosHealthKitStream {
+    /// Create a new IosHealthKitStream
+    pub fn new(db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>) -> Self {
+        Self { db, stream_writer }
     }
-    if let Some(rhr) = resting_heart_rate {
-        validate_heart_rate(rhr)?;
-    }
-    if let Some(hrv_val) = hrv {
-        validate_positive("HRV", hrv_val)?;
-    }
-    if let Some(s) = steps {
-        if s < 0 {
-            return Err(Error::InvalidInput("Steps cannot be negative".into()));
+}
+
+#[async_trait]
+impl PushStream for IosHealthKitStream {
+    async fn receive_push(&self, source_id: Uuid, payload: IngestPayload) -> Result<PushResult> {
+        // Validate payload
+        self.validate_payload(&payload)?;
+
+        let mut result = PushResult::new(payload.records.len());
+
+        // source_id is passed from handler - single source of truth, no duplicate DB query
+
+        // Process each record
+        for record in &payload.records {
+            // Parse timestamp
+            let timestamp = record
+                .get("timestamp")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Other("Missing timestamp in record".into()))?;
+
+            let timestamp_dt = chrono::DateTime::parse_from_rfc3339(timestamp)
+                .map_err(|e| Error::Other(format!("Invalid timestamp format: {e}")))?
+                .with_timezone(&Utc);
+            validate_timestamp_reasonable(timestamp_dt)?;
+
+            // Extract and validate health metrics (all optional)
+            if let Some(hr) = record.get("heart_rate").and_then(|v| v.as_f64()) {
+                validate_heart_rate(hr)?;
+            }
+            if let Some(rhr) = record.get("resting_heart_rate").and_then(|v| v.as_f64()) {
+                validate_heart_rate(rhr)?;
+            }
+            if let Some(hrv_val) = record.get("hrv").and_then(|v| v.as_f64()) {
+                validate_positive("HRV", hrv_val)?;
+            }
+            if let Some(s) = record.get("steps").and_then(|v| v.as_i64()).map(|v| v as i32) {
+                if s < 0 {
+                    return Err(Error::InvalidInput("Steps cannot be negative".into()));
+                }
+            }
+            if let Some(d) = record.get("distance").and_then(|v| v.as_f64()) {
+                validate_positive("Distance", d)?;
+            }
+            if let Some(bf) = record.get("body_fat_percentage").and_then(|v| v.as_f64()) {
+                validate_percentage("Body fat percentage", bf)?;
+            }
+
+            // Write to object storage via StreamWriter
+            {
+                let mut writer = self.stream_writer.lock().await;
+                writer.write_record(source_id, "healthkit", record.clone(), Some(timestamp_dt))?;
+            }
+
+            result.records_written += 1;
         }
-    }
-    if let Some(d) = distance {
-        validate_positive("Distance", d)?;
-    }
-    if let Some(bf) = body_fat_percentage {
-        validate_percentage("Body fat percentage", bf)?;
+
+        tracing::info!(
+            "Processed {} HealthKit records from device {}",
+            result.records_written,
+            payload.device_id
+        );
+
+        Ok(result)
     }
 
-    // Write to S3/object storage via StreamWriter
-    // This replaces the previous SQL INSERT INTO stream_ios_healthkit
-    {
-        let mut writer = stream_writer.lock().await;
-
-        writer.write_record(source_id, "healthkit", record.clone(), Some(timestamp_dt))?;
+    fn table_name(&self) -> &str {
+        "stream_ios_healthkit"
     }
 
-    tracing::debug!(
-        "Wrote healthkit record to object storage for device {}",
-        device_id
-    );
-    Ok(())
+    fn stream_name(&self) -> &str {
+        "healthkit"
+    }
+
+    fn source_name(&self) -> &str {
+        "ios"
+    }
 }

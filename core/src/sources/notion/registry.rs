@@ -1,14 +1,14 @@
 //! Notion source registration for the catalog
 
-use crate::registry::{AuthType, OAuthConfig, SourceDescriptor, SourceRegistry, StreamDescriptor};
+use crate::registry::{AuthType, OAuthConfig, RegisteredSource, SourceRegistry, RegisteredStream};
 use serde_json::json;
 
 /// Notion source registration
 pub struct NotionSource;
 
 impl SourceRegistry for NotionSource {
-    fn descriptor() -> SourceDescriptor {
-        SourceDescriptor {
+    fn descriptor() -> RegisteredSource {
+        RegisteredSource {
             name: "notion",
             display_name: "Notion",
             description: "Sync pages, databases, and blocks from Notion workspaces",
@@ -21,7 +21,7 @@ impl SourceRegistry for NotionSource {
             icon: Some("simple-icons:notion"),
             streams: vec![
                 // Pages stream
-                StreamDescriptor::new("pages")
+                RegisteredStream::new("pages")
                     .display_name("Notion Pages")
                     .description(
                         "Sync pages and their content from Notion databases and workspaces",
@@ -31,7 +31,7 @@ impl SourceRegistry for NotionSource {
                     .config_example(pages_config_example())
                     .supports_incremental(false) // Notion API doesn't provide incremental sync
                     .supports_full_refresh(true)
-                    .default_cron_schedule("0 */12 * * *") // Every 12 hours (full refresh is expensive)
+                    .default_cron_schedule("0 0 */12 * * *") // Every 12 hours (6-field: sec min hour day month dow)
                     .build(),
             ],
         }

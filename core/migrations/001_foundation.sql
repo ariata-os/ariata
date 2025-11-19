@@ -1,7 +1,8 @@
 CREATE SCHEMA IF NOT EXISTS data;
 CREATE SCHEMA IF NOT EXISTS app;
 
-SET search_path TO data, app, public;
+-- Note: search_path is set at database level via init-schemas.sh
+-- Do not use SET search_path in migrations - it breaks SQLx metadata operations
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS postgis;

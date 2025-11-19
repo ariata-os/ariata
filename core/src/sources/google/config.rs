@@ -41,16 +41,6 @@ impl Default for GoogleCalendarConfig {
 }
 
 impl GoogleCalendarConfig {
-    /// Create a config from JSON value (from database)
-    pub fn from_json(value: &serde_json::Value) -> Result<Self, serde_json::Error> {
-        serde_json::from_value(value.clone())
-    }
-
-    /// Convert to JSON value (for database storage)
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}))
-    }
-
     /// Calculate time bounds based on sync strategy
     pub fn calculate_time_bounds(
         &self,
@@ -131,16 +121,6 @@ impl Default for GoogleGmailConfig {
 }
 
 impl GoogleGmailConfig {
-    /// Create a config from JSON value (from database)
-    pub fn from_json(value: &serde_json::Value) -> Result<Self, serde_json::Error> {
-        serde_json::from_value(value.clone())
-    }
-
-    /// Convert to JSON value (for database storage)
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}))
-    }
-
     /// Build the query string for Gmail API based on sync strategy
     pub fn build_query(&self) -> String {
         let mut parts = Vec::new();

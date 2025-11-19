@@ -1,14 +1,14 @@
 //! macOS source registration for the catalog
 
-use crate::registry::{AuthType, SourceDescriptor, SourceRegistry, StreamDescriptor};
+use crate::registry::{AuthType, RegisteredSource, SourceRegistry, RegisteredStream};
 use serde_json::json;
 
 /// macOS source registration
 pub struct MacSource;
 
 impl SourceRegistry for MacSource {
-    fn descriptor() -> SourceDescriptor {
-        SourceDescriptor {
+    fn descriptor() -> RegisteredSource {
+        RegisteredSource {
             name: "mac",
             display_name: "macOS",
             description: "Personal data from macOS devices (App usage, Browser history, iMessage)",
@@ -17,7 +17,7 @@ impl SourceRegistry for MacSource {
             icon: Some("ri:macbook-line"),
             streams: vec![
                 // Apps stream
-                StreamDescriptor::new("apps")
+                RegisteredStream::new("apps")
                     .display_name("Application Usage")
                     .description("Active applications, window titles, and usage duration")
                     .table_name("stream_mac_apps")
@@ -29,7 +29,7 @@ impl SourceRegistry for MacSource {
                     .build(),
 
                 // Browser stream
-                StreamDescriptor::new("browser")
+                RegisteredStream::new("browser")
                     .display_name("Browser History")
                     .description("URLs visited, page titles, and visit durations from Safari, Chrome, Firefox")
                     .table_name("stream_mac_browser")
@@ -41,7 +41,7 @@ impl SourceRegistry for MacSource {
                     .build(),
 
                 // iMessage stream
-                StreamDescriptor::new("imessage")
+                RegisteredStream::new("imessage")
                     .display_name("iMessage")
                     .description("Message history including SMS and iMessage conversations")
                     .table_name("stream_mac_imessage")

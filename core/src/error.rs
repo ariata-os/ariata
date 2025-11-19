@@ -69,6 +69,14 @@ pub enum Error {
     #[error("Error: {0}")]
     Anyhow(#[from] anyhow::Error),
 
+    /// Missing device ID in push stream payload
+    #[error("Missing device ID in payload")]
+    MissingDeviceId,
+
+    /// Empty payload in push stream
+    #[error("Empty payload - no records to ingest")]
+    EmptyPayload,
+
     /// Generic errors
     #[error("{0}")]
     Other(String),
@@ -106,3 +114,58 @@ impl Error {
 
 /// Result type alias for Ariata operations
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// Macro for handling database query errors with consistent error messages
+///
+/// # Examples
+///
+/// ```rust
+/// use ariata_core::{db_query, error::Result};
+/// use sqlx::PgPool;
+///
+/// async fn get_user(db: &PgPool, id: i32) -> Result<User> {
+///     db_query!(
+///         sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+///             .bind(id)
+///             .fetch_one(db),
+///         "Failed to fetch user"
+///     )
+/// }
+/// ```
+#[macro_export]
+macro_rules! db_query {
+    ($query:expr, $context:expr) => {
+        $query
+            .await
+            .map_err(|e| $crate::error::Error::Database(format!("{}: {}", $context, e)))?
+    };
+}
+
+/// Macro for handling database execute operations with consistent error messages
+///
+/// Similar to `db_query!` but specifically for execute operations that don't return data.
+///
+/// # Examples
+///
+/// ```rust
+/// use ariata_core::{db_execute, error::Result};
+/// use sqlx::PgPool;
+///
+/// async fn delete_user(db: &PgPool, id: i32) -> Result<()> {
+///     db_execute!(
+///         sqlx::query("DELETE FROM users WHERE id = $1")
+///             .bind(id)
+///             .execute(db),
+///         "Failed to delete user"
+///     );
+///     Ok(())
+/// }
+/// ```
+#[macro_export]
+macro_rules! db_execute {
+    ($query:expr, $context:expr) => {
+        $query
+            .await
+            .map_err(|e| $crate::error::Error::Database(format!("{}: {}", $context, e)))?
+    };
+}

@@ -12,15 +12,15 @@ use uuid::Uuid;
 /// Get or create a device source by device_id
 ///
 /// This helper is used by all device processors (iOS, Mac) to automatically
-/// create source entries in the database when devices first send data.
+/// create source connection entries in the database when devices first send data.
 ///
 /// # Arguments
 /// * `db` - Database connection
-/// * `provider` - Provider name ("ios" or "mac")
+/// * `source_name` - Source name ("ios" or "mac")
 /// * `device_id` - Unique device identifier sent by the device
 ///
 /// # Returns
-/// The source_id (UUID) for this device, either existing or newly created
+/// The source_connection_id (UUID) for this device, either existing or newly created
 ///
 /// # Example
 /// ```
@@ -28,37 +28,43 @@ use uuid::Uuid;
 /// ```
 pub async fn get_or_create_device_source(
     db: &Database,
-    provider: &str,
+    source_name: &str,
     device_id: &str,
 ) -> Result<Uuid> {
     use sqlx;
 
-    // Try to get existing source
-    let existing: Option<(Uuid,)> =
-        sqlx::query_as("SELECT id FROM sources WHERE provider = $1 AND name = $2")
-            .bind(provider)
-            .bind(device_id)
-            .fetch_optional(db.pool())
-            .await
-            .map_err(|e| Error::Database(format!("Failed to query source: {e}")))?;
+    // Try to get existing source connection by device_id
+    let existing: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM source_connections WHERE source = $1 AND device_id = $2 AND auth_type = 'device'"
+    )
+    .bind(source_name)
+    .bind(device_id)
+    .fetch_optional(db.pool())
+    .await
+    .map_err(|e| Error::Database(format!("Failed to query source connection: {e}")))?;
 
     if let Some((id,)) = existing {
         return Ok(id);
     }
 
-    // Create new device source
+    // Create new device source connection with a unique name
     let new_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO sources (id, provider, name, is_active, is_internal)
-         VALUES ($1, $2, $3, true, false)
-         ON CONFLICT (name) DO NOTHING",
+    let name = format!("{}-{}", source_name, device_id);
+
+    let (id,): (Uuid,) = sqlx::query_as(
+        "INSERT INTO source_connections (id, source, name, device_id, auth_type, is_active, is_internal)
+         VALUES ($1, $2, $3, $4, 'device', true, false)
+         ON CONFLICT (source, device_id) WHERE device_id IS NOT NULL
+         DO UPDATE SET updated_at = NOW()
+         RETURNING id",
     )
     .bind(new_id)
-    .bind(provider)
+    .bind(source_name)
+    .bind(&name)
     .bind(device_id)
-    .execute(db.pool())
+    .fetch_one(db.pool())
     .await
-    .map_err(|e| Error::Database(format!("Failed to create source: {e}")))?;
+    .map_err(|e| Error::Database(format!("Failed to create source connection: {e}")))?;
 
-    Ok(new_id)
+    Ok(id)
 }

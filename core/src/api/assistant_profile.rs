@@ -16,7 +16,6 @@ pub struct UpdateAssistantProfileRequest {
     pub default_agent_id: Option<String>,
     pub default_model_id: Option<String>,
     pub enabled_tools: Option<serde_json::Value>,
-    pub pinned_tool_ids: Option<Vec<String>>,
     pub ui_preferences: Option<serde_json::Value>,
 }
 
@@ -27,7 +26,7 @@ pub async fn get_assistant_profile(db: &PgPool) -> Result<AssistantProfile> {
     let profile = sqlx::query_as::<_, AssistantProfile>(
         r#"
         SELECT *
-        FROM data.assistant_profile
+        FROM app.assistant_profile
         LIMIT 1
         "#,
     )
@@ -52,7 +51,7 @@ pub async fn update_assistant_profile(
 
     // Build dynamic UPDATE query based on which fields are present
     let mut updates = Vec::new();
-    let mut query = "UPDATE data.assistant_profile SET ".to_string();
+    let mut query = "UPDATE app.assistant_profile SET ".to_string();
 
     if request.assistant_name.is_some() {
         updates.push("assistant_name = $1");
@@ -66,11 +65,8 @@ pub async fn update_assistant_profile(
     if request.enabled_tools.is_some() {
         updates.push("enabled_tools = $4");
     }
-    if request.pinned_tool_ids.is_some() {
-        updates.push("pinned_tool_ids = $5");
-    }
     if request.ui_preferences.is_some() {
-        updates.push("ui_preferences = $6");
+        updates.push("ui_preferences = $5");
     }
 
     if updates.is_empty() {
@@ -79,7 +75,7 @@ pub async fn update_assistant_profile(
     }
 
     query.push_str(&updates.join(", "));
-    query.push_str(", updated_at = NOW() WHERE id = $7 RETURNING *");
+    query.push_str(", updated_at = NOW() WHERE id = $6 RETURNING *");
 
     // Execute the update with bound parameters
     let updated_profile = sqlx::query_as::<_, AssistantProfile>(&query)
@@ -87,7 +83,6 @@ pub async fn update_assistant_profile(
         .bind(&request.default_agent_id)
         .bind(&request.default_model_id)
         .bind(&request.enabled_tools)
-        .bind(&request.pinned_tool_ids)
         .bind(&request.ui_preferences)
         .bind(profile_id)
         .fetch_one(db)
@@ -108,33 +103,3 @@ pub async fn get_assistant_name(db: &PgPool) -> Result<String> {
         .unwrap_or_else(|| "Assistant".to_string()))
 }
 
-/// Get pinned tools with full metadata
-///
-/// Returns tools from app.tools table filtered by the user's pinned_tool_ids,
-/// ordered by the pinned_tool_ids array order
-pub async fn get_pinned_tools(db: &PgPool) -> Result<Vec<crate::api::tools::Tool>> {
-    use crate::api::tools::Tool;
-
-    let profile = get_assistant_profile(db).await?;
-    let pinned_ids = profile.pinned_tool_ids.unwrap_or_default();
-
-    if pinned_ids.is_empty() {
-        return Ok(vec![]);
-    }
-
-    // Query tools matching the pinned IDs
-    let tools = sqlx::query_as::<_, Tool>(
-        r#"
-        SELECT *
-        FROM app.tools
-        WHERE id = ANY($1)
-        ORDER BY array_position($1, id)
-        "#,
-    )
-    .bind(&pinned_ids)
-    .fetch_all(db)
-    .await
-    .map_err(|e| Error::Database(format!("Failed to fetch pinned tools: {}", e)))?;
-
-    Ok(tools)
-}

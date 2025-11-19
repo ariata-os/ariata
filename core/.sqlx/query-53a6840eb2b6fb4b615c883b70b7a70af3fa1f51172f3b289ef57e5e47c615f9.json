@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE data.praxis_initiative\n        SET is_active = false, updated_at = NOW()\n        WHERE id = $1 AND is_active = true\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "53a6840eb2b6fb4b615c883b70b7a70af3fa1f51172f3b289ef57e5e47c615f9"
+}

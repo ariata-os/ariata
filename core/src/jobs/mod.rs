@@ -41,7 +41,7 @@ fn job_from_row(row: &sqlx::postgres::PgRow) -> Result<Job> {
             .try_get::<String, _>("status")?
             .parse()
             .map_err(|e: String| Error::Other(e))?,
-        source_id: row.try_get("source_id")?,
+        source_connection_id: row.try_get("source_connection_id")?,
         stream_name: row.try_get("stream_name")?,
         sync_mode: row.try_get("sync_mode")?,
         transform_id: row.try_get("transform_id")?,
@@ -65,7 +65,7 @@ pub async fn has_active_sync_job(db: &PgPool, source_id: Uuid, stream_name: &str
         r#"
         SELECT EXISTS(
             SELECT 1 FROM data.jobs
-            WHERE source_id = $1
+            WHERE source_connection_id = $1
               AND stream_name = $2
               AND job_type = 'sync'
               AND status IN ('pending', 'running')
@@ -87,7 +87,7 @@ pub async fn create_job(db: &PgPool, request: CreateJobRequest) -> Result<Job> {
         INSERT INTO data.jobs (
             job_type,
             status,
-            source_id,
+            source_connection_id,
             stream_name,
             sync_mode,
             transform_id,
@@ -101,7 +101,7 @@ pub async fn create_job(db: &PgPool, request: CreateJobRequest) -> Result<Job> {
     )
     .bind(&request.job_type.to_string())
     .bind(&request.status.to_string())
-    .bind(request.source_id)
+    .bind(request.source_connection_id)
     .bind(&request.stream_name)
     .bind(&request.sync_mode)
     .bind(request.transform_id)
@@ -187,7 +187,7 @@ pub async fn query_jobs(
 
     if source_id.is_some() {
         bind_count += 1;
-        query.push_str(&format!(" AND source_id = ${}", bind_count));
+        query.push_str(&format!(" AND source_connection_id = ${}", bind_count));
     }
 
     // Convert statuses to strings outside the binding scope
@@ -297,7 +297,7 @@ pub async fn create_chained_transform_job(
     let request = CreateJobRequest {
         job_type: JobType::Transform,
         status: JobStatus::Pending,
-        source_id: Some(source_id),
+        source_connection_id: Some(source_id),
         stream_name: None,
         sync_mode: None,
         transform_id: None,

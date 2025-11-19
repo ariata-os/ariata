@@ -1,6 +1,7 @@
-SET search_path TO data, public;
+-- Entities and ontology tables in data schema
+-- Note: search_path is set at database level, so we use qualified names
 
-CREATE TABLE IF NOT EXISTS entities_person (
+CREATE TABLE IF NOT EXISTS data.entities_person (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     canonical_name TEXT NOT NULL,
@@ -19,16 +20,17 @@ CREATE TABLE IF NOT EXISTS entities_person (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_entities_person_name ON entities_person(canonical_name);
-CREATE INDEX idx_entities_person_emails ON entities_person USING GIN(email_addresses);
-CREATE INDEX idx_entities_person_phones ON entities_person USING GIN(phone_numbers);
+CREATE INDEX IF NOT EXISTS idx_entities_person_name ON data.entities_person(canonical_name);
+CREATE INDEX IF NOT EXISTS idx_entities_person_emails ON data.entities_person USING GIN(email_addresses);
+CREATE INDEX IF NOT EXISTS idx_entities_person_phones ON data.entities_person USING GIN(phone_numbers);
 
+DROP TRIGGER IF EXISTS entities_person_updated_at ON data.entities_person;
 CREATE TRIGGER entities_person_updated_at
-    BEFORE UPDATE ON entities_person
+    BEFORE UPDATE ON data.entities_person
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS entities_place (
+CREATE TABLE IF NOT EXISTS data.entities_place (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     canonical_name TEXT NOT NULL,
@@ -47,15 +49,16 @@ CREATE TABLE IF NOT EXISTS entities_place (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_entities_place_name ON entities_place(canonical_name);
-CREATE INDEX idx_entities_place_geo ON entities_place USING GIST(geo_center);
+CREATE INDEX IF NOT EXISTS idx_entities_place_name ON data.entities_place(canonical_name);
+CREATE INDEX IF NOT EXISTS idx_entities_place_geo ON data.entities_place USING GIST(geo_center);
 
+DROP TRIGGER IF EXISTS entities_place_updated_at ON data.entities_place;
 CREATE TRIGGER entities_place_updated_at
-    BEFORE UPDATE ON entities_place
+    BEFORE UPDATE ON data.entities_place
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS entities_topic (
+CREATE TABLE IF NOT EXISTS data.entities_topic (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     name TEXT NOT NULL,
@@ -73,14 +76,15 @@ CREATE TABLE IF NOT EXISTS entities_topic (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_entities_topic_name ON entities_topic(name);
+CREATE INDEX IF NOT EXISTS idx_entities_topic_name ON data.entities_topic(name);
 
+DROP TRIGGER IF EXISTS entities_topic_updated_at ON data.entities_topic;
 CREATE TRIGGER entities_topic_updated_at
-    BEFORE UPDATE ON entities_topic
+    BEFORE UPDATE ON data.entities_topic
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS health_heart_rate (
+CREATE TABLE IF NOT EXISTS data.health_heart_rate (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     bpm INTEGER NOT NULL,
@@ -100,9 +104,9 @@ CREATE TABLE IF NOT EXISTS health_heart_rate (
     CONSTRAINT health_heart_rate_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_health_heart_rate_timestamp ON health_heart_rate(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_health_heart_rate_timestamp ON data.health_heart_rate(timestamp DESC);
 
-CREATE TABLE IF NOT EXISTS health_hrv (
+CREATE TABLE IF NOT EXISTS data.health_hrv (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     hrv_ms FLOAT NOT NULL,
@@ -122,9 +126,9 @@ CREATE TABLE IF NOT EXISTS health_hrv (
     CONSTRAINT health_hrv_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_health_hrv_timestamp ON health_hrv(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_health_hrv_timestamp ON data.health_hrv(timestamp DESC);
 
-CREATE TABLE IF NOT EXISTS health_steps (
+CREATE TABLE IF NOT EXISTS data.health_steps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     step_count INTEGER NOT NULL,
@@ -143,9 +147,9 @@ CREATE TABLE IF NOT EXISTS health_steps (
     CONSTRAINT health_steps_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_health_steps_timestamp ON health_steps(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_health_steps_timestamp ON data.health_steps(timestamp DESC);
 
-CREATE TABLE IF NOT EXISTS health_sleep (
+CREATE TABLE IF NOT EXISTS data.health_sleep (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     sleep_stages JSONB,
@@ -167,9 +171,9 @@ CREATE TABLE IF NOT EXISTS health_sleep (
     CONSTRAINT health_sleep_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_health_sleep_start_time ON health_sleep(start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_health_sleep_start_time ON data.health_sleep(start_time DESC);
 
-CREATE TABLE IF NOT EXISTS health_workout (
+CREATE TABLE IF NOT EXISTS data.health_workout (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     activity_type TEXT NOT NULL,
@@ -180,7 +184,7 @@ CREATE TABLE IF NOT EXISTS health_workout (
     max_heart_rate INTEGER,
     distance_meters FLOAT,
 
-    place_id UUID REFERENCES entities_place(id),
+    place_id UUID REFERENCES data.entities_place(id),
 
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ NOT NULL,
@@ -197,10 +201,10 @@ CREATE TABLE IF NOT EXISTS health_workout (
     CONSTRAINT health_workout_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_health_workout_start_time ON health_workout(start_time DESC);
-CREATE INDEX idx_health_workout_place ON health_workout(place_id);
+CREATE INDEX IF NOT EXISTS idx_health_workout_start_time ON data.health_workout(start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_health_workout_place ON data.health_workout(place_id);
 
-CREATE TABLE IF NOT EXISTS location_point (
+CREATE TABLE IF NOT EXISTS data.location_point (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     coordinates GEOGRAPHY(POINT) NOT NULL,
@@ -226,13 +230,13 @@ CREATE TABLE IF NOT EXISTS location_point (
     CONSTRAINT location_point_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_location_point_coords ON location_point USING GIST(coordinates);
-CREATE INDEX idx_location_point_timestamp ON location_point(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_location_point_coords ON data.location_point USING GIST(coordinates);
+CREATE INDEX IF NOT EXISTS idx_location_point_timestamp ON data.location_point(timestamp DESC);
 
-CREATE TABLE IF NOT EXISTS location_visit (
+CREATE TABLE IF NOT EXISTS data.location_visit (
     id UUID PRIMARY KEY,
 
-    place_id UUID REFERENCES entities_place(id),
+    place_id UUID REFERENCES data.entities_place(id),
 
     centroid_coordinates GEOGRAPHY(POINT) NOT NULL,
     latitude FLOAT NOT NULL,
@@ -251,18 +255,19 @@ CREATE TABLE IF NOT EXISTS location_visit (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_location_visit_centroid ON location_visit USING GIST(centroid_coordinates);
-CREATE INDEX idx_location_visit_start_time ON location_visit(start_time DESC);
-CREATE INDEX idx_location_visit_end_time ON location_visit(end_time DESC);
-CREATE INDEX idx_location_visit_place ON location_visit(place_id) WHERE place_id IS NOT NULL;
-CREATE INDEX idx_location_visit_source ON location_visit(source_stream_id);
+CREATE INDEX IF NOT EXISTS idx_location_visit_centroid ON data.location_visit USING GIST(centroid_coordinates);
+CREATE INDEX IF NOT EXISTS idx_location_visit_start_time ON data.location_visit(start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_location_visit_end_time ON data.location_visit(end_time DESC);
+CREATE INDEX IF NOT EXISTS idx_location_visit_place ON data.location_visit(place_id) WHERE place_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_location_visit_source ON data.location_visit(source_stream_id);
 
+DROP TRIGGER IF EXISTS location_visit_updated_at ON data.location_visit;
 CREATE TRIGGER location_visit_updated_at
-    BEFORE UPDATE ON location_visit
+    BEFORE UPDATE ON data.location_visit
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS social_email (
+CREATE TABLE IF NOT EXISTS data.social_email (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     message_id TEXT NOT NULL,
@@ -284,7 +289,7 @@ CREATE TABLE IF NOT EXISTS social_email (
     cc_names TEXT[] DEFAULT '{}',
     bcc_addresses TEXT[] DEFAULT '{}',
 
-    from_person_id UUID REFERENCES entities_person(id),
+    from_person_id UUID REFERENCES data.entities_person(id),
     to_person_ids UUID[] DEFAULT '{}',
     cc_person_ids UUID[] DEFAULT '{}',
     bcc_person_ids UUID[] DEFAULT '{}',
@@ -308,18 +313,21 @@ CREATE TABLE IF NOT EXISTS social_email (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT social_email_direction_check CHECK (direction IN ('sent', 'received')),
-    CONSTRAINT social_email_unique_source UNIQUE (source_table, message_id)
+    CONSTRAINT social_email_unique_source UNIQUE (source_table, message_id),
+    -- Required for ON CONFLICT in Gmail transform (maps stream records to ontology)
+    CONSTRAINT social_email_unique_stream_id UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_social_email_from_person ON social_email(from_person_id);
-CREATE INDEX idx_social_email_timestamp ON social_email(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_social_email_from_person ON data.social_email(from_person_id);
+CREATE INDEX IF NOT EXISTS idx_social_email_timestamp ON data.social_email(timestamp DESC);
 
+DROP TRIGGER IF EXISTS social_email_updated_at ON data.social_email;
 CREATE TRIGGER social_email_updated_at
-    BEFORE UPDATE ON social_email
+    BEFORE UPDATE ON data.social_email
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS social_message (
+CREATE TABLE IF NOT EXISTS data.social_message (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     message_id TEXT NOT NULL,
@@ -336,7 +344,7 @@ CREATE TABLE IF NOT EXISTS social_message (
     to_identifiers TEXT[] DEFAULT '{}',
     to_names TEXT[] DEFAULT '{}',
 
-    from_person_id UUID REFERENCES entities_person(id),
+    from_person_id UUID REFERENCES data.entities_person(id),
     to_person_ids UUID[] DEFAULT '{}',
 
     direction TEXT NOT NULL CHECK (direction IN ('sent', 'received')),
@@ -360,17 +368,18 @@ CREATE TABLE IF NOT EXISTS social_message (
     CONSTRAINT social_message_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_social_message_from_person ON social_message(from_person_id);
-CREATE INDEX idx_social_message_timestamp ON social_message(timestamp DESC);
-CREATE INDEX idx_social_message_channel ON social_message(channel);
-CREATE INDEX idx_social_message_thread ON social_message(thread_id);
+CREATE INDEX IF NOT EXISTS idx_social_message_from_person ON data.social_message(from_person_id);
+CREATE INDEX IF NOT EXISTS idx_social_message_timestamp ON data.social_message(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_social_message_channel ON data.social_message(channel);
+CREATE INDEX IF NOT EXISTS idx_social_message_thread ON data.social_message(thread_id);
 
+DROP TRIGGER IF EXISTS social_message_updated_at ON data.social_message;
 CREATE TRIGGER social_message_updated_at
-    BEFORE UPDATE ON social_message
+    BEFORE UPDATE ON data.social_message
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS activity_calendar_entry (
+CREATE TABLE IF NOT EXISTS data.praxis_calendar (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     title TEXT,
@@ -381,14 +390,14 @@ CREATE TABLE IF NOT EXISTS activity_calendar_entry (
     organizer_identifier TEXT,
     attendee_identifiers TEXT[] DEFAULT '{}',
 
-    organizer_person_id UUID REFERENCES entities_person(id),
+    organizer_person_id UUID REFERENCES data.entities_person(id),
     attendee_person_ids UUID[] DEFAULT '{}',
 
-    topic_id UUID REFERENCES entities_topic(id),
+    topic_id UUID REFERENCES data.entities_topic(id),
     topic_keywords TEXT[] DEFAULT '{}',
 
     location_name TEXT,
-    place_id UUID REFERENCES entities_place(id),
+    place_id UUID REFERENCES data.entities_place(id),
 
     conference_url TEXT,
     conference_platform TEXT,
@@ -400,6 +409,22 @@ CREATE TABLE IF NOT EXISTS activity_calendar_entry (
     status TEXT,
     response_status TEXT,
 
+    -- Time blocking fields
+    block_type TEXT,                    -- NULL for normal events, 'deep_work', 'routine', 'buffer', 'sacred'
+    is_sacred BOOLEAN DEFAULT FALSE,    -- For unmovable blocks
+
+    -- Recurrence
+    recurrence_rule TEXT,                -- RRULE if recurring
+
+    -- Links to praxis items (will add FKs in 004_identity.sql)
+    task_id UUID,                       -- What task this time block is for (including habits which are tasks with is_habit=true)
+    initiative_id UUID,                 -- What initiative this time block is for
+    -- Note: habit_id removed since habits are now tasks with is_habit=true
+
+    -- Axiological links (optional)
+    purpose TEXT,                       -- Why this matters
+    value_ids UUID[],                   -- Optional explicit values
+
     source_stream_id UUID NOT NULL,
     source_table TEXT NOT NULL,
     source_provider TEXT NOT NULL,
@@ -409,19 +434,22 @@ CREATE TABLE IF NOT EXISTS activity_calendar_entry (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT activity_calendar_entry_unique_source UNIQUE (source_stream_id)
+    CONSTRAINT praxis_calendar_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_activity_calendar_topic ON activity_calendar_entry(topic_id);
-CREATE INDEX idx_activity_calendar_place ON activity_calendar_entry(place_id);
-CREATE INDEX idx_activity_calendar_start_time ON activity_calendar_entry(start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_praxis_calendar_topic ON data.praxis_calendar(topic_id);
+CREATE INDEX IF NOT EXISTS idx_praxis_calendar_place ON data.praxis_calendar(place_id);
+CREATE INDEX IF NOT EXISTS idx_praxis_calendar_start_time ON data.praxis_calendar(start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_praxis_calendar_block_type ON data.praxis_calendar(block_type) WHERE block_type IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_praxis_calendar_recurrence ON data.praxis_calendar(recurrence_rule) WHERE recurrence_rule IS NOT NULL;
 
-CREATE TRIGGER activity_calendar_entry_updated_at
-    BEFORE UPDATE ON activity_calendar_entry
+DROP TRIGGER IF EXISTS praxis_calendar_updated_at ON data.praxis_calendar;
+CREATE TRIGGER praxis_calendar_updated_at
+    BEFORE UPDATE ON data.praxis_calendar
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS activity_app_usage (
+CREATE TABLE IF NOT EXISTS data.activity_app_usage (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     app_name TEXT NOT NULL,
@@ -435,7 +463,7 @@ CREATE TABLE IF NOT EXISTS activity_app_usage (
     document_path TEXT,
     url TEXT,
 
-    topic_id UUID REFERENCES entities_topic(id),
+    topic_id UUID REFERENCES data.entities_topic(id),
     topic_keywords TEXT[] DEFAULT '{}',
 
     source_stream_id UUID NOT NULL,
@@ -450,17 +478,18 @@ CREATE TABLE IF NOT EXISTS activity_app_usage (
     CONSTRAINT activity_app_usage_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_activity_app_usage_app_name ON activity_app_usage(app_name);
-CREATE INDEX idx_activity_app_usage_app_category ON activity_app_usage(app_category);
-CREATE INDEX idx_activity_app_usage_start_time ON activity_app_usage(start_time DESC);
-CREATE INDEX idx_activity_app_usage_topic ON activity_app_usage(topic_id);
+CREATE INDEX IF NOT EXISTS idx_activity_app_usage_app_name ON data.activity_app_usage(app_name);
+CREATE INDEX IF NOT EXISTS idx_activity_app_usage_app_category ON data.activity_app_usage(app_category);
+CREATE INDEX IF NOT EXISTS idx_activity_app_usage_start_time ON data.activity_app_usage(start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_app_usage_topic ON data.activity_app_usage(topic_id);
 
+DROP TRIGGER IF EXISTS activity_app_usage_updated_at ON data.activity_app_usage;
 CREATE TRIGGER activity_app_usage_updated_at
-    BEFORE UPDATE ON activity_app_usage
+    BEFORE UPDATE ON data.activity_app_usage
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS activity_web_browsing (
+CREATE TABLE IF NOT EXISTS data.activity_web_browsing (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     url TEXT NOT NULL,
@@ -472,7 +501,7 @@ CREATE TABLE IF NOT EXISTS activity_web_browsing (
 
     timestamp TIMESTAMPTZ NOT NULL,
 
-    topic_id UUID REFERENCES entities_topic(id),
+    topic_id UUID REFERENCES data.entities_topic(id),
     topic_keywords TEXT[] DEFAULT '{}',
 
     source_stream_id UUID NOT NULL,
@@ -487,17 +516,18 @@ CREATE TABLE IF NOT EXISTS activity_web_browsing (
     CONSTRAINT activity_web_browsing_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_activity_web_browsing_domain ON activity_web_browsing(domain);
-CREATE INDEX idx_activity_web_browsing_timestamp ON activity_web_browsing(timestamp DESC);
-CREATE INDEX idx_activity_web_browsing_topic ON activity_web_browsing(topic_id);
-CREATE INDEX idx_activity_web_browsing_url ON activity_web_browsing USING hash(url);
+CREATE INDEX IF NOT EXISTS idx_activity_web_browsing_domain ON data.activity_web_browsing(domain);
+CREATE INDEX IF NOT EXISTS idx_activity_web_browsing_timestamp ON data.activity_web_browsing(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_web_browsing_topic ON data.activity_web_browsing(topic_id);
+CREATE INDEX IF NOT EXISTS idx_activity_web_browsing_url ON data.activity_web_browsing USING hash(url);
 
+DROP TRIGGER IF EXISTS activity_web_browsing_updated_at ON data.activity_web_browsing;
 CREATE TRIGGER activity_web_browsing_updated_at
-    BEFORE UPDATE ON activity_web_browsing
+    BEFORE UPDATE ON data.activity_web_browsing
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS knowledge_document (
+CREATE TABLE IF NOT EXISTS data.knowledge_document (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     title TEXT,
@@ -508,7 +538,7 @@ CREATE TABLE IF NOT EXISTS knowledge_document (
     external_id TEXT,
     external_url TEXT,
 
-    topic_id UUID REFERENCES entities_topic(id),
+    topic_id UUID REFERENCES data.entities_topic(id),
     tags TEXT[] DEFAULT '{}',
 
     is_authored BOOLEAN DEFAULT false,
@@ -528,18 +558,19 @@ CREATE TABLE IF NOT EXISTS knowledge_document (
     CONSTRAINT knowledge_document_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_knowledge_document_title ON knowledge_document(title);
-CREATE INDEX idx_knowledge_document_topic ON knowledge_document(topic_id);
-CREATE INDEX idx_knowledge_document_tags ON knowledge_document USING GIN(tags);
-CREATE INDEX idx_knowledge_document_source ON knowledge_document(source_stream_id);
-CREATE INDEX idx_knowledge_document_search ON knowledge_document USING GIN(to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, '')));
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_title ON data.knowledge_document(title);
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_topic ON data.knowledge_document(topic_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_tags ON data.knowledge_document USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_source ON data.knowledge_document(source_stream_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_search ON data.knowledge_document USING GIN(to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, '')));
 
+DROP TRIGGER IF EXISTS knowledge_document_updated_at ON data.knowledge_document;
 CREATE TRIGGER knowledge_document_updated_at
-    BEFORE UPDATE ON knowledge_document
+    BEFORE UPDATE ON data.knowledge_document
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS knowledge_ai_conversation (
+CREATE TABLE IF NOT EXISTS data.knowledge_ai_conversation (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     conversation_id TEXT NOT NULL,
@@ -551,7 +582,7 @@ CREATE TABLE IF NOT EXISTS knowledge_ai_conversation (
     model TEXT,
     provider TEXT NOT NULL,
 
-    topic_id UUID REFERENCES entities_topic(id),
+    topic_id UUID REFERENCES data.entities_topic(id),
     tags TEXT[] DEFAULT '{}',
 
     timestamp TIMESTAMPTZ NOT NULL,
@@ -568,21 +599,22 @@ CREATE TABLE IF NOT EXISTS knowledge_ai_conversation (
     CONSTRAINT knowledge_ai_conversation_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_knowledge_ai_conversation_conversation
+CREATE INDEX IF NOT EXISTS idx_knowledge_ai_conversation_conversation
     ON knowledge_ai_conversation(conversation_id, timestamp);
-CREATE INDEX idx_knowledge_ai_conversation_timestamp
+CREATE INDEX IF NOT EXISTS idx_knowledge_ai_conversation_timestamp
     ON knowledge_ai_conversation(timestamp DESC);
-CREATE INDEX idx_knowledge_ai_conversation_topic
+CREATE INDEX IF NOT EXISTS idx_knowledge_ai_conversation_topic
     ON knowledge_ai_conversation(topic_id) WHERE topic_id IS NOT NULL;
-CREATE INDEX idx_knowledge_ai_conversation_provider
+CREATE INDEX IF NOT EXISTS idx_knowledge_ai_conversation_provider
     ON knowledge_ai_conversation(provider, timestamp DESC);
 
+DROP TRIGGER IF EXISTS knowledge_ai_conversation_updated_at ON data.knowledge_ai_conversation;
 CREATE TRIGGER knowledge_ai_conversation_updated_at
-    BEFORE UPDATE ON knowledge_ai_conversation
+    BEFORE UPDATE ON data.knowledge_ai_conversation
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE IF NOT EXISTS speech_transcription (
+CREATE TABLE IF NOT EXISTS data.speech_transcription (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     audio_file_path TEXT,
@@ -609,11 +641,12 @@ CREATE TABLE IF NOT EXISTS speech_transcription (
     CONSTRAINT speech_transcription_unique_source UNIQUE (source_stream_id)
 );
 
-CREATE INDEX idx_speech_transcription_source ON speech_transcription(source_stream_id);
-CREATE INDEX idx_speech_transcription_recorded_at ON speech_transcription(recorded_at DESC);
-CREATE INDEX idx_speech_transcription_search ON speech_transcription USING GIN(to_tsvector('english', transcript_text));
+CREATE INDEX IF NOT EXISTS idx_speech_transcription_source ON data.speech_transcription(source_stream_id);
+CREATE INDEX IF NOT EXISTS idx_speech_transcription_recorded_at ON data.speech_transcription(recorded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_speech_transcription_search ON data.speech_transcription USING GIN(to_tsvector('english', transcript_text));
 
+DROP TRIGGER IF EXISTS speech_transcription_updated_at ON data.speech_transcription;
 CREATE TRIGGER speech_transcription_updated_at
-    BEFORE UPDATE ON speech_transcription
+    BEFORE UPDATE ON data.speech_transcription
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();

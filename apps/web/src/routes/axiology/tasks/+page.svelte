@@ -11,7 +11,7 @@
 	let newTask: CreateTaskRequest = $state({
 		title: '',
 		description: '',
-		tags: []
+		tags: [] as string[]
 	});
 
 	const API_BASE = '/api';
@@ -19,7 +19,7 @@
 	async function loadTasks() {
 		loading = true;
 		try {
-			const response = await fetch(`${API_BASE}/actions/tasks`);
+			const response = await fetch(`${API_BASE}/praxis/tasks`);
 			if (response.ok) {
 				tasks = await response.json();
 			}
@@ -35,7 +35,7 @@
 
 		creating = true;
 		try {
-			const response = await fetch(`${API_BASE}/actions/tasks`, {
+			const response = await fetch(`${API_BASE}/praxis/tasks`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(newTask)
@@ -115,7 +115,7 @@
 						<label for="tags" class="block text-sm text-neutral-700 mb-1">
 							Tags (optional)
 						</label>
-						<TagInput bind:tags={newTask.tags} />
+						<TagInput bind:tags={newTask.tags!} />
 					</div>
 
 					<div class="flex gap-3 pt-2">

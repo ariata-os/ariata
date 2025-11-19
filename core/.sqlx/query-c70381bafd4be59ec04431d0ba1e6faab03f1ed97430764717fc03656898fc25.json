@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        UPDATE data.stream_connections\n                        SET cron_schedule = $1, updated_at = NOW()\n                        WHERE id = $2\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c70381bafd4be59ec04431d0ba1e6faab03f1ed97430764717fc03656898fc25"
+}

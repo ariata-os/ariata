@@ -420,7 +420,51 @@ impl S3Storage {
 impl StorageBackend for S3Storage {
     async fn initialize(&self) -> Result<()> {
         // Check if bucket exists, create if not
-        Ok(())
+        match self.client.head_bucket().bucket(&self.bucket).send().await {
+            Ok(_) => {
+                tracing::info!(bucket = %self.bucket, "S3 bucket already exists");
+                Ok(())
+            }
+            Err(e) => {
+                // Check if it's a NoSuchBucket error
+                let error_str = format!("{}", e);
+                if error_str.contains("NoSuchBucket") || error_str.contains("404") {
+                    // Try to create the bucket
+                    tracing::info!(bucket = %self.bucket, "Creating S3 bucket...");
+
+                    match self
+                        .client
+                        .create_bucket()
+                        .bucket(&self.bucket)
+                        .send()
+                        .await
+                    {
+                        Ok(_) => {
+                            tracing::info!(bucket = %self.bucket, "Successfully created S3 bucket");
+                            Ok(())
+                        }
+                        Err(create_err) => {
+                            // Check if the error is because bucket already exists (race condition)
+                            let create_error_str = format!("{}", create_err);
+                            if create_error_str.contains("BucketAlreadyExists")
+                                || create_error_str.contains("BucketAlreadyOwnedByYou")
+                            {
+                                tracing::info!(
+                                    bucket = %self.bucket,
+                                    "Bucket was created by another process"
+                                );
+                                Ok(())
+                            } else {
+                                Err(Self::map_s3_error("CreateBucket", create_err))
+                            }
+                        }
+                    }
+                } else {
+                    // Some other error (permissions, network, etc.)
+                    Err(Self::map_s3_error("HeadBucket", e))
+                }
+            }
+        }
     }
 
     async fn upload(&self, key: &str, data: Vec<u8>) -> Result<()> {

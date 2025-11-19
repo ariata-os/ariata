@@ -427,7 +427,7 @@ async fn write_visit_idempotent(db: &Database, source_id: Uuid, visit: &Visit) -
             source_provider,
             metadata
         ) VALUES (
-            $1, NULL, data.ST_GeogFromText($2), $3, $4, $5, $6, $7, $8, $9, $10
+            $1, NULL, ST_GeogFromText($2), $3, $4, $5, $6, $7, $8, $9, $10
         )
         ON CONFLICT (id) DO UPDATE SET
             end_time = EXCLUDED.end_time,

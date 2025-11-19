@@ -122,7 +122,7 @@ pub fn display_pairing_success(device_info: &DeviceInfo, source_id: Uuid) {
 }
 
 /// Display available streams with helpful commands
-pub fn display_available_streams(streams: &[crate::StreamInfo], source_id: Uuid) {
+pub fn display_available_streams(streams: &[crate::StreamConnection], source_id: Uuid) {
     let term = Term::stdout();
 
     if streams.is_empty() {

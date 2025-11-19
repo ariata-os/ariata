@@ -74,7 +74,7 @@ export async function createPursuitsTool(pool: Pool) {
 							is_active,
 							created_at,
 							updated_at
-						FROM data.actions_task
+						FROM data.praxis_task
 						WHERE ${whereConditions}
 						ORDER BY created_at DESC
 						LIMIT $${paramIndex}
@@ -128,7 +128,7 @@ export async function createPursuitsTool(pool: Pool) {
 							is_active,
 							created_at,
 							updated_at
-						FROM data.actions_initiative
+						FROM data.praxis_initiative
 						WHERE ${whereConditions}
 						ORDER BY created_at DESC
 						LIMIT $${paramIndex}
@@ -185,7 +185,7 @@ export async function createPursuitsTool(pool: Pool) {
 							is_active,
 							created_at,
 							updated_at
-						FROM data.actions_aspiration
+						FROM data.praxis_aspiration
 						WHERE ${whereConditions}
 						ORDER BY created_at DESC
 						LIMIT $${paramIndex}

@@ -4,6 +4,7 @@
 	let {
 		value = $bindable(""),
 		disabled = false,
+		sendDisabled = false,
 		placeholder = "Message...",
 		maxWidth = "max-w-3xl",
 		focused = $bindable(false),
@@ -106,10 +107,10 @@
 			<button
 				type="button"
 				onclick={handleSubmit}
-				disabled={!value.trim() || disabled}
+				disabled={!value.trim() || sendDisabled}
 				class="send-button w-8 h-8 btn-primary hover:bg-blue cursor-pointer text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center group"
 			>
-				{#if disabled}
+				{#if sendDisabled}
 					<iconify-icon
 						icon="ri:loader-4-line"
 						class="animate-spin text-white"

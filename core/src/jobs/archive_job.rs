@@ -18,7 +18,7 @@ use crate::storage::{encryption, EncryptionKey};
 pub struct ArchiveJob {
     pub id: Uuid,
     pub sync_job_id: Option<Uuid>,
-    pub source_id: Uuid,
+    pub source_connection_id: Uuid,
     pub stream_name: String,
     pub s3_key: String,
     pub status: String,
@@ -114,7 +114,7 @@ pub async fn execute_archive_job(
 /// Fetch archive job from database
 async fn fetch_archive_job(db: &PgPool, archive_job_id: Uuid) -> Result<ArchiveJob> {
     let job = sqlx::query_as::<_, ArchiveJob>(
-        "SELECT id, sync_job_id, source_id, stream_name, s3_key, status,
+        "SELECT id, sync_job_id, source_connection_id, stream_name, s3_key, status,
                 retry_count, max_retries, record_count, size_bytes,
                 min_timestamp, max_timestamp
          FROM data.archive_jobs
@@ -143,7 +143,7 @@ async fn execute_archival(
     // Derive encryption key for this stream/date
     let encryption_key_bytes = encryption::derive_stream_key(
         &context.master_key,
-        archive_job.source_id,
+        archive_job.source_connection_id,
         &archive_job.stream_name,
         date,
     )?;
@@ -174,11 +174,11 @@ async fn execute_archival(
     // Record metadata in stream_objects table
     sqlx::query(
         "INSERT INTO data.stream_objects
-         (source_id, stream_name, s3_key, record_count, size_bytes,
+         (source_connection_id, stream_name, s3_key, record_count, size_bytes,
           min_timestamp, max_timestamp, archive_job_id, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())",
     )
-    .bind(archive_job.source_id)
+    .bind(archive_job.source_connection_id)
     .bind(&archive_job.stream_name)
     .bind(&archive_job.s3_key)
     .bind(records.len() as i32)
@@ -303,7 +303,7 @@ pub async fn create_archive_job(
 
     let row = sqlx::query(
         "INSERT INTO data.archive_jobs
-         (sync_job_id, source_id, stream_name, s3_key, status,
+         (sync_job_id, source_connection_id, stream_name, s3_key, status,
           record_count, size_bytes, min_timestamp, max_timestamp, created_at)
          VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8, NOW())
          RETURNING id",
@@ -362,7 +362,7 @@ pub async fn create_archive_job(
 ///     db,
 ///     storage,
 ///     Some(sync_job.id),
-///     source_id,
+///     source_connection_id,
 ///     "gmail",
 ///     records,
 ///     (Some(min_ts), Some(max_ts)),
@@ -373,7 +373,7 @@ pub async fn create_archive_job(
 ///     db,
 ///     storage,
 ///     None,
-///     source_id,
+///     source_connection_id,
 ///     "healthkit",
 ///     records,
 ///     (min_ts, max_ts),
@@ -398,15 +398,15 @@ pub async fn spawn_archive_job_async(
         "Spawning archive job for async S3 archival"
     );
 
-    // Get provider from source
-    let provider: String = sqlx::query_scalar("SELECT provider FROM sources WHERE id = $1")
+    // Get source type from source connection
+    let source: String = sqlx::query_scalar("SELECT source FROM source_connections WHERE id = $1")
         .bind(source_id)
         .fetch_one(db)
         .await?;
 
     // Generate S3 key for archival
     let date = Utc::now().date_naive();
-    let key_builder = crate::storage::models::StreamKeyBuilder::new(&provider, source_id, stream_name, date);
+    let key_builder = crate::storage::models::StreamKeyBuilder::new(&source, source_id, stream_name, date);
     let s3_key = key_builder.build();
 
     // Create archive job in database
@@ -424,6 +424,9 @@ pub async fn spawn_archive_job_async(
 
     // Get master key from environment
     let master_key_hex = std::env::var("STREAM_ENCRYPTION_MASTER_KEY").map_err(|_| {
+        error!(
+            "STREAM_ENCRYPTION_MASTER_KEY environment variable not set. Archive job cannot proceed."
+        );
         crate::error::Error::Configuration(
             "STREAM_ENCRYPTION_MASTER_KEY required for archival".into(),
         )
@@ -438,20 +441,47 @@ pub async fn spawn_archive_job_async(
 
     // Clone for async task
     let db_clone = db.clone();
+    let record_count = records.len();
     let records_clone = records;
 
+    info!(
+        archive_job_id = %archive_id,
+        stream_name = %stream_name,
+        record_count = record_count,
+        "Spawning async archive job for S3 upload"
+    );
+
     // Spawn async archival in background (fire-and-forget)
-    tokio::spawn(async move {
-        if let Err(e) =
-            execute_archive_job(&db_clone, &archive_context, archive_id, records_clone).await
-        {
-            error!(
-                archive_job_id = %archive_id,
-                error = %e,
-                "Archive job execution failed"
-            );
+    let handle = tokio::spawn(async move {
+        info!(
+            archive_job_id = %archive_id,
+            "Archive job async task started"
+        );
+
+        match execute_archive_job(&db_clone, &archive_context, archive_id, records_clone).await {
+            Ok(()) => {
+                info!(
+                    archive_job_id = %archive_id,
+                    "Archive job async task completed successfully"
+                );
+            }
+            Err(e) => {
+                error!(
+                    archive_job_id = %archive_id,
+                    error = %e,
+                    "Archive job execution failed in async task"
+                );
+            }
         }
     });
+
+    // Log if spawn fails immediately (though this is rare)
+    if handle.is_finished() {
+        warn!(
+            archive_job_id = %archive_id,
+            "Archive job task finished immediately - may have failed"
+        );
+    }
 
     Ok(archive_id)
 }
@@ -459,7 +489,7 @@ pub async fn spawn_archive_job_async(
 /// Fetch pending archive jobs for execution
 pub async fn fetch_pending_archive_jobs(db: &PgPool, limit: i32) -> Result<Vec<ArchiveJob>> {
     let jobs = sqlx::query_as::<_, ArchiveJob>(
-        "SELECT id, sync_job_id, source_id, stream_name, s3_key, status,
+        "SELECT id, sync_job_id, source_connection_id, stream_name, s3_key, status,
                 retry_count, max_retries, record_count, size_bytes,
                 min_timestamp, max_timestamp
          FROM data.archive_jobs

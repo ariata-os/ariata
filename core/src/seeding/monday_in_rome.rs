@@ -34,7 +34,7 @@ const RECORDING_TIMEZONE: &str = "Europe/Rome";
 async fn get_or_create_test_source(db: &Database) -> Result<Uuid> {
     // Check if test source already exists
     let existing = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM data.sources WHERE name = 'monday-in-rome' LIMIT 1",
+        "SELECT id FROM data.source_connections WHERE name = 'monday-in-rome' LIMIT 1",
     )
     .fetch_optional(db.pool())
     .await?;
@@ -46,7 +46,7 @@ async fn get_or_create_test_source(db: &Database) -> Result<Uuid> {
 
     // Create test source
     let id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO data.sources (name, provider, auth_type, is_active)
+        "INSERT INTO data.source_connections (name, source, auth_type, is_active)
          VALUES ('monday-in-rome', 'ios', 'device', true)
          RETURNING id",
     )
@@ -247,9 +247,9 @@ async fn seed_microphone_transcriptions(
 
     // Create a seed stream ID for microphone (similar to other streams)
     let seed_stream_id = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO data.streams (source_id, stream_name, table_name, created_at, updated_at)
+        "INSERT INTO data.stream_connections (source_connection_id, stream_name, table_name, created_at, updated_at)
          VALUES ($1, 'microphone', 'stream_ios_microphone', NOW(), NOW())
-         ON CONFLICT (source_id, stream_name) DO UPDATE SET updated_at = NOW()
+         ON CONFLICT (source_connection_id, stream_name) DO UPDATE SET updated_at = NOW()
          RETURNING id",
     )
     .bind(source_id)

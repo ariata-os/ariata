@@ -36,18 +36,6 @@ impl Default for NotionPagesConfig {
     }
 }
 
-impl NotionPagesConfig {
-    /// Create a config from JSON value (from database)
-    pub fn from_json(value: &serde_json::Value) -> Result<Self, serde_json::Error> {
-        serde_json::from_value(value.clone())
-    }
-
-    /// Convert to JSON value (for database storage)
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}))
-    }
-}
-
 fn default_page_size() -> u32 {
     100
 }

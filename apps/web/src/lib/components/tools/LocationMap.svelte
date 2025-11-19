@@ -140,7 +140,7 @@
 					direction: 'top'
 				});
 
-				circle.addTo(map);
+				if (map) circle.addTo(map);
 			});
 		}
 
@@ -165,7 +165,7 @@
 				`;
 
 				marker.bindPopup(popupContent);
-				marker.addTo(map);
+				if (map) marker.addTo(map);
 				markers.push(marker);
 			});
 		}

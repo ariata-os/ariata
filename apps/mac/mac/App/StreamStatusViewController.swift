@@ -11,6 +11,7 @@ class StreamStatusViewController: NSViewController {
     private var uploadLabel: NSTextField!
     private var loadingLabel: NSTextField?
     private var errorLabel: NSTextField?
+    private var syncButton: NSButton?
 
     // Cached data for offline mode
     private var cachedStreams: [APIClient.StreamInfo] = []
@@ -152,6 +153,46 @@ class StreamStatusViewController: NSViewController {
         NSWorkspace.shared.launchApplication("Console")
     }
 
+    @objc private func syncNow() {
+        guard let syncButton = syncButton else { return }
+
+        // Disable button and show syncing state
+        syncButton.isEnabled = false
+        syncButton.title = "Syncing..."
+
+        Task {
+            // Perform sync
+            let result = await daemonController.syncNow()
+
+            // Update UI on main thread
+            await MainActor.run {
+                // Show result feedback
+                if result.uploaded > 0 || result.failed > 0 {
+                    let message = "\(result.uploaded) uploaded"
+                    syncButton.title = message
+
+                    // Update upload label with fresh stats
+                    let stats = daemonController.getStats()
+                    uploadLabel?.stringValue = "Last upload: \(formatRelativeTime(stats.lastSyncTime))"
+                    queueLabel?.stringValue = "Queue: \(stats.queuedRecords) records pending"
+
+                    // Reset button after 2 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        syncButton.title = "Sync Now"
+                        syncButton.isEnabled = true
+                    }
+                } else {
+                    // Nothing to sync
+                    syncButton.title = "Nothing to sync"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        syncButton.title = "Sync Now"
+                        syncButton.isEnabled = true
+                    }
+                }
+            }
+        }
+    }
+
     override func viewDidAppear() {
         super.viewDidAppear()
 
@@ -235,11 +276,11 @@ class StreamStatusViewController: NSViewController {
         let groupedStreams = Dictionary(grouping: streams) { stream -> String in
             // Infer source type from stream name patterns
             // This is a simple heuristic - ideally we'd get this from the backend
-            if stream.name == "apps" || stream.name == "browser" || stream.name == "imessage" {
+            if stream.streamName == "apps" || stream.streamName == "browser" || stream.streamName == "imessage" {
                 return "Mac"
-            } else if stream.name == "healthkit" || stream.name == "location" || stream.name == "microphone" {
+            } else if stream.streamName == "healthkit" || stream.streamName == "location" || stream.streamName == "microphone" {
                 return "iOS"
-            } else if stream.name == "gmail" || stream.name == "calendar" {
+            } else if stream.streamName == "gmail" || stream.streamName == "calendar" {
                 return "Google"
             } else {
                 return "Other"
@@ -253,12 +294,12 @@ class StreamStatusViewController: NSViewController {
             header.textColor = .secondaryLabelColor
             stackView.addArrangedSubview(header)
 
-            for stream in sourceStreams.sorted(by: { $0.name < $1.name }) {
+            for stream in sourceStreams.sorted(by: { $0.streamName < $1.streamName }) {
                 let status = determineStatus(for: stream)
                 let lastSync = formatRelativeTime(stream.lastSyncAt)
 
                 let row = createStreamRow(
-                    name: formatStreamName(stream.name),
+                    name: formatStreamName(stream.streamName),
                     status: status,
                     lastSync: lastSync
                 )
@@ -284,11 +325,26 @@ class StreamStatusViewController: NSViewController {
 
         stackView.addArrangedSubview(createSeparator())
 
+        // Create horizontal stack for buttons
+        let buttonStack = NSStackView()
+        buttonStack.orientation = .horizontal
+        buttonStack.spacing = 8
+        buttonStack.distribution = .fillEqually
+
+        // Sync now button
+        let syncButton = NSButton(title: "Sync Now", target: self, action: #selector(syncNow))
+        syncButton.bezelStyle = .rounded
+        syncButton.font = NSFont.systemFont(ofSize: 12)
+        self.syncButton = syncButton
+        buttonStack.addArrangedSubview(syncButton)
+
         // View logs button
         let logsButton = NSButton(title: "View Full Logs →", target: self, action: #selector(openLogs))
         logsButton.bezelStyle = .rounded
         logsButton.font = NSFont.systemFont(ofSize: 12)
-        stackView.addArrangedSubview(logsButton)
+        buttonStack.addArrangedSubview(logsButton)
+
+        stackView.addArrangedSubview(buttonStack)
 
         print("✅ Stream status UI rebuilt with \(streams.count) streams")
     }

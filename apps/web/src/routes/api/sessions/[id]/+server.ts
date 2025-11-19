@@ -66,14 +66,15 @@ export const GET: RequestHandler = async ({ params }) => {
 			content: msg.content,
 			timestamp: msg.timestamp,
 			model: msg.model || undefined,
-			tool_calls: msg.tool_calls || undefined
+			tool_calls: msg.tool_calls || undefined,
+			subject: msg.subject || undefined
 		}));
 
 		// TEMP DEBUG: Log tool_calls for debugging persistence
 		const messagesWithTools = messages.filter(m => m.tool_calls && m.tool_calls.length > 0);
 		if (messagesWithTools.length > 0) {
 			console.log('[/api/sessions/[id]] Found', messagesWithTools.length, 'messages with tool_calls');
-			console.log('[/api/sessions/[id]] First tool call sample:', JSON.stringify(messagesWithTools[0].tool_calls[0], null, 2));
+			console.log('[/api/sessions/[id]] First tool call sample:', JSON.stringify(messagesWithTools[0]?.tool_calls?.[0], null, 2));
 		} else {
 			console.log('[/api/sessions/[id]] NO messages with tool_calls found');
 		}

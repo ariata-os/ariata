@@ -42,7 +42,7 @@ export const DEFAULT_TOOL_PREFERENCES: ToolPreferences = {
 export async function loadUserToolPreferences(pool: Pool): Promise<ToolPreferences> {
 	try {
 		const result = await pool.query(
-			'SELECT enabled_tools FROM data.assistant_profile LIMIT 1'
+			'SELECT enabled_tools FROM app.assistant_profile LIMIT 1'
 		);
 
 		const enabledTools = result.rows[0]?.enabled_tools;

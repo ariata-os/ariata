@@ -14,6 +14,7 @@ use tokio::sync::Mutex;
 use crate::{
     database::Database,
     error::{Error, Result},
+    sources::{push_stream::IngestPayload, stream_type::StreamType, StreamFactory},
     storage::{stream_writer::StreamWriter, Storage},
 };
 
@@ -123,14 +124,15 @@ pub async fn ingest(
             .into_response();
     }
 
-    // Process records based on storage strategy
-    let (accepted, rejected) = match process_records(
+    // Process records using PushStream trait
+    let (accepted, rejected) = match process_batch(
         &state,
         source_id,
         &payload.source,
         &payload.stream,
         &payload.records,
         &payload.device_id,
+        payload.timestamp,
     )
     .await
     {
@@ -144,10 +146,15 @@ pub async fn ingest(
     // Trigger transforms if records were successfully processed (hot path like cloud syncs)
     if accepted > 0 {
         if let Err(e) = trigger_transforms_for_batch(&state, source_id, &payload.stream).await {
-            tracing::warn!(
+            tracing::error!(
                 error = %e,
+                error_debug = ?e,
+                source_id = %source_id,
                 stream = %payload.stream,
-                "Failed to trigger transforms for device batch, continuing"
+                device_id = %payload.device_id,
+                accepted = accepted,
+                rejected = rejected,
+                "CRITICAL: Failed to trigger transforms for device batch - data will NOT be archived or transformed!"
             );
         }
     }
@@ -190,154 +197,59 @@ async fn validate_source_stream(_db: &Database, _source: &str, _stream: &str) ->
     Ok(())
 }
 
-/// Process records based on storage strategy
-async fn process_records(
+/// Process batch of records using PushStream trait
+async fn process_batch(
     state: &AppState,
     source_id: uuid::Uuid,
     source: &str,
     stream: &str,
     records: &[Value],
     device_id: &str,
+    timestamp: DateTime<Utc>,
 ) -> Result<(usize, usize)> {
-    let mut accepted = 0;
-    let mut rejected = 0;
+    // Create factory and get stream instance
+    let factory = StreamFactory::new(
+        state.db.pool().clone(),
+        state.storage.clone(),
+        state.stream_writer.clone(),
+    );
 
-    // Determine storage strategy from configuration
-    let storage_strategy = get_storage_strategy(&state.db, source, stream).await?;
+    // Create the stream instance using the new StreamType pattern
+    let stream_instance = factory.create_stream_typed(source_id, stream).await?;
 
-    for record in records {
-        // Inject device_id from top-level payload into each record
-        let mut enriched_record = record.clone();
-        if let Value::Object(ref mut map) = enriched_record {
-            map.insert("device_id".to_string(), Value::String(device_id.to_string()));
-        } else {
-            tracing::warn!("Record is not a JSON object, skipping device_id injection");
+    // Ensure we got a PushStream (device data should always be push)
+    let push_stream = match stream_instance {
+        StreamType::Push(push_stream) => push_stream,
+        StreamType::Pull(_) => {
+            // This shouldn't happen - pull streams (Google, Notion) don't use the ingest endpoint
+            return Err(Error::Other(format!(
+                "Unexpected pull stream at ingest endpoint: {}",
+                stream
+            )));
         }
+    };
 
-        match process_single_record(state, source_id, &storage_strategy, source, stream, &enriched_record)
-            .await
-        {
-            Ok(_) => accepted += 1,
-            Err(e) => {
-                tracing::warn!("Failed to process record: {}", e);
-                rejected += 1;
-            }
-        }
-    }
+    // Build IngestPayload for the push stream
+    let payload = IngestPayload {
+        source: source.to_string(),
+        stream: stream.to_string(),
+        device_id: device_id.to_string(),
+        records: records.to_vec(),
+        timestamp,
+    };
+
+    // Call receive_push with source_id and payload
+    // source_id is created once in handler - single source of truth
+    let result = push_stream.receive_push(source_id, payload).await?;
+
+    // Return (accepted, rejected) counts
+    // Note: PushResult only tracks received/written, so we calculate rejected as difference
+    let accepted = result.records_written;
+    let rejected = result.records_received.saturating_sub(result.records_written);
 
     Ok((accepted, rejected))
 }
 
-/// Process single record - routes to appropriate processor based on source/stream
-async fn process_single_record(
-    state: &AppState,
-    source_id: uuid::Uuid,
-    _strategy: &StorageStrategy,
-    source: &str,
-    stream: &str,
-    record: &Value,
-) -> Result<()> {
-    // Route to appropriate processor based on source and stream type
-    // All device processors now use StreamWriter (writes to S3/object storage)
-    match (source, stream) {
-        ("ios", "healthkit") => {
-            crate::sources::ios::healthkit::process(
-                source_id,
-                &state.db,
-                &state.storage,
-                &state.stream_writer,
-                record,
-            )
-            .await?;
-        }
-        ("ios", "location") => {
-            crate::sources::ios::location::process(
-                source_id,
-                &state.db,
-                &state.storage,
-                &state.stream_writer,
-                record,
-            )
-            .await?;
-        }
-        ("ios", "microphone") | ("ios", "mic") => {
-            crate::sources::ios::microphone::process(
-                source_id,
-                &state.db,
-                &state.storage,
-                &state.stream_writer,
-                record,
-            )
-            .await?;
-        }
-        ("mac", "apps") => {
-            crate::sources::mac::apps::process(
-                &state.db,
-                &state.storage,
-                &state.stream_writer,
-                record,
-            )
-            .await?;
-        }
-        ("mac", "browser") => {
-            crate::sources::mac::browser::process(
-                &state.db,
-                &state.storage,
-                &state.stream_writer,
-                record,
-            )
-            .await?;
-        }
-        ("mac", "imessage") => {
-            crate::sources::mac::imessage::process(
-                &state.db,
-                &state.storage,
-                &state.stream_writer,
-                record,
-            )
-            .await?;
-        }
-        ("mac", "screen_time") => {
-            crate::sources::mac::screen_time::process(
-                &state.db,
-                &state.storage,
-                &state.stream_writer,
-                record,
-            )
-            .await?;
-        }
-        _ => {
-            tracing::warn!("Unknown source/stream: {}/{}", source, stream);
-            return Err(Error::Other(format!(
-                "Unsupported source/stream combination: {source}/{stream}"
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-/// Storage strategy for different data types
-#[derive(Debug)]
-enum StorageStrategy {
-    PostgresOnly,
-    Hybrid,
-}
-
-/// Get storage strategy for source/stream
-async fn get_storage_strategy(
-    _db: &Database,
-    source: &str,
-    stream: &str,
-) -> Result<StorageStrategy> {
-    // For now, use PostgreSQL for structured data, hybrid for large blobs
-    // This will be configuration-driven later
-    match (source, stream) {
-        ("ios", "healthkit") | ("mac", "apps") => Ok(StorageStrategy::PostgresOnly),
-        ("ios", "mic") | ("mac", "screenshots") => Ok(StorageStrategy::Hybrid),
-        _ => Ok(StorageStrategy::PostgresOnly),
-    }
-}
 
 /// Trigger transforms for device batch (hot path - unified with cloud syncs)
 ///
@@ -376,7 +288,7 @@ async fn trigger_transforms_for_batch(
 
     // Create archive job for async S3 archival (hot path - same as cloud syncs)
     let _archive_job_id = if !records.is_empty() {
-        let archive_id = crate::jobs::spawn_archive_job_async(
+        match crate::jobs::spawn_archive_job_async(
             state.db.pool(),
             state.storage.as_ref(),
             None, // No parent job for device ingests
@@ -385,8 +297,30 @@ async fn trigger_transforms_for_batch(
             records.clone(),
             (min_timestamp, max_timestamp),
         )
-        .await?;
-        Some(archive_id)
+        .await
+        {
+            Ok(archive_id) => {
+                tracing::info!(
+                    archive_job_id = %archive_id,
+                    source_id = %source_id,
+                    stream_name = %stream_name,
+                    record_count = records.len(),
+                    "Archive job spawned successfully - S3 archival in progress"
+                );
+                Some(archive_id)
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    error_debug = ?e,
+                    source_id = %source_id,
+                    stream_name = %stream_name,
+                    record_count = records.len(),
+                    "Failed to spawn archive job - S3 archival will NOT happen!"
+                );
+                return Err(e);
+            }
+        }
     } else {
         None
     };

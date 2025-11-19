@@ -27,7 +27,7 @@ impl Database {
             .after_connect(|conn, _meta| {
                 Box::pin(async move {
                     // Set search_path to match migration schema configuration
-                    sqlx::query("SET search_path TO elt, public")
+                    sqlx::query("SET search_path TO data, app, public")
                         .execute(&mut *conn)
                         .await?;
                     Ok(())

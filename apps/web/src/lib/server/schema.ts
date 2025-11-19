@@ -8,7 +8,7 @@
  * - After changing migrations, update this file to match the SQL schema
  *
  * Defines the app schema tables (operational data for fast UI queries)
- * Separate from ELT schema (analytical data warehouse)
+ * Separate from data schema (pipeline and ontology data)
  */
 
 import { boolean, integer, jsonb, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
@@ -36,6 +36,7 @@ export interface ChatMessage {
 	agentId?: string; // Agent that handled this message (e.g., "analytics", "research", "general")
 	tool_calls?: ToolCall[]; // Record tool invocations
 	intent?: IntentMetadata; // Intent classification metadata (assistant messages only)
+	subject?: string; // Auto-generated subject for this exchange (user messages only)
 }
 
 /**
@@ -91,16 +92,16 @@ export const chatSessions = appSchema.table('chat_sessions', {
 // ============================================================================
 
 // ============================================================================
-// Sources Table (from data schema)
+// Source Connections Table (from data schema)
 // ============================================================================
 
 /**
- * Data sources - supports both OAuth (Google, Notion) and Device (Mac, iOS)
+ * Source connections - supports both OAuth (Google, Notion) and Device (Mac, iOS)
  * Device pairing uses: device_id, device_token, pairing_status, device_info
  */
-export const sources = dataSchema.table('sources', {
+export const sourceConnections = dataSchema.table('source_connections', {
 	id: uuid('id').primaryKey().defaultRandom(),
-	provider: text('provider').notNull(),
+	source: text('source').notNull(),
 	name: text('name').notNull().unique(),
 
 	// OAuth credentials (null for device sources)
@@ -157,7 +158,7 @@ export const assistantProfile = appSchema.table('assistant_profile', {
 
 export type ChatSession = typeof chatSessions.$inferSelect;
 export type NewChatSession = typeof chatSessions.$inferInsert;
-export type Source = typeof sources.$inferSelect;
-export type NewSource = typeof sources.$inferInsert;
+export type SourceConnection = typeof sourceConnections.$inferSelect;
+export type NewSourceConnection = typeof sourceConnections.$inferInsert;
 export type AssistantProfile = typeof assistantProfile.$inferSelect;
 export type NewAssistantProfile = typeof assistantProfile.$inferInsert;

@@ -45,7 +45,7 @@ pub async fn execute_transform_job(
         })?;
 
     let source_id = job
-        .source_id
+        .source_connection_id
         .ok_or_else(|| crate::Error::InvalidInput("Transform job missing source_id".into()))?;
 
     tracing::info!(

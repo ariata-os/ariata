@@ -1,7 +1,7 @@
-//! Google Calendar to activity_calendar_entry ontology transformation
+//! Google Calendar to praxis_calendar ontology transformation
 //!
 //! Transforms raw calendar events from stream_google_calendar into the normalized
-//! activity_calendar_entry ontology table.
+//! praxis_calendar ontology table.
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -14,7 +14,7 @@ use crate::sources::base::{OntologyTransform, TransformResult};
 /// Batch size for bulk inserts
 const BATCH_SIZE: usize = 500;
 
-/// Transform Google Calendar events to activity_calendar_entry ontology
+/// Transform Google Calendar events to praxis_calendar ontology
 pub struct GoogleCalendarTransform;
 
 #[async_trait]
@@ -24,11 +24,11 @@ impl OntologyTransform for GoogleCalendarTransform {
     }
 
     fn target_table(&self) -> &str {
-        "activity_calendar_entry"
+        "praxis_calendar"
     }
 
     fn domain(&self) -> &str {
-        "activity"
+        "praxis"
     }
 
     #[tracing::instrument(skip(self, db, context), fields(source_table = %self.source_table(), target_table = %self.target_table()))]
@@ -47,11 +47,11 @@ impl OntologyTransform for GoogleCalendarTransform {
 
         tracing::info!(
             source_id = %source_id,
-            "Starting Google Calendar to activity_calendar_entry transformation"
+            "Starting Google Calendar to praxis_calendar transformation"
         );
 
         // Read stream data using data source (memory for hot path)
-        let checkpoint_key = "calendar_to_activity_calendar_entry";
+        let checkpoint_key = "calendar_to_praxis_calendar";
         let read_start = std::time::Instant::now();
         let data_source = context.get_data_source().ok_or_else(|| {
             crate::Error::Other("No data source available for transform".to_string())
@@ -315,7 +315,7 @@ impl OntologyTransform for GoogleCalendarTransform {
             batch_insert_total_ms,
             batch_insert_count,
             avg_batch_insert_ms = if batch_insert_count > 0 { batch_insert_total_ms / batch_insert_count as u128 } else { 0 },
-            "Google Calendar to activity_calendar_entry transformation completed"
+            "Google Calendar to praxis_calendar transformation completed"
         );
 
         Ok(TransformResult {
@@ -357,7 +357,7 @@ async fn execute_calendar_batch_insert(
     }
 
     let query_str = Database::build_batch_insert_query(
-        "data.activity_calendar_entry",
+        "data.praxis_calendar",
         &[
             "title",
             "description",
@@ -437,7 +437,7 @@ mod tests {
     fn test_transform_metadata() {
         let transform = GoogleCalendarTransform;
         assert_eq!(transform.source_table(), "stream_google_calendar");
-        assert_eq!(transform.target_table(), "activity_calendar_entry");
-        assert_eq!(transform.domain(), "activity");
+        assert_eq!(transform.target_table(), "praxis_calendar");
+        assert_eq!(transform.domain(), "praxis");
     }
 }

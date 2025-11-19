@@ -28,7 +28,7 @@
 	}
 
 	// Filter tags based on input - use $derived to avoid infinite loops
-	const filteredTags = $derived(() => {
+	const filteredTags = $derived.by(() => {
 		if (!inputValue.trim()) return [];
 		const input = inputValue.toLowerCase();
 		return availableTags

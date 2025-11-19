@@ -4,12 +4,10 @@ import AppKit
 class Monitor {
     private let queue: Queue
     private var frontmostApp: NSRunningApplication?
-    private var timer: Timer?
-    private var messageMonitor: MessageMonitor?
-    
+    private var timer: DispatchSourceTimer?
+
     init(queue: Queue) {
         self.queue = queue
-        self.messageMonitor = MessageMonitor(queue: queue)
     }
     
     func start() {
@@ -47,21 +45,22 @@ class Monitor {
         )
         
         // Poll for frontmost app changes (backup for notifications)
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        // Use DispatchSourceTimer for reliability in menu bar apps
+        let pollTimer = DispatchSource.makeTimerSource(queue: .main)
+        pollTimer.schedule(deadline: .now() + 1.0, repeating: 1.0)
+        pollTimer.setEventHandler { [weak self] in
             self?.checkFrontmostApp()
         }
-        
-        // Start message monitoring
-        messageMonitor?.start()
-        
+        pollTimer.resume()
+        self.timer = pollTimer
+
         print("Activity monitor started")
     }
     
     func stop() {
-        timer?.invalidate()
+        timer?.cancel()
         timer = nil
         NSWorkspace.shared.notificationCenter.removeObserver(self)
-        messageMonitor?.stop()
         print("Activity monitor stopped")
     }
     
@@ -126,7 +125,7 @@ class Monitor {
         queue.addEvent(event) { result in
             switch result {
             case .success:
-                print("[\(Date())] \(eventType): \(appName)")
+                print("✓ [\(Date())] \(eventType): \(appName)")
             case .failure(let error):
                 print("⚠️ Error recording event: \(error)")
             }

@@ -57,7 +57,7 @@ impl OntologyTransform for NotionPageTransform {
             crate::Error::Other("No data source available for transform".to_string())
         })?;
         let batches = data_source
-            .read_with_checkpoint(source_id, "notion", checkpoint_key)
+            .read_with_checkpoint(source_id, "pages", checkpoint_key)
             .await?;
         let read_duration = read_start.elapsed();
 
@@ -220,7 +220,7 @@ impl OntologyTransform for NotionPageTransform {
             // Update checkpoint after processing batch
             if let Some(max_ts) = batch.max_timestamp {
                 data_source
-                    .update_checkpoint(source_id, "notion", checkpoint_key, max_ts)
+                    .update_checkpoint(source_id, "pages", checkpoint_key, max_ts)
                     .await?;
             }
         }

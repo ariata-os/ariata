@@ -8,28 +8,28 @@ use crate::Result;
 use chrono::Utc;
 use tracing::info;
 
-/// Seed system default sources
-/// Loads source configurations from config/seeds/sources.json
+/// Seed system default source connections
+/// Loads source connection configurations from config/seeds/_generated_source_connections.json
 pub async fn seed_default_sources(db: &Database) -> Result<usize> {
-    let sources = config_loader::load_sources()?;
+    let source_connections = config_loader::load_source_connections()?;
 
-    let count = sources.len();
-    for source in &sources {
+    let count = source_connections.len();
+    for conn in &source_connections {
         let now = Utc::now();
         sqlx::query!(
             r#"
-            INSERT INTO data.sources (
-                id, provider, name, auth_type, is_active, is_internal, created_at, updated_at
+            INSERT INTO data.source_connections (
+                id, source, name, auth_type, is_active, is_internal, created_at, updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (id) DO NOTHING
             "#,
-            source.id,
-            &source.provider,
-            &source.name,
-            &source.auth_type,
-            source.is_active,
-            source.is_internal,
+            conn.id,
+            &conn.source,
+            &conn.name,
+            &conn.auth_type,
+            conn.is_active,
+            conn.is_internal,
             now,
             now
         )
@@ -37,31 +37,58 @@ pub async fn seed_default_sources(db: &Database) -> Result<usize> {
         .await?;
     }
 
-    info!("✅ Seeded {} system default sources from config", count);
+    info!("✅ Seeded {} system default source connections from config", count);
     Ok(count)
 }
 
-/// Seed system default streams
-/// Loads stream configurations from config/seeds/streams.json
+/// Seed system default stream connections
+/// Loads stream connection configurations from config/seeds/_generated_stream_connections.json
+/// Applies registry default cron schedules if not explicitly set in JSON
 pub async fn seed_default_streams(db: &Database) -> Result<usize> {
-    let streams = config_loader::load_streams()?;
+    let stream_connections = config_loader::load_stream_connections()?;
+    let source_connections = config_loader::load_source_connections()?;
 
-    let count = streams.len();
-    for stream in &streams {
+    let count = stream_connections.len();
+    for conn in &stream_connections {
         let now = Utc::now();
+
+        // Look up the source connection to get the source name
+        let source_conn = source_connections
+            .iter()
+            .find(|s| s.id == conn.source_connection_id)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Stream '{}' references unknown source_connection_id {}",
+                conn.stream_name,
+                conn.source_connection_id
+            ))?;
+
+        // Determine cron_schedule: use JSON value if provided, otherwise look up registry default
+        let cron_schedule = match &conn.cron_schedule {
+            Some(schedule) => Some(schedule.clone()),
+            None => {
+                // Look up registry default
+                if let Some(registered_stream) = crate::registry::get_stream(&source_conn.source, &conn.stream_name) {
+                    registered_stream.default_cron_schedule.map(|s| s.to_string())
+                } else {
+                    None
+                }
+            }
+        };
+
         sqlx::query!(
             r#"
-            INSERT INTO data.streams (
-                id, source_id, stream_name, table_name, is_enabled, created_at, updated_at
+            INSERT INTO data.stream_connections (
+                id, source_connection_id, stream_name, table_name, is_enabled, cron_schedule, created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (id) DO NOTHING
             "#,
-            stream.id,
-            stream.source_id,
-            &stream.stream_name,
-            &stream.table_name,
-            stream.is_enabled,
+            conn.id,
+            conn.source_connection_id,
+            &conn.stream_name,
+            &conn.table_name,
+            conn.is_enabled,
+            cron_schedule.as_deref(),
             now,
             now
         )
@@ -69,7 +96,7 @@ pub async fn seed_default_streams(db: &Database) -> Result<usize> {
         .await?;
     }
 
-    info!("✅ Seeded {} system default streams from config", count);
+    info!("✅ Seeded {} system default stream connections from config", count);
     Ok(count)
 }
 
@@ -170,7 +197,7 @@ pub async fn seed_axiology_tags(db: &Database) -> Result<usize> {
     for (title, description, tags) in &sample_tasks {
         sqlx::query!(
             r#"
-            INSERT INTO data.actions_task (title, description, tags)
+            INSERT INTO data.praxis_task (title, description, tags)
             VALUES ($1, $2, $3)
             "#,
             title,
@@ -194,11 +221,12 @@ pub async fn seed_default_tools(db: &Database) -> Result<usize> {
     for tool in &tools {
         sqlx::query!(
             r#"
-            INSERT INTO app.tools (id, name, description, category, icon, is_pinnable, display_order)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO app.tools (id, name, description, tool_type, category, icon, is_pinnable, display_order)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name,
                 description = EXCLUDED.description,
+                tool_type = EXCLUDED.tool_type,
                 category = EXCLUDED.category,
                 icon = EXCLUDED.icon,
                 is_pinnable = EXCLUDED.is_pinnable,
@@ -208,6 +236,7 @@ pub async fn seed_default_tools(db: &Database) -> Result<usize> {
             &tool.id,
             &tool.name,
             &tool.description,
+            &tool.tool_type,
             &tool.category,
             &tool.icon,
             tool.is_pinnable,
@@ -257,16 +286,14 @@ pub async fn seed_assistant_profile(db: &Database) -> Result<()> {
             default_agent_id = COALESCE(default_agent_id, $2),
             default_model_id = COALESCE(default_model_id, $3),
             enabled_tools = COALESCE(enabled_tools, $4),
-            pinned_tool_ids = COALESCE(pinned_tool_ids, $5),
-            ui_preferences = COALESCE(ui_preferences, $6),
+            ui_preferences = COALESCE(ui_preferences, $5),
             updated_at = NOW()
-        WHERE id = $7
+        WHERE id = $6
         "#,
         defaults.assistant_name.as_deref(),
         &defaults.default_agent_id,
         &defaults.default_model_id,
         &defaults.enabled_tools,
-        &defaults.pinned_tool_ids,
         &defaults.ui_preferences,
         profile_id
     )

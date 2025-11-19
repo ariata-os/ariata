@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO data.stream_connections (source_connection_id, stream_name, table_name, is_enabled)\n        VALUES ($1, 'seed_data', 'stream_seed_data', true)\n        ON CONFLICT (source_connection_id, stream_name)\n        DO UPDATE SET updated_at = NOW()\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "32c8f8622970a7e692e2eec0ae65fce954f21dabb78b8f6e0c1eb22af9f32f1c"
+}

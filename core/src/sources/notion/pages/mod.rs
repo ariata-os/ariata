@@ -15,7 +15,7 @@ use crate::{
     sources::{
         auth::SourceAuth,
         base::{SyncMode, SyncResult},
-        stream::Stream,
+        pull_stream::PullStream,
     },
     storage::stream_writer::StreamWriter,
 };
@@ -109,6 +109,26 @@ impl NotionPagesStream {
 
         let records_written = all_pages.len();
         let completed_at = Utc::now();
+
+        // Collect records from StreamWriter for archive and transform pipeline
+        let records = {
+            let mut writer = self.stream_writer.lock().await;
+            let collected = writer
+                .collect_records(self.source_id, "pages")
+                .map(|(records, _, _)| records);
+
+            if let Some(ref recs) = collected {
+                tracing::info!(
+                    record_count = recs.len(),
+                    "Collected Notion records from StreamWriter"
+                );
+            } else {
+                tracing::warn!("No Notion records collected from StreamWriter");
+            }
+
+            collected
+        };
+
         let result = SyncResult {
             records_fetched,
             records_written,
@@ -116,7 +136,7 @@ impl NotionPagesStream {
             next_cursor: None,
             started_at,
             completed_at,
-            records: None, // Notion uses database, not direct transform
+            records, // Return collected records for archive/transform
             archive_job_id: None,
         };
 
@@ -400,11 +420,16 @@ impl NotionPagesStream {
     }
 }
 
-// Implement Stream trait
+// Implement PullStream trait for NotionPagesStream
 #[async_trait]
-impl Stream for NotionPagesStream {
-    async fn sync(&self, mode: SyncMode) -> Result<SyncResult> {
+impl PullStream for NotionPagesStream {
+    async fn sync_pull(&self, mode: SyncMode) -> Result<SyncResult> {
         self.sync_with_mode(&mode).await
+    }
+
+    async fn load_config(&mut self, _db: &PgPool, _source_id: Uuid) -> Result<()> {
+        // Notion doesn't have stream-specific config yet
+        Ok(())
     }
 
     fn table_name(&self) -> &str {
@@ -417,11 +442,6 @@ impl Stream for NotionPagesStream {
 
     fn source_name(&self) -> &str {
         "notion"
-    }
-
-    async fn load_config(&mut self, _db: &PgPool, _source_id: Uuid) -> Result<()> {
-        // Notion doesn't have stream-specific config yet
-        Ok(())
     }
 
     fn supports_incremental(&self) -> bool {

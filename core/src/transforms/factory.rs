@@ -49,7 +49,7 @@ impl TransformFactory {
             // Google streams
             ("stream_google_gmail", "social_email") => Ok(Box::new(GmailEmailTransform)),
 
-            ("stream_google_calendar", "activity_calendar_entry") => {
+            ("stream_google_calendar", "praxis_calendar") => {
                 Ok(Box::new(GoogleCalendarTransform))
             }
 

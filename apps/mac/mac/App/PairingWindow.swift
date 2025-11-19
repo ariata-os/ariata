@@ -237,6 +237,7 @@ class PairingViewController: NSViewController {
 
         struct CompletePairingResponse: Codable {
             let device_token: String
+            let source_id: String
         }
 
         let request = CompletePairingRequest(
@@ -281,7 +282,7 @@ class PairingViewController: NSViewController {
         // Create config
         return Config(
             deviceToken: pairingResponse.device_token,
-            deviceId: deviceId,
+            deviceId: pairingResponse.source_id,
             apiEndpoint: endpoint,
             createdAt: Date()
         )

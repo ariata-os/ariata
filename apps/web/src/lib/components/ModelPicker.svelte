@@ -39,6 +39,13 @@
 		}
 	});
 
+	// Initialize localValue with DEFAULT_MODEL when models load
+	$effect(() => {
+		if (!localValue && DEFAULT_MODEL && models.length > 0) {
+			localValue = DEFAULT_MODEL;
+		}
+	});
+
 	// Helper function to get icon for provider
 	function getProviderIcon(provider: string): string {
 		switch (provider.toLowerCase()) {
@@ -92,7 +99,7 @@
 		<iconify-icon icon="ri:error-warning-line" width="16"></iconify-icon>
 		<span class="text-sm">Error loading models</span>
 	</div>
-{:else if localValue}
+{:else if models.length > 0}
 	<!-- Model picker when loaded -->
 	<UniversalSelect
 		bind:value={localValue}

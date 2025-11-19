@@ -24,7 +24,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
     let email_ids = get_sample_ontology_ids(pool, "social_email", 100).await?;
     let message_ids = get_sample_ontology_ids(pool, "social_message", 100).await?;
     let location_ids = get_sample_ontology_ids(pool, "location_point", 100).await?;
-    let calendar_ids = get_sample_ontology_ids(pool, "activity_calendar_entry", 50).await?;
+    let calendar_ids = get_sample_ontology_ids(pool, "praxis_calendar", 50).await?;
 
     // Generate narratives for the last 7 days
     for day_offset in 0..7 {
@@ -120,7 +120,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
                 1 => json!({
                     // Work emails
                     "social_email": sample_ids(&email_ids, &mut rng, 3),
-                    "activity_calendar_entry": sample_ids(&calendar_ids, &mut rng, 2),
+                    "praxis_calendar": sample_ids(&calendar_ids, &mut rng, 2),
                 }),
                 2 => json!({
                     // Lunch
@@ -130,7 +130,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
                 3 => json!({
                     // Afternoon work
                     "social_email": sample_ids(&email_ids, &mut rng, 2),
-                    "activity_calendar_entry": sample_ids(&calendar_ids, &mut rng, 1),
+                    "praxis_calendar": sample_ids(&calendar_ids, &mut rng, 1),
                 }),
                 _ => json!({
                     // Evening
@@ -288,7 +288,7 @@ pub async fn seed_narratives(db: &Database) -> Result<usize> {
         "social_email": sample_ids(&email_ids, &mut rng, 15),
         "social_message": sample_ids(&message_ids, &mut rng, 30),
         "location_point": sample_ids(&location_ids, &mut rng, 15),
-        "activity_calendar_entry": sample_ids(&calendar_ids, &mut rng, 10),
+        "praxis_calendar": sample_ids(&calendar_ids, &mut rng, 10),
     });
 
     let week_embedding_vec = generate_placeholder_embedding();
@@ -404,7 +404,7 @@ pub async fn seed_rome_monday_narrative(db: &Database) -> Result<usize> {
     tracing::info!("Seeding Rome Monday narrative...");
 
     // Hardcode the narrative for now - simpler than CSV parsing with commas in text
-    let narrative_text = "Monday November 10, 2025 in Rome, Italy. Attended the AI & Ethics conference at the Vatican. Around mid-morning, randomly ran into Jacob from my venture cohort at a café. He was with his wife, Lucy. We ordered croissants and coffee while catching up. Franklin mentioned he's from the San Antonio area in Texas and was heading back to Dallas after the conference. It was great to finally meet in person after knowing each other through the cohort. Later in the day, enjoyed local wine (Montepulciano) and continued exploring Rome's cafés and restaurants.";
+    let narrative_text = "Monday November 10, 2025 in Rome, Italy. Attended the AI & Ethics conference at the Vatican. Around mid-morning, randomly ran into Jacob from my venture cohort at a café. He was with his wife, Lucy. We ordered croissants and coffee while catching up. Jacob mentioned he's from the San Antonio area in Texas and was heading back to Dallas after the conference. It was great to finally meet in person after knowing each other through the cohort. Later in the day, enjoyed local wine (Montepulciano) and continued exploring Rome's cafés and restaurants.";
     let narrative_type = "day";
     let time_granularity = "day";
     let confidence_score = 0.90;

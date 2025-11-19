@@ -279,14 +279,14 @@ async fn find_nearby_place(db: &Database, lat: f64, lon: f64) -> Result<Option<U
         r#"
         SELECT id
         FROM data.entities_place
-        WHERE data.ST_DWithin(
-            geo_center::data.geography,
-            data.ST_SetSRID(data.ST_MakePoint($1, $2), 4326)::data.geography,
+        WHERE ST_DWithin(
+            geo_center::geography,
+            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
             $3
         )
-        ORDER BY data.ST_Distance(
-            geo_center::data.geography,
-            data.ST_SetSRID(data.ST_MakePoint($1, $2), 4326)::data.geography
+        ORDER BY ST_Distance(
+            geo_center::geography,
+            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
         )
         LIMIT 1
         "#,
@@ -503,7 +503,7 @@ async fn create_place_entity(db: &Database, place_info: &PlaceInfo) -> Result<Uu
             created_at,
             updated_at
         ) VALUES (
-            $1, $2, NULL, data.ST_SetSRID(data.ST_GeomFromText($3), 4326), NULL, $4, NOW(), NOW()
+            $1, $2, NULL, ST_SetSRID(ST_GeomFromText($3), 4326), NULL, $4, NOW(), NOW()
         )
         "#,
         place_id,

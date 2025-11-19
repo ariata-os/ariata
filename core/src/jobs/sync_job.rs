@@ -20,7 +20,7 @@ pub async fn execute_sync_job(
     job: &Job,
 ) -> Result<()> {
     let source_id = job
-        .source_id
+        .source_connection_id
         .ok_or_else(|| crate::Error::InvalidInput("Sync job missing source_id".to_string()))?;
 
     let stream_name = job
@@ -52,15 +52,32 @@ pub async fn execute_sync_job(
         }
     };
 
-    // Create factory and stream instance
-    let factory = StreamFactory::new(db.clone(), context.stream_writer.clone());
-    let mut stream = factory.create_stream(source_id, stream_name).await?;
+    // Create factory and stream instance using new PullStream API
+    let factory = StreamFactory::new(
+        db.clone(),
+        context.storage.clone(),
+        context.stream_writer.clone(),
+    );
+    let mut stream_type = factory
+        .create_stream_typed(source_id, stream_name)
+        .await?;
+
+    // Ensure we got a PullStream (sync jobs should only work with pull streams)
+    let pull_stream = match stream_type.as_pull_mut() {
+        Some(stream) => stream,
+        None => {
+            return Err(crate::Error::InvalidInput(format!(
+                "Cannot sync push stream '{}' via scheduler - push streams are client-initiated",
+                stream_name
+            )));
+        }
+    };
 
     // Load configuration
-    stream.load_config(db, source_id).await?;
+    pull_stream.load_config(db, source_id).await?;
 
-    // Execute sync
-    let result = stream.sync(sync_mode.clone()).await;
+    // Execute sync using PullStream API
+    let result = pull_stream.sync_pull(sync_mode.clone()).await;
 
     match result {
         Ok(sync_result) => {
@@ -68,8 +85,21 @@ pub async fn execute_sync_job(
             let has_records = sync_result.records.is_some();
             let records = sync_result.records.clone().unwrap_or_default();
 
+            tracing::info!(
+                stream_name = %stream_name,
+                has_records = has_records,
+                record_count = records.len(),
+                "Sync completed, checking for records to archive"
+            );
+
             // Create archive job if we have records (direct transform path - hot path)
             let archive_job_id = if !records.is_empty() {
+                tracing::info!(
+                    stream_name = %stream_name,
+                    record_count = records.len(),
+                    "Creating archive job for S3 upload"
+                );
+
                 let archive_id = crate::jobs::spawn_archive_job_async(
                     db,
                     context.storage.as_ref(),
@@ -80,8 +110,19 @@ pub async fn execute_sync_job(
                     (None, Some(sync_result.completed_at)), // (min_ts, max_ts)
                 )
                 .await?;
+
+                tracing::info!(
+                    stream_name = %stream_name,
+                    archive_job_id = %archive_id,
+                    "Archive job created successfully"
+                );
+
                 Some(archive_id)
             } else {
+                tracing::warn!(
+                    stream_name = %stream_name,
+                    "No records collected from sync, skipping archive job"
+                );
                 None
             };
 
@@ -97,12 +138,12 @@ pub async fn execute_sync_job(
                 "archive_job_id": archive_job_id
             });
 
-            // Update the streams table with last sync timestamp
+            // Update the stream_connections table with last sync timestamp
             sqlx::query(
                 r#"
-                UPDATE data.streams
+                UPDATE data.stream_connections
                 SET last_sync_at = $1, updated_at = NOW()
-                WHERE source_id = $2 AND stream_name = $3
+                WHERE source_connection_id = $2 AND stream_name = $3
                 "#,
             )
             .bind(sync_result.completed_at)

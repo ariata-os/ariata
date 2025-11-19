@@ -18,8 +18,8 @@ use crate::{
     error::Result,
     sources::{
         auth::SourceAuth,
-        base::{SyncMode, SyncResult},
-        stream::Stream,
+        base::{ConfigSerializable, SyncMode, SyncResult},
+        pull_stream::PullStream,
     },
     storage::stream_writer::StreamWriter,
 };
@@ -60,11 +60,11 @@ impl GoogleCalendarStream {
         }
     }
 
-    /// Load configuration from database (called by Stream trait)
+    /// Load configuration from database (called by PullStream trait)
     async fn load_config_internal(&mut self, db: &PgPool, source_id: Uuid) -> Result<()> {
-        // Load from streams table only
+        // Load from stream_connections table only
         let result = sqlx::query_as::<_, (serde_json::Value,)>(
-            "SELECT config FROM streams WHERE source_id = $1 AND stream_name = 'calendar'",
+            "SELECT config FROM stream_connections WHERE source_connection_id = $1 AND stream_name = 'calendar'",
         )
         .bind(source_id)
         .fetch_optional(db)
@@ -119,7 +119,7 @@ impl GoogleCalendarStream {
 
             records_fetched += result.items.len();
 
-            tracing::debug!(
+            tracing::trace!(
                 items = result.items.len(),
                 has_page_token = result.next_page_token.is_some(),
                 has_sync_token = result.next_sync_token.is_some(),
@@ -163,6 +163,25 @@ impl GoogleCalendarStream {
 
         let completed_at = Utc::now();
 
+        // Collect records from StreamWriter for archive and transform pipeline
+        let records = {
+            let mut writer = self.stream_writer.lock().await;
+            let collected = writer
+                .collect_records(self.source_id, "calendar")
+                .map(|(records, _, _)| records);
+
+            if let Some(ref recs) = collected {
+                tracing::info!(
+                    record_count = recs.len(),
+                    "Collected calendar records from StreamWriter"
+                );
+            } else {
+                tracing::warn!("No calendar records collected from StreamWriter");
+            }
+
+            collected
+        };
+
         Ok(SyncResult {
             records_fetched,
             records_written,
@@ -170,7 +189,7 @@ impl GoogleCalendarStream {
             next_cursor,
             started_at,
             completed_at,
-            records: None, // Google Calendar uses database, not direct transform
+            records, // Return collected records for archive/transform
             archive_job_id: None,
         })
     }
@@ -250,11 +269,14 @@ impl GoogleCalendarStream {
                 break;
             }
 
-            tracing::debug!(
-                events_so_far = all_events.len(),
-                has_more = page_token.is_some(),
-                "Fetched calendar events page"
-            );
+            // Only log every 100 events or the last page
+            if all_events.len() % 100 == 0 || page_token.is_none() {
+                tracing::debug!(
+                    events_so_far = all_events.len(),
+                    has_more = page_token.is_some(),
+                    "Calendar sync progress"
+                );
+            }
         }
 
         tracing::info!(
@@ -399,14 +421,14 @@ impl GoogleCalendarStream {
             writer.write_record(self.source_id, "calendar", record, Some(start_time))?;
         }
 
-        tracing::debug!(event_id = %event.id, "Wrote calendar event to object storage");
+        tracing::trace!(event_id = %event.id, "Wrote calendar event to object storage");
         Ok(true)
     }
 
-    /// Get the last sync token from the database (streams table only)
+    /// Get the last sync token from the database (stream_connections table only)
     async fn get_last_sync_token(&self) -> Result<Option<String>> {
         let row = sqlx::query_as::<_, (Option<String>,)>(
-            "SELECT last_sync_token FROM streams WHERE source_id = $1 AND stream_name = 'calendar'",
+            "SELECT last_sync_token FROM stream_connections WHERE source_connection_id = $1 AND stream_name = 'calendar'",
         )
         .bind(self.source_id)
         .fetch_optional(&self.db)
@@ -422,7 +444,7 @@ impl GoogleCalendarStream {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> Result<()> {
         sqlx::query(
-            "UPDATE streams SET last_sync_token = $1, last_sync_at = $2 WHERE source_id = $3 AND stream_name = 'calendar'"
+            "UPDATE data.stream_connections SET last_sync_token = $1, last_sync_at = $2 WHERE source_connection_id = $3 AND stream_name = 'calendar'"
         )
         .bind(token)
         .bind(Utc::now())
@@ -436,7 +458,7 @@ impl GoogleCalendarStream {
     /// Clear the sync token (used when token is invalid)
     async fn clear_sync_token(&self) -> Result<()> {
         sqlx::query(
-            "UPDATE streams SET last_sync_token = NULL WHERE source_id = $1 AND stream_name = 'calendar'"
+            "UPDATE data.stream_connections SET last_sync_token = NULL WHERE source_connection_id = $1 AND stream_name = 'calendar'"
         )
         .bind(self.source_id)
         .execute(&self.db)
@@ -446,11 +468,15 @@ impl GoogleCalendarStream {
     }
 }
 
-// Implement Stream trait for GoogleCalendarStream
+// Implement PullStream trait for GoogleCalendarStream
 #[async_trait]
-impl Stream for GoogleCalendarStream {
-    async fn sync(&self, mode: SyncMode) -> Result<SyncResult> {
+impl PullStream for GoogleCalendarStream {
+    async fn sync_pull(&self, mode: SyncMode) -> Result<SyncResult> {
         self.sync_with_mode(&mode).await
+    }
+
+    async fn load_config(&mut self, db: &PgPool, source_id: Uuid) -> Result<()> {
+        self.load_config_internal(db, source_id).await
     }
 
     fn table_name(&self) -> &str {
@@ -463,10 +489,6 @@ impl Stream for GoogleCalendarStream {
 
     fn source_name(&self) -> &str {
         "google"
-    }
-
-    async fn load_config(&mut self, db: &PgPool, source_id: Uuid) -> Result<()> {
-        self.load_config_internal(db, source_id).await
     }
 
     fn supports_incremental(&self) -> bool {

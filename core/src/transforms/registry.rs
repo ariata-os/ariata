@@ -57,8 +57,8 @@ pub fn get_transform_route(stream_name: &str) -> Result<TransformRoute> {
         }),
         "stream_google_calendar" => Ok(TransformRoute {
             source_table: "stream_google_calendar",
-            target_tables: vec!["activity_calendar_entry"],
-            domain: "activity",
+            target_tables: vec!["praxis_calendar"],
+            domain: "praxis",
             transform_stage: "calendar_normalization",
         }),
         "stream_notion_pages" => Ok(TransformRoute {
@@ -153,7 +153,7 @@ pub fn list_transform_streams() -> Vec<&'static str> {
 /// The system uses a three-tier naming architecture:
 /// 1. **Stream Name** (registered in data.streams) - e.g., "app_export", "gmail"
 /// 2. **Stream Table** (object storage) - e.g., "stream_ariata_ai_chat", "stream_google_gmail"
-/// 3. **Ontology Table** (elt schema) - e.g., "knowledge_ai_conversation", "social_email"
+/// 3. **Ontology Table** (data schema) - e.g., "knowledge_ai_conversation", "social_email"
 ///
 /// This function maps stream names (tier 1) to stream tables (tier 2).
 /// The transform registry then maps stream tables to ontology tables.
@@ -190,6 +190,7 @@ pub fn normalize_stream_name(name: &str) -> String {
             // macOS device streams
             "apps" => "stream_mac_apps",
             "browser" => "stream_mac_browser",
+            "imessage" => "stream_mac_imessage",
             "messages" => "stream_mac_imessage",
 
             _ => name, // Return as-is if unknown

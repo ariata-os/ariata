@@ -1,17 +1,28 @@
 //! Source and stream registry for catalog/discovery
 //!
 //! This module provides a compile-time registry of all available sources and streams.
-//! Frontends and CLIs can query this registry to discover:
-//! - What sources are available (Google, Strava, Notion, iOS, Mac)
-//! - What streams each source provides (Calendar, Gmail, Activities, etc.)
+//! The registry is initialized once at startup and contains static metadata about what
+//! data sources and streams are available in the system.
+//!
+//! **Terminology:**
+//! - **RegisteredSource**: A source type in the registry (e.g., "Google", "Notion")
+//! - **SourceConnection**: A user's connected account instance (stored in `source_connections` table with auth tokens)
+//! - **RegisteredStream**: A stream type that a source offers (e.g., "Calendar", "Gmail")
+//! - **StreamConnection**: A user's enabled stream with configuration (stored in `stream_connections` table)
+//!
+//! Frontends and CLIs query this registry (via the catalog API) to discover:
+//! - What sources are available (Google, Notion, iOS, Mac, Ariata)
+//! - What streams each source provides (Calendar, Gmail, Pages, HealthKit, etc.)
 //! - What configuration options each stream accepts
 //! - What database schema each stream uses
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use ts_rs::TS;
 
 /// Authentication type required for a source
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export, export_to = "../../apps/web/src/lib/types/")]
 #[serde(rename_all = "lowercase")]
 pub enum AuthType {
     /// OAuth 2.0 authentication
@@ -24,10 +35,13 @@ pub enum AuthType {
     None,
 }
 
-/// Metadata describing a data source
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SourceDescriptor {
-    /// Unique identifier (e.g., "google", "strava")
+/// A registered source type (e.g., "Google", "Notion")
+/// This defines what sources CAN be connected.
+/// For actual user connections, see api::SourceConnection.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../apps/web/src/lib/types/")]
+pub struct RegisteredSource {
+    /// Unique identifier (e.g., "google", "notion", "ios")
     pub name: &'static str,
 
     /// Human-readable display name
@@ -40,7 +54,7 @@ pub struct SourceDescriptor {
     pub auth_type: AuthType,
 
     /// Available streams for this source
-    pub streams: Vec<StreamDescriptor>,
+    pub streams: Vec<RegisteredStream>,
 
     /// OAuth-specific configuration (if applicable)
     pub oauth_config: Option<OAuthConfig>,
@@ -50,7 +64,8 @@ pub struct SourceDescriptor {
 }
 
 /// OAuth configuration details for a source
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../apps/web/src/lib/types/")]
 pub struct OAuthConfig {
     /// OAuth scopes required
     pub scopes: Vec<&'static str>,
@@ -62,9 +77,12 @@ pub struct OAuthConfig {
     pub token_url: &'static str,
 }
 
-/// Metadata describing a data stream within a source
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamDescriptor {
+/// A registered stream type (e.g., "Calendar", "Gmail")
+/// This defines what streams a source offers.
+/// For user stream state, see api::StreamConnection.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../apps/web/src/lib/types/")]
+pub struct RegisteredStream {
     /// Stream identifier (e.g., "calendar", "gmail")
     pub name: &'static str,
 
@@ -78,9 +96,11 @@ pub struct StreamDescriptor {
     pub table_name: &'static str,
 
     /// JSON schema for configuration (serialized as JSON)
+    #[ts(type = "any")]
     pub config_schema: serde_json::Value,
 
     /// Example configuration
+    #[ts(type = "any")]
     pub config_example: serde_json::Value,
 
     /// Whether this stream supports incremental sync
@@ -89,14 +109,14 @@ pub struct StreamDescriptor {
     /// Whether this stream supports full refresh
     pub supports_full_refresh: bool,
 
-    /// Default cron schedule for this stream in 6-field format: sec min hour day month dow (e.g., "0 0 */6 * * *")
+    /// Default cron schedule for this stream in 6-field format: sec min hour day month dow (e.g., "0 0 \*/6 * * *")
     pub default_cron_schedule: Option<&'static str>,
 }
 
-impl StreamDescriptor {
+impl RegisteredStream {
     /// Create a new stream descriptor builder
-    pub fn new(name: &'static str) -> StreamDescriptorBuilder {
-        StreamDescriptorBuilder {
+    pub fn new(name: &'static str) -> StreamBuilder {
+        StreamBuilder {
             name,
             display_name: name,
             description: "",
@@ -110,8 +130,8 @@ impl StreamDescriptor {
     }
 }
 
-/// Builder for StreamDescriptor
-pub struct StreamDescriptorBuilder {
+/// Builder for RegisteredStream
+pub struct StreamBuilder {
     name: &'static str,
     display_name: &'static str,
     description: &'static str,
@@ -123,7 +143,7 @@ pub struct StreamDescriptorBuilder {
     default_cron_schedule: Option<&'static str>,
 }
 
-impl StreamDescriptorBuilder {
+impl StreamBuilder {
     pub fn display_name(mut self, name: &'static str) -> Self {
         self.display_name = name;
         self
@@ -164,8 +184,8 @@ impl StreamDescriptorBuilder {
         self
     }
 
-    pub fn build(self) -> StreamDescriptor {
-        StreamDescriptor {
+    pub fn build(self) -> RegisteredStream {
+        RegisteredStream {
             name: self.name,
             display_name: self.display_name,
             description: self.description,
@@ -182,12 +202,12 @@ impl StreamDescriptorBuilder {
 /// Trait for sources to register themselves in the catalog
 pub trait SourceRegistry {
     /// Get the source descriptor
-    fn descriptor() -> SourceDescriptor;
+    fn descriptor() -> RegisteredSource;
 }
 
 /// Global registry of all sources
 pub struct Registry {
-    sources: HashMap<String, SourceDescriptor>,
+    sources: HashMap<String, RegisteredSource>,
 }
 
 impl Registry {
@@ -199,29 +219,29 @@ impl Registry {
     }
 
     /// Register a source
-    fn register(&mut self, descriptor: SourceDescriptor) {
+    fn register(&mut self, descriptor: RegisteredSource) {
         self.sources.insert(descriptor.name.to_string(), descriptor);
     }
 
     /// Get all registered sources
-    pub fn list_sources(&self) -> Vec<&SourceDescriptor> {
+    pub fn list_sources(&self) -> Vec<&RegisteredSource> {
         self.sources.values().collect()
     }
 
     /// Get a specific source by name
-    pub fn get_source(&self, name: &str) -> Option<&SourceDescriptor> {
+    pub fn get_source(&self, name: &str) -> Option<&RegisteredSource> {
         self.sources.get(name)
     }
 
     /// Get a specific stream from a source
-    pub fn get_stream(&self, source_name: &str, stream_name: &str) -> Option<&StreamDescriptor> {
+    pub fn get_stream(&self, source_name: &str, stream_name: &str) -> Option<&RegisteredStream> {
         self.sources
             .get(source_name)
             .and_then(|source| source.streams.iter().find(|s| s.name == stream_name))
     }
 
     /// List all streams across all sources
-    pub fn list_all_streams(&self) -> Vec<(&str, &StreamDescriptor)> {
+    pub fn list_all_streams(&self) -> Vec<(&str, &RegisteredStream)> {
         self.sources
             .values()
             .flat_map(|source| {
@@ -263,22 +283,22 @@ pub fn registry() -> &'static Registry {
 }
 
 /// List all available sources
-pub fn list_sources() -> Vec<&'static SourceDescriptor> {
+pub fn list_sources() -> Vec<&'static RegisteredSource> {
     registry().list_sources()
 }
 
 /// Get information about a specific source
-pub fn get_source(name: &str) -> Option<&'static SourceDescriptor> {
+pub fn get_source(name: &str) -> Option<&'static RegisteredSource> {
     registry().get_source(name)
 }
 
 /// Get information about a specific stream
-pub fn get_stream(source_name: &str, stream_name: &str) -> Option<&'static StreamDescriptor> {
+pub fn get_stream(source_name: &str, stream_name: &str) -> Option<&'static RegisteredStream> {
     registry().get_stream(source_name, stream_name)
 }
 
 /// List all streams across all sources
-pub fn list_all_streams() -> Vec<(&'static str, &'static StreamDescriptor)> {
+pub fn list_all_streams() -> Vec<(&'static str, &'static RegisteredStream)> {
     registry().list_all_streams()
 }
 
@@ -301,6 +321,15 @@ mod tests {
             assert_eq!(g.name, "google");
             assert!(!g.streams.is_empty(), "Google should have streams");
         }
+    }
+
+    /// Export TypeScript types for frontend use
+    #[test]
+    fn export_typescript_types() {
+        AuthType::export().expect("Failed to export AuthType");
+        RegisteredSource::export().expect("Failed to export RegisteredSource");
+        OAuthConfig::export().expect("Failed to export OAuthConfig");
+        RegisteredStream::export().expect("Failed to export RegisteredStream");
     }
 
     #[test]

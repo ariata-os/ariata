@@ -11,6 +11,7 @@
 		id: string;
 		name: string;
 		description: string | null;
+		tool_type: string;
 		category: string | null;
 		icon: string | null;
 		is_pinnable: boolean;

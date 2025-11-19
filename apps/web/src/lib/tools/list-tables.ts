@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Pool } from 'pg';
 
 /**
- * Tool for listing available tables in the elt schema
+ * Tool for listing available tables in the data schema
  *
  * Queries the database information schema to show available tables
  * organized by category (location, health, social, etc.)
@@ -19,7 +19,7 @@ export async function createListTablesTool(pool: Pool) {
 			console.log('[listTables] Category filter:', category || 'all');
 
 			try {
-				// Query information schema to get all tables in elt schema with their columns
+				// Query information schema to get all tables in data schema with their columns
 				const query = `
 					SELECT
 						t.table_name,
@@ -31,7 +31,7 @@ export async function createListTablesTool(pool: Pool) {
 					LEFT JOIN information_schema.columns c
 						ON t.table_name = c.table_name
 						AND t.table_schema = c.table_schema
-					WHERE t.table_schema = 'elt'
+					WHERE t.table_schema = 'data'
 						AND t.table_type = 'BASE TABLE'
 						AND t.table_name NOT LIKE '\\_%'  -- Exclude internal tables like _sqlx_migrations
 					GROUP BY t.table_name
@@ -103,7 +103,7 @@ export async function createListTablesTool(pool: Pool) {
 				);
 
 				const resultString = JSON.stringify({
-					schema: 'elt',
+					schema: 'data',
 					totalTables: result.rows.length,
 					categories: filtered
 				}, null, 2);

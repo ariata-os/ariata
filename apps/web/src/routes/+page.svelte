@@ -3,8 +3,8 @@
 	import ChatInput from "$lib/components/ChatInput.svelte";
 	import ModelPicker from "$lib/components/ModelPicker.svelte";
 	import AgentPicker from "$lib/components/AgentPicker.svelte";
-	import PinnedToolsBar from "$lib/components/PinnedToolsBar.svelte";
 	import ContextIndicator from "$lib/components/ContextIndicator.svelte";
+	import TableOfContents from "$lib/components/TableOfContents.svelte";
 	import type { ModelOption } from "$lib/config/models";
 	import {
 		getModels,
@@ -16,6 +16,7 @@
 	} from "$lib/stores/models.svelte";
 	import Markdown from "$lib/components/Markdown.svelte";
 	import ToolCall from "$lib/components/ToolCall.svelte";
+	import UserMessage from "$lib/components/UserMessage.svelte";
 	import ThinkingIndicator from "$lib/components/ThinkingIndicator.svelte";
 	import { getRandomThinkingLabel } from "$lib/utils/thinkingLabels";
 	import { onMount } from "svelte";
@@ -33,7 +34,6 @@
 	let messagesContainer: HTMLDivElement | null = $state(null);
 	let scrollContainer: HTMLDivElement | null = $state(null);
 	let enableTransitions = $state(false);
-	let streamingMessageId = $state<string | null>(null);
 
 	// UI preferences from assistant profile
 	let uiPreferences = $state<{
@@ -43,12 +43,8 @@
 		};
 	}>({});
 
-	// Thinking state for animated indicator
-	let thinkingState = $state<{
-		isThinking: boolean;
-		label: string;
-		messageId: string;
-	} | null>(null);
+	// Thinking state - label will be derived from chat status
+	let thinkingLabel = $state(getRandomThinkingLabel());
 	let labelRotationInterval: ReturnType<typeof setInterval> | null = null;
 
 	// Keep a map of message metadata (agentId, provider, etc.) for rendering
@@ -134,7 +130,7 @@
 			},
 		}),
 		messages:
-			data.messages?.map((msg) => ({
+			data.messages?.map((msg: any) => ({
 				id: msg.id,
 				role: msg.role as "user" | "assistant",
 				parts: convertMessageToParts(msg),
@@ -146,9 +142,22 @@
 		},
 	});
 
-	// Local input state for ChatInput component
-	let input = $state("");
-	let inputFocused = $state(false);
+// Derive thinking state from chat status (single source of truth)
+const isThinking = $derived.by(() => {
+	const status = chat.status;
+	const thinking = status === 'submitted' || status === 'streaming';
+
+	// Defensive logging for unexpected states
+	if (!['ready', 'submitted', 'streaming', 'error'].includes(status)) {
+		console.warn('[isThinking] Unexpected chat status:', status);
+	}
+
+	return thinking;
+});
+
+// Local input state for ChatInput component
+let input = $state("");
+let inputFocused = $state(false);
 
 	// Track the last loaded conversation ID to avoid overwriting messages during active chat
 	// Initialize to null to ensure first load always triggers the effect
@@ -171,6 +180,17 @@
 				data.conversationId,
 			);
 
+			// CRITICAL: Abort any pending chat requests to prevent race condition
+			// This prevents Conversation A's response from overwriting Conversation B's messages
+			if (chat.status === "streaming" || chat.status === "submitted") {
+				console.warn("[Page] Aborting pending chat request due to conversation switch");
+				// Note: AI SDK v6 Chat class doesn't expose abort method directly
+				// We need to clear the error state to reset status
+				if (chat.clearError) {
+					chat.clearError();
+				}
+			}
+
 			// Disable transitions temporarily during navigation
 			enableTransitions = false;
 
@@ -178,9 +198,21 @@
 			conversationId = data.conversationId;
 			lastLoadedConversationId = data.conversationId;
 
+			// Note: Chat.id is read-only and was already set during initialization
+
+			// Clear all thinking-related timers when switching conversations
+			if (labelRotationInterval) {
+				clearInterval(labelRotationInterval);
+				labelRotationInterval = null;
+			}
+			if (thinkingTimeout) {
+				clearTimeout(thinkingTimeout);
+				thinkingTimeout = null;
+			}
+
 			// Update messages in Chat instance only when switching conversations
 			chat.messages =
-				data.messages?.map((msg) => ({
+				data.messages?.map((msg: any) => ({
 					id: msg.id,
 					role: msg.role as "user" | "assistant",
 					parts: convertMessageToParts(msg),
@@ -203,6 +235,7 @@
 	// Title generation state
 	let titleGenerated = $state(false);
 	let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+	let refreshDataTimeout: ReturnType<typeof setTimeout> | null = null;
 	const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes
 
 	// Model selection state
@@ -245,6 +278,73 @@
 		}
 	});
 
+	// Reactive messages with subjects (can be updated independently of page data)
+	let messagesWithSubjects = $state<any[]>(data.messages || []);
+
+	// Update when page data changes
+	$effect(() => {
+		messagesWithSubjects = data.messages || [];
+	});
+
+	// Extract exchanges for table of contents
+	// An exchange is: one user message + all following assistant/tool messages until next user message
+	const exchanges = $derived.by(() => {
+		const result: Array<{
+			index: number;
+			subject: string | undefined;
+			userContent: string;
+		}> = [];
+
+		let currentExchangeIndex = 0;
+
+		for (const message of chat.messages) {
+			if (message.role === "user") {
+				// Extract text content from user message
+				const userContent = message.parts
+					.filter((p: any) => p.type === "text")
+					.map((p: any) => p.text)
+					.join("");
+
+				// Get subject from message metadata (loaded from database)
+				// The subject is stored in messagesWithSubjects (reactive)
+				const originalMessage = messagesWithSubjects?.find(
+					(m: any) => m.id === message.id,
+				);
+				const subject = originalMessage?.subject;
+
+				result.push({
+					index: currentExchangeIndex,
+					subject,
+					userContent,
+				});
+
+				currentExchangeIndex++;
+			}
+		}
+
+		return result;
+	});
+
+	// Refresh session data to get updated subjects
+	async function refreshSessionData() {
+		// Only run in browser, not during SSR
+		if (typeof window === "undefined") return;
+
+		try {
+			const response = await fetch(`/api/sessions/${conversationId}`);
+			if (response.ok) {
+				const sessionData = await response.json();
+				messagesWithSubjects = sessionData.messages || [];
+				console.log(
+					"[refreshSessionData] Updated messages with subjects:",
+					messagesWithSubjects.filter((m: any) => m.subject).length,
+				);
+			}
+		} catch (error) {
+			console.error("[refreshSessionData] Error:", error);
+		}
+	}
+
 	// Load assistant profile defaults on mount for new conversations
 	onMount(async () => {
 		// Wait for models to load first
@@ -286,18 +386,85 @@
 		}
 	});
 
-	// Clear thinking state once assistant starts responding
+	// Watch chat.status for debugging (only in development)
 	$effect(() => {
-		if (thinkingState?.isThinking && chat.status === "streaming") {
-			const lastMessage = chat.messages[chat.messages.length - 1];
-			if (lastMessage?.role === "assistant" && lastMessage.parts.some((p: any) => p.type === "text" && p.text)) {
-				console.log("[effect] Clearing thinking state - assistant is responding");
+		if (import.meta.env.DEV) {
+			const status = chat.status;
+			console.log("[effect] Chat status changed to:", status);
+		}
+	});
+
+	// Label rotation effect - starts/stops based on isThinking
+	$effect(() => {
+		if (isThinking) {
+			console.log("[effect] Starting label rotation");
+			// Rotate label every 5 seconds while thinking
+			labelRotationInterval = setInterval(() => {
+				thinkingLabel = getRandomThinkingLabel();
+			}, 5000);
+
+			// Cleanup function that only runs when effect re-runs or component unmounts
+			return () => {
 				if (labelRotationInterval) {
+					console.log("[effect] Stopping label rotation");
 					clearInterval(labelRotationInterval);
 					labelRotationInterval = null;
 				}
-				thinkingState = null;
-			}
+			};
+		} else if (labelRotationInterval) {
+			// Clear interval when not thinking
+			console.log("[effect] Stopping label rotation");
+			clearInterval(labelRotationInterval);
+			labelRotationInterval = null;
+		}
+	});
+
+	// Safety timeout - keep as failsafe but should rarely trigger
+	let thinkingTimeout: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (isThinking) {
+			console.log("[effect] Setting 30s safety timeout");
+			thinkingTimeout = setTimeout(() => {
+				console.error(
+					"[timeout] Safety timeout triggered - forcing abort",
+					"Chat stuck in", chat.status, "state for 30s",
+				);
+
+				// Try to abort the stream if possible
+				// Note: AI SDK v6 Chat class may not have direct abort method
+				// We can try to clear error state which sets status to "ready"
+				if (chat.status === "error") {
+					chat.clearError();
+				} else if (chat.status === "streaming" || chat.status === "submitted") {
+					// Log telemetry data for debugging
+					console.error("[timeout] Debug info:", {
+						status: chat.status,
+						messageCount: chat.messages.length,
+						lastMessage: chat.messages[chat.messages.length - 1]?.role,
+					});
+
+					// Try to force clear by triggering error state
+					// This is a last resort - ideally the AI SDK would provide an abort method
+					console.error("[timeout] Unable to abort - AI SDK may not support direct abortion");
+					// Force clear error state as a workaround
+					if (chat.clearError) {
+						chat.clearError();
+					}
+				}
+			}, 30000);
+
+			// Cleanup function for when effect re-runs or unmounts
+			return () => {
+				if (thinkingTimeout) {
+					console.log("[effect] Clearing safety timeout");
+					clearTimeout(thinkingTimeout);
+					thinkingTimeout = null;
+				}
+			};
+		} else if (thinkingTimeout) {
+			console.log("[effect] Clearing safety timeout (normal)");
+			clearTimeout(thinkingTimeout);
+			thinkingTimeout = null;
 		}
 	});
 
@@ -318,17 +485,6 @@
 	}
 
 	let greeting = $state(getTimeBasedGreeting());
-
-	// Debug: Track selectedModel changes
-	$effect(() => {
-		if (selectedModel) {
-			console.log("[chat/[conversationId]] selectedModel changed:", {
-				id: selectedModel.id,
-				displayName: selectedModel.displayName,
-				timestamp: Date.now(),
-			});
-		}
-	});
 
 	// Generate title after first assistant response
 	async function generateTitle() {
@@ -402,7 +558,22 @@
 	}
 
 	async function handleChatSubmit(value: string) {
-		if (!value.trim() || chat.status === "streaming") return;
+		// Store trimmed message value immediately
+		const messageToSend = value.trim();
+		if (!messageToSend) return;
+
+		// Block submission if chat is not in ready state
+		// (prevents multiple submissions during "submitted", "streaming", or "error" states)
+		if (chat.status !== "ready") {
+			console.warn(
+				"[handleChatSubmit] Blocked: chat not ready, status:",
+				chat.status,
+			);
+			return;
+		}
+
+		// Clear input IMMEDIATELY to prevent double-submission
+		input = "";
 
 		// Reset inactivity timer on user activity
 		resetInactivityTimer();
@@ -412,20 +583,8 @@
 			modelLocked = true;
 		}
 
-		// Show thinking indicator
-		const thinkingId = `msg_${Date.now()}_thinking`;
-		thinkingState = {
-			isThinking: true,
-			label: getRandomThinkingLabel(),
-			messageId: thinkingId,
-		};
-
-		// Rotate thinking label every 5 seconds
-		labelRotationInterval = setInterval(() => {
-			if (thinkingState?.isThinking) {
-				thinkingState.label = getRandomThinkingLabel();
-			}
-		}, 5000);
+		// Refresh thinking label for new message
+		thinkingLabel = getRandomThinkingLabel();
 
 		try {
 			console.log(
@@ -434,14 +593,13 @@
 			);
 
 			// Send message using Chat class (handles streaming automatically)
-			await chat.sendMessage({ text: value.trim() });
+			// Thinking indicator will automatically show when status becomes 'submitted'
+			await chat.sendMessage({ text: messageToSend });
 
 			console.log(
-				"[handleChatSubmit] Message send completed successfully",
+				"[handleChatSubmit] Message send completed, status:",
+				chat.status,
 			);
-
-			// Clear input
-			input = "";
 
 			// Generate title after first exchange
 			if (chat.messages.length === 2) {
@@ -454,30 +612,45 @@
 				// Refresh sidebar to show new conversation
 				await chatSessions.refresh();
 			}
+
+			// Refresh session data after a short delay to get generated subjects
+			// Subject generation happens in the backend onFinish callback
+			// Clear any pending refresh first to avoid multiple calls
+			if (refreshDataTimeout) {
+				clearTimeout(refreshDataTimeout);
+			}
+			refreshDataTimeout = setTimeout(() => {
+				refreshSessionData();
+				refreshDataTimeout = null;
+			}, 2000); // Wait 2 seconds for subject generation to complete
 		} catch (error) {
 			console.error("[handleChatSubmit] Error sending message:", error);
-			// Show error state to user if needed
-		} finally {
-			// Always clear thinking state
-			if (labelRotationInterval) {
-				clearInterval(labelRotationInterval);
-				labelRotationInterval = null;
-			}
-			thinkingState = null;
+			console.error("[handleChatSubmit] Error details:", error);
+			// Clear input even on error so user can try again
+			input = "";
 		}
+		// No finally block needed - thinking state is derived from chat.status!
 	}
 
-	// Cleanup timer on unmount
+	// Cleanup timers on unmount
+	// Note: labelRotationInterval and thinkingTimeout are cleaned up by their own effects
 	onMount(() => {
 		return () => {
+			// Only clean up timers not managed by effects
 			if (inactivityTimer) {
 				clearTimeout(inactivityTimer);
+			}
+			if (refreshDataTimeout) {
+				clearTimeout(refreshDataTimeout);
 			}
 		};
 	});
 </script>
 
 <Page scrollable={false} className="h-full p-0!">
+	<!-- Table of Contents -->
+	<TableOfContents {exchanges} />
+
 	<div class="page-container" class:is-empty={isEmpty}>
 		<!-- Messages area - scrollable, fades in when not empty -->
 		<div
@@ -486,8 +659,19 @@
 			class:visible={!isEmpty}
 		>
 			<div class="messages-container">
-				{#each chat.messages as message (message.id)}
-					<div class="flex justify-start">
+				{#each chat.messages as message, messageIndex (message.id)}
+					{@const isUserMessage = message.role === "user"}
+					{@const exchangeIndex = isUserMessage
+						? chat.messages
+								.slice(0, messageIndex)
+								.filter((m) => m.role === "user").length
+						: -1}
+					<div
+						class="flex justify-start"
+						id={isUserMessage
+							? `exchange-${exchangeIndex}`
+							: undefined}
+					>
 						<div
 							class="message-wrapper"
 							data-role={message.role}
@@ -499,13 +683,6 @@
 								)}
 						>
 							{#if message.role === "assistant"}
-								<!-- Show thinking indicator if message has no content yet -->
-								{#if thinkingState?.isThinking && thinkingState.messageId === message.id && !message.parts.some((p) => p.type === "text" && p.text)}
-									<ThinkingIndicator
-										label={thinkingState.label}
-									/>
-								{/if}
-
 								<!-- Render message parts from AI SDK -->
 								{#each message.parts as part, partIndex (part.type.startsWith("tool-") ? (part as any).toolCallId : `text-${partIndex}`)}
 									{#if part.type === "text"}
@@ -551,26 +728,23 @@
 									{/if}
 								{/each}
 							{:else}
-								<!-- User messages: concatenate text parts -->
-								<div
-									class="text-base whitespace-pre-wrap font-serif text-blue"
-								>
-									{#each message.parts as part}
-										{#if part.type === "text"}
-											{part.text}
-										{/if}
-									{/each}
-								</div>
+								<!-- User messages: collapsible for long messages -->
+								<UserMessage
+									text={message.parts
+										.filter((p) => p.type === "text")
+										.map((p) => p.text)
+										.join("")}
+								/>
 							{/if}
 						</div>
 					</div>
 				{/each}
 
-				<!-- Show thinking indicator if waiting for assistant message to be created -->
-				{#if thinkingState?.isThinking && !chat.messages.find((m) => m.id === thinkingState!.messageId)}
+				<!-- Show thinking indicator while AI is processing -->
+				{#if isThinking}
 					<div class="flex justify-start">
 						<div class="w-full py-3">
-							<ThinkingIndicator label={thinkingState.label} />
+							<ThinkingIndicator label={thinkingLabel} />
 						</div>
 					</div>
 				{/if}
@@ -667,15 +841,20 @@
 			<ChatInput
 				bind:value={input}
 				bind:focused={inputFocused}
-				disabled={chat.status === "streaming"}
+				disabled={false}
+				sendDisabled={chat.status !== "ready"}
 				placeholder="Message..."
 				maxWidth="max-w-3xl"
-				on:submit={(e) => handleChatSubmit(e.detail)}
+				on:submit={(e) => {
+					if (chat.status === "ready") {
+						handleChatSubmit(e.detail);
+					}
+				}}
 			>
 				{#snippet agentPicker()}
 					<AgentPicker
 						bind:value={selectedAgent}
-						disabled={chat.status === "streaming"}
+						disabled={chat.status !== "ready"}
 					/>
 				{/snippet}
 				{#snippet modelPicker()}
@@ -698,16 +877,6 @@
 					{/if}
 				{/snippet}
 			</ChatInput>
-
-			<!-- Pinned tools bar - only shown in empty state and when input is empty, below chat input -->
-			{#if isEmpty}
-				<div
-					class="pinned-tools-container"
-					class:hidden={!!input.trim()}
-				>
-					<PinnedToolsBar {chat} />
-				</div>
-			{/if}
 		</div>
 	</div>
 </Page>
@@ -990,17 +1159,17 @@
 		background-image: -webkit-linear-gradient(
 			left,
 			var(--color-blue) 0%,
-			var(--color-blue) 25%,
-			transparent 50%,
-			var(--color-navy) 70%,
+			var(--color-blue) 30%,
+			transparent 55%,
+			var(--color-navy) 80%,
 			var(--color-navy) 100%
 		);
 		background-image: linear-gradient(
 			90deg,
 			var(--color-blue) 0%,
-			var(--color-blue) 25%,
-			transparent 50%,
-			var(--color-navy) 70%,
+			var(--color-blue) 30%,
+			transparent 55%,
+			var(--color-navy) 80%,
 			var(--color-navy) 100%
 		);
 		background-position: 100% center;
@@ -1010,7 +1179,7 @@
 		color: var(--color-navy);
 		-webkit-text-fill-color: transparent;
 		text-fill-color: transparent;
-		animation: shiny-title 1.5s ease-out forwards;
+		animation: shiny-title 1.3s ease-out forwards;
 	}
 
 	@keyframes shiny-title {

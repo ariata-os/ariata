@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id\n        FROM data.entities_place\n        WHERE ST_DWithin(\n            geo_center::geography,\n            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,\n            $3\n        )\n        ORDER BY ST_Distance(\n            geo_center::geography,\n            ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography\n        )\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e6645291256b3c1f209d22a2b99fcddc3671e3baa216fb328fde7610e63755d2"
+}

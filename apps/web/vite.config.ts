@@ -32,7 +32,7 @@ export default defineConfig(({ mode }) => {
 						if (req.url?.startsWith('/api/sessions')) return req.url;
 						// Keep preferences endpoint in SvelteKit (user preferences)
 						if (req.url?.startsWith('/api/preferences')) return req.url;
-						// Everything else goes to Rust backend (ELT database)
+						// Everything else goes to Rust backend (data pipeline API)
 						return null;
 					}
 				}

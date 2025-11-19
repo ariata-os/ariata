@@ -16,6 +16,15 @@ struct Event: Codable {
         self.bundleId = bundleId
         self.uploaded = false
     }
+
+    init(timestamp: Date, eventType: String, appName: String, bundleId: String?) {
+        self.id = nil
+        self.timestamp = timestamp
+        self.eventType = eventType
+        self.appName = appName
+        self.bundleId = bundleId
+        self.uploaded = false
+    }
     
     enum EventType {
         static let focus = "focus_gained"

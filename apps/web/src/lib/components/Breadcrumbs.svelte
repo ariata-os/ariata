@@ -1,9 +1,9 @@
 <script lang="ts">
     import { page } from "$app/state";
-    import type { ChatSessions } from "$lib/stores/chatSessions.svelte";
+    import { chatSessions as chatSessionsStore } from "$lib/stores/chatSessions.svelte";
 
     interface Props {
-        chatSessions: ChatSessions;
+        chatSessions: typeof chatSessionsStore;
     }
 
     let { chatSessions }: Props = $props();
@@ -23,7 +23,7 @@
         if (path === "/" && page.url.searchParams.has("conversationId")) {
             const conversationId = page.url.searchParams.get("conversationId");
             const conversation = chatSessions.sessions.find(
-                (s) => s.conversation_id === conversationId
+                (s: any) => s.conversation_id === conversationId
             );
             if (conversation && conversation.title) {
                 items.push({

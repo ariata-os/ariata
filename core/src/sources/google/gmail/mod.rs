@@ -22,8 +22,8 @@ use crate::{
     error::Result,
     sources::{
         auth::SourceAuth,
-        base::{SyncMode, SyncResult},
-        stream::Stream,
+        base::{ConfigSerializable, SyncMode, SyncResult},
+        pull_stream::PullStream,
     },
     storage::stream_writer::StreamWriter,
 };
@@ -64,11 +64,11 @@ impl GoogleGmailStream {
         }
     }
 
-    /// Load configuration from database (called by Stream trait)
+    /// Load configuration from database (called by PullStream trait)
     async fn load_config_internal(&mut self, db: &PgPool, source_id: Uuid) -> Result<()> {
-        // Try loading from streams table first (new pattern)
+        // Try loading from stream_connections table first (new pattern)
         let result = sqlx::query_as::<_, (serde_json::Value,)>(
-            "SELECT config FROM streams WHERE source_id = $1 AND stream_name = 'gmail'",
+            "SELECT config FROM stream_connections WHERE source_connection_id = $1 AND stream_name = 'gmail'",
         )
         .bind(source_id)
         .fetch_optional(db)
@@ -143,6 +143,25 @@ impl GoogleGmailStream {
 
         let completed_at = Utc::now();
 
+        // Collect records from StreamWriter for archive and transform pipeline
+        let records = {
+            let mut writer = self.stream_writer.lock().await;
+            let collected = writer
+                .collect_records(self.source_id, "gmail")
+                .map(|(records, _, _)| records);
+
+            if let Some(ref recs) = collected {
+                tracing::info!(
+                    record_count = recs.len(),
+                    "Collected Gmail records from StreamWriter"
+                );
+            } else {
+                tracing::warn!("No Gmail records collected from StreamWriter");
+            }
+
+            collected
+        };
+
         Ok(SyncResult {
             records_fetched,
             records_written,
@@ -150,7 +169,7 @@ impl GoogleGmailStream {
             next_cursor,
             started_at,
             completed_at,
-            records: None, // Gmail uses database, not direct transform
+            records, // Return collected records for archive/transform
             archive_job_id: None,
         })
     }
@@ -270,11 +289,14 @@ impl GoogleGmailStream {
                 break;
             }
 
-            tracing::debug!(
-                messages_fetched = records_fetched,
-                has_more = page_token.is_some(),
-                "Fetched messages page"
-            );
+            // Only log every 5th page or the last page
+            if records_fetched % 250 == 0 || page_token.is_none() {
+                tracing::debug!(
+                    messages_fetched = records_fetched,
+                    has_more = page_token.is_some(),
+                    "Gmail sync progress"
+                );
+            }
         }
 
         tracing::info!(
@@ -387,11 +409,14 @@ impl GoogleGmailStream {
                 break;
             }
 
-            tracing::debug!(
-                messages_fetched = records_fetched,
-                has_more = page_token.is_some(),
-                "Fetched threads page"
-            );
+            // Only log every 5th page or the last page
+            if records_fetched % 250 == 0 || page_token.is_none() {
+                tracing::debug!(
+                    messages_fetched = records_fetched,
+                    has_more = page_token.is_some(),
+                    "Gmail thread sync progress"
+                );
+            }
         }
 
         tracing::info!(
@@ -540,7 +565,7 @@ impl GoogleGmailStream {
             writer.write_record(self.source_id, "gmail", record, Some(date))?;
         }
 
-        tracing::debug!(message_id = %message.id, "Wrote Gmail message to object storage");
+        tracing::trace!(message_id = %message.id, "Wrote Gmail message to object storage");
         Ok(true)
     }
 
@@ -673,7 +698,7 @@ impl GoogleGmailStream {
     /// Get the last sync token (history ID) from the database
     async fn get_last_sync_token(&self) -> Result<Option<String>> {
         let row = sqlx::query_as::<_, (Option<String>,)>(
-            "SELECT last_sync_token FROM streams WHERE source_id = $1 AND stream_name = 'gmail'",
+            "SELECT last_sync_token FROM stream_connections WHERE source_connection_id = $1 AND stream_name = 'gmail'",
         )
         .bind(self.source_id)
         .fetch_optional(&self.db)
@@ -685,7 +710,7 @@ impl GoogleGmailStream {
     /// Save the history ID to the database
     async fn save_history_id(&self, history_id: &str) -> Result<()> {
         sqlx::query(
-            "UPDATE streams SET last_sync_token = $1, last_sync_at = $2 WHERE source_id = $3 AND stream_name = 'gmail'",
+            "UPDATE data.stream_connections SET last_sync_token = $1, last_sync_at = $2 WHERE source_connection_id = $3 AND stream_name = 'gmail'",
         )
         .bind(history_id)
         .bind(Utc::now())
@@ -697,11 +722,15 @@ impl GoogleGmailStream {
     }
 }
 
-// Implement Stream trait for GoogleGmailStream
+// Implement PullStream trait for GoogleGmailStream
 #[async_trait]
-impl Stream for GoogleGmailStream {
-    async fn sync(&self, mode: SyncMode) -> Result<SyncResult> {
+impl PullStream for GoogleGmailStream {
+    async fn sync_pull(&self, mode: SyncMode) -> Result<SyncResult> {
         self.sync_with_mode(&mode).await
+    }
+
+    async fn load_config(&mut self, db: &PgPool, source_id: Uuid) -> Result<()> {
+        self.load_config_internal(db, source_id).await
     }
 
     fn table_name(&self) -> &str {
@@ -714,10 +743,6 @@ impl Stream for GoogleGmailStream {
 
     fn source_name(&self) -> &str {
         "google"
-    }
-
-    async fn load_config(&mut self, db: &PgPool, source_id: Uuid) -> Result<()> {
-        self.load_config_internal(db, source_id).await
     }
 
     fn supports_incremental(&self) -> bool {

@@ -1,13 +1,13 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getDb } from '$lib/server/db';
-import { sources } from '$lib/server/schema';
+import { sourceConnections } from '$lib/server/schema';
 import { eq, and } from 'drizzle-orm';
 
 /**
  * Pairing Check API
  *
- * Checks if a device ID already exists in the sources table.
+ * Checks if a device ID already exists in the source_connections table.
  * Used by the /pair page to pre-fill device name.
  */
 export const GET: RequestHandler = async ({ url }) => {
@@ -22,11 +22,11 @@ export const GET: RequestHandler = async ({ url }) => {
 	try {
 		const sourcesResult = await db
 			.select()
-			.from(sources)
+			.from(sourceConnections)
 			.where(
 				and(
-					eq(sources.deviceId, deviceId),
-					eq(sources.authType, 'device')
+					eq(sourceConnections.deviceId, deviceId),
+					eq(sourceConnections.authType, 'device')
 				)
 			)
 			.limit(1);

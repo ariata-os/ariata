@@ -5,16 +5,16 @@
 	 * Components are lazy-loaded for better performance
 	 */
 	import BaseTool from './tools/BaseTool.svelte';
-	import type { ComponentType } from 'svelte';
+	import type { Component } from 'svelte';
 
 	// Lazy load tool components
-	const toolComponents: Record<string, () => Promise<{ default: ComponentType }>> = {
+	const toolComponents: Record<string, () => Promise<{ default: Component<any> }>> = {
 		'query_location_map': () => import('./tools/LocationMap.svelte'),
 		'query_pursuits': () => import('./tools/Pursuits.svelte'),
 		'web_search': () => import('./tools/WebSearch.svelte'),
 	};
 
-	let ToolComponent = $state<ComponentType | null>(null);
+	let ToolComponent = $state<Component<any> | null>(null);
 	let toolDataToPass = $state<unknown>(null);
 
 	interface ToolCallProps {
@@ -32,7 +32,8 @@
 		try {
 			parsedResult = JSON.parse(rawResult);
 		} catch (e) {
-			console.error('[ToolCall] Failed to parse result JSON:', e);
+			// Expected when tool returns plain error strings - handle gracefully
+			console.debug('[ToolCall] Non-JSON result, wrapping as error:', rawResult);
 			parsedResult = { error: rawResult };
 		}
 	}

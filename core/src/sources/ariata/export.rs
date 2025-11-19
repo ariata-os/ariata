@@ -21,7 +21,7 @@
 
 use crate::error::Result;
 use crate::sources::base::{SyncMode, SyncResult};
-use crate::sources::stream::Stream;
+use crate::sources::pull_stream::PullStream;
 use crate::storage::stream_writer::StreamWriter;
 use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
@@ -51,7 +51,7 @@ impl AppChatExportStream {
 }
 
 #[async_trait]
-impl Stream for AppChatExportStream {
+impl PullStream for AppChatExportStream {
     /// Export chat messages from app.chat_sessions to object storage (MinIO/S3)
     ///
     /// Uses cursor-based incremental sync:
@@ -59,7 +59,7 @@ impl Stream for AppChatExportStream {
     /// - Queries sessions modified since cursor
     /// - Extracts messages from JSONB array
     /// - Writes to object storage as encrypted JSONL via StreamWriter
-    async fn sync(&self, sync_mode: SyncMode) -> Result<SyncResult> {
+    async fn sync_pull(&self, sync_mode: SyncMode) -> Result<SyncResult> {
         let started_at = Utc::now();
 
         // Get cursor (last exported timestamp)

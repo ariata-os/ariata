@@ -35,54 +35,54 @@
 	/* Font Families */
 	--font-mono: 'IBM Plex Mono', monospace;
 	--font-sans: 'Avenir', sans-serif;
-	--font-serif: 'Lora', serif;
+	--font-serif: 'PP Writer', Lora, serif;
 }
 
 /* Markdown Styles */
 .markdown {
 	color: var(--color-stone-800);
-	line-height: 1.8;
+	line-height: 1.5;
 }
 
 .markdown h1 {
 	@apply text-2xl font-light font-serif mb-6;
 	color: var(--color-navy);
-	line-height: 1.4;
+	line-height: 1.5;
 }
 
 .markdown h2 {
 	@apply text-xl font-light font-serif mb-5;
 	color: var(--color-navy);
-	line-height: 1.4;
+	line-height: 1.5;
 }
 
 .markdown h3 {
 	@apply text-xl font-light font-serif mb-4;
 	color: var(--color-navy);
-	line-height: 1.4;
+	line-height: 1.5;
 }
 
 .markdown h4 {
 	@apply text-lg font-light font-serif mb-2;
 	color: var(--color-navy-light);
-	line-height: 1.4;
+	line-height: 1.5;
 }
 
 .markdown h5 {
 	@apply text-base font-light font-serif mb-1;
 	color: var(--color-navy-light);
-	line-height: 1.4;
+	line-height: 1.5;
 }
 
 .markdown h6 {
 	@apply text-sm font-light font-serif mb-1;
 	color: var(--color-stone-700);
-	line-height: 1.4;
+	line-height: 1.5;
 }
 
 .markdown p {
 	@apply mb-4;
-	line-height: 1.8;
+	line-height: 1.5;
 }
 
 .markdown strong {
@@ -126,7 +126,7 @@
 }
 
 .markdown li {
-	line-height: 1.8;
+	line-height: 1.5;
 	contain: layout;
 }
 

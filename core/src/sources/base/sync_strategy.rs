@@ -152,6 +152,68 @@ impl SyncStrategy {
             _ => None,
         }
     }
+
+    /// Get JSON schema for sync_strategy configuration field
+    ///
+    /// Returns a JSON schema object that can be embedded in stream config schemas.
+    /// This centralizes the sync strategy schema definition to avoid duplication.
+    pub fn json_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "description": "Strategy for determining what data to sync during full refresh operations",
+            "default": {
+                "type": "time_window",
+                "days_back": 365
+            },
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": ["type", "days_back"],
+                    "properties": {
+                        "type": { "const": "time_window" },
+                        "days_back": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Number of days to look back from current time"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {
+                        "type": { "const": "full_history" },
+                        "max_records": {
+                            "type": "integer",
+                            "nullable": true,
+                            "minimum": 1,
+                            "description": "Optional hard limit on number of records to prevent runaway syncs"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "required": ["type", "start_date", "end_date"],
+                    "properties": {
+                        "type": { "const": "date_range" },
+                        "start_date": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Start of date range (ISO 8601 format)"
+                        },
+                        "end_date": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "End of date range (ISO 8601 format)"
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            ]
+        })
+    }
 }
 
 #[cfg(test)]

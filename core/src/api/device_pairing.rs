@@ -6,7 +6,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::registry::StreamDescriptor;
+use crate::registry::RegisteredStream;
 use crate::sources::base::TokenEncryptor;
 
 /// Response when pairing is initiated
@@ -22,7 +22,7 @@ pub struct PairingInitiated {
 pub struct PairingCompleted {
     pub source_id: Uuid,
     pub device_token: String,
-    pub available_streams: Vec<StreamDescriptor>,
+    pub available_streams: Vec<RegisteredStream>,
 }
 
 /// Device information provided during pairing
@@ -69,17 +69,68 @@ pub async fn initiate_device_pairing(
     // Validate name format
     crate::api::validation::validate_name(name, "Device name")?;
 
+    // Check if a source with this name already exists and is actively paired
+    let existing_active: Option<(Uuid,)> = sqlx::query_as(
+        r#"
+        SELECT id
+        FROM source_connections
+        WHERE source = $1 AND name = $2 AND pairing_status = 'active'
+        "#,
+    )
+    .bind(device_type)
+    .bind(name)
+    .fetch_optional(db)
+    .await
+    .map_err(|e| Error::Database(format!("Failed to check existing source: {e}")))?;
+
+    if existing_active.is_some() {
+        return Err(Error::InvalidInput(format!(
+            "A {} device named '{}' is already paired. Please use a different name or unpair the existing device first.",
+            device_type, name
+        )));
+    }
+
+    // Check for existing pending pairing with same name and source
+    let existing_pending: Option<(Uuid, String, DateTime<Utc>)> = sqlx::query_as(
+        r#"
+        SELECT id, pairing_code, code_expires_at
+        FROM source_connections
+        WHERE source = $1 AND name = $2 AND pairing_status = 'pending' AND code_expires_at > NOW()
+        "#,
+    )
+    .bind(device_type)
+    .bind(name)
+    .fetch_optional(db)
+    .await
+    .map_err(|e| Error::Database(format!("Failed to check existing pairing: {e}")))?;
+
+    // If there's an existing pending pairing that hasn't expired, return it
+    if let Some((source_id, code, expires_at)) = existing_pending {
+        return Ok(PairingInitiated {
+            source_id,
+            code,
+            expires_at,
+        });
+    }
+
     // Generate 6-character alphanumeric pairing code
     let code = generate_pairing_code();
 
     // Set expiration to 10 minutes from now
     let expires_at = Utc::now() + Duration::minutes(10);
 
-    // Create pending source
+    // Create pending source or update existing expired one
     let source_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO sources (provider, name, auth_type, pairing_code, pairing_status, code_expires_at, is_active, is_internal)
+        INSERT INTO data.source_connections (source, name, auth_type, pairing_code, pairing_status, code_expires_at, is_active, is_internal)
         VALUES ($1, $2, 'device', $3, 'pending', $4, false, false)
+        ON CONFLICT (name)
+        DO UPDATE SET
+            pairing_code = $3,
+            pairing_status = 'pending',
+            code_expires_at = $4,
+            updated_at = NOW()
+        WHERE source_connections.pairing_status = 'pending' OR source_connections.pairing_status IS NULL
         RETURNING id
         "#,
     )
@@ -110,8 +161,8 @@ pub async fn complete_device_pairing(
     // Find source with matching pairing code
     let source = sqlx::query!(
         r#"
-        SELECT id, provider, code_expires_at
-        FROM data.sources
+        SELECT id, source, name, code_expires_at
+        FROM data.source_connections
         WHERE pairing_code = $1 AND pairing_status = 'pending'
         "#,
         code
@@ -138,31 +189,40 @@ pub async fn complete_device_pairing(
         .encrypt(&device_token)
         .map_err(|e| Error::Other(format!("Failed to encrypt device token: {e}")))?;
 
+    // Create a more user-friendly name using the device name
+    let updated_name = if !device_info.device_name.is_empty() {
+        format!("{} ({})", source.name, device_info.device_name)
+    } else {
+        source.name.clone()
+    };
+
     // Update source with device info and activate
     sqlx::query(
         r#"
-        UPDATE sources
+        UPDATE source_connections
         SET device_id = $1,
             device_info = $2,
             device_token = $3,
+            name = $4,
             pairing_status = 'active',
             pairing_code = NULL,
             code_expires_at = NULL,
             is_active = true,
             updated_at = NOW()
-        WHERE id = $4
+        WHERE id = $5
         "#,
     )
     .bind(&device_info.device_id)
     .bind(serde_json::to_value(&device_info).map_err(|e| Error::Serialization(e))?)
     .bind(&encrypted_token)
+    .bind(&updated_name)
     .bind(source.id)
     .execute(db)
     .await
     .map_err(|e| Error::Database(format!("Failed to complete pairing: {e}")))?;
 
     // Get available streams for this device type
-    let available_streams = crate::registry::get_source(&source.provider)
+    let available_streams = crate::registry::get_source(&source.source)
         .map(|info| info.streams.clone())
         .unwrap_or_default();
 
@@ -178,7 +238,7 @@ pub async fn check_pairing_status(db: &PgPool, source_id: Uuid) -> Result<Pairin
     let source = sqlx::query!(
         r#"
         SELECT pairing_status, device_info
-        FROM data.sources
+        FROM data.source_connections
         WHERE id = $1
         "#,
         source_id
@@ -209,11 +269,11 @@ pub async fn list_pending_pairings(db: &PgPool) -> Result<Vec<PendingPairing>> {
         SELECT
             id as source_id,
             name,
-            provider as device_type,
+            source as device_type,
             pairing_code as "code!",
             code_expires_at as "expires_at!",
             created_at
-        FROM data.sources
+        FROM data.source_connections
         WHERE pairing_status = 'pending'
         ORDER BY created_at DESC
         "#
@@ -235,7 +295,7 @@ pub async fn validate_device_token(db: &PgPool, token: &str) -> Result<Uuid> {
     let sources = sqlx::query_as::<_, (Uuid, String)>(
         r#"
         SELECT id, device_token
-        FROM sources
+        FROM data.source_connections
         WHERE device_token IS NOT NULL
         AND pairing_status = 'active'
         AND is_active = true
@@ -266,7 +326,7 @@ pub async fn validate_device_token(db: &PgPool, token: &str) -> Result<Uuid> {
 pub async fn update_last_seen(db: &PgPool, source_id: Uuid) -> Result<()> {
     sqlx::query(
         r#"
-        UPDATE sources
+        UPDATE data.source_connections
         SET last_seen_at = NOW()
         WHERE id = $1
         "#,
@@ -283,7 +343,7 @@ pub async fn update_last_seen(db: &PgPool, source_id: Uuid) -> Result<()> {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DeviceVerified {
     pub source_id: Uuid,
-    pub enabled_streams: Vec<crate::api::StreamInfo>,
+    pub enabled_streams: Vec<crate::api::StreamConnection>,
     pub configuration_complete: bool,
 }
 
@@ -302,7 +362,7 @@ pub async fn verify_device(db: &PgPool, token: &str) -> Result<DeviceVerified> {
     let all_streams = crate::api::list_source_streams(db, source_id).await?;
 
     // Filter to only enabled streams
-    let enabled_streams: Vec<crate::api::StreamInfo> =
+    let enabled_streams: Vec<crate::api::StreamConnection> =
         all_streams.into_iter().filter(|s| s.is_enabled).collect();
 
     // Configuration is complete if at least one stream is enabled

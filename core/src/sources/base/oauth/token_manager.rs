@@ -27,7 +27,7 @@ pub struct OAuthToken {
     pub access_token: String,
     pub refresh_token: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
-    pub provider: String,
+    pub source: String,
 }
 
 /// Configuration for the OAuth proxy
@@ -136,20 +136,20 @@ impl TokenManager {
         >(
             r#"
             SELECT
-                provider,
+                source,
                 access_token,
                 refresh_token,
                 token_expires_at
-            FROM sources
+            FROM source_connections
             WHERE id = $1 AND is_active = true
             "#,
         )
         .bind(source_id)
         .fetch_optional(&self.db)
         .await?
-        .ok_or_else(|| Error::Database(format!("Source not found: {source_id}")))?;
+        .ok_or_else(|| Error::Database(format!("Source connection not found: {source_id}")))?;
 
-        let (provider, access_token_encrypted, refresh_token_encrypted, token_expires_at) = record;
+        let (source, access_token_encrypted, refresh_token_encrypted, token_expires_at) = record;
 
         let access_token_encrypted = access_token_encrypted
             .ok_or_else(|| Error::Authentication("No access token found".to_string()))?;
@@ -167,7 +167,7 @@ impl TokenManager {
             access_token,
             refresh_token,
             expires_at: token_expires_at,
-            provider,
+            source,
         })
     }
 
@@ -180,7 +180,7 @@ impl TokenManager {
     }
 
     /// Refresh an OAuth token through the proxy
-    #[tracing::instrument(skip(self, token), fields(source_id = %source_id, provider = %token.provider))]
+    #[tracing::instrument(skip(self, token), fields(source_id = %source_id, source = %token.source))]
     pub async fn refresh_token(&self, source_id: Uuid, token: &OAuthToken) -> Result<OAuthToken> {
         let refresh_token = token
             .refresh_token
@@ -188,7 +188,7 @@ impl TokenManager {
             .ok_or_else(|| Error::Authentication("No refresh token available".to_string()))?;
 
         // Call the OAuth proxy refresh endpoint
-        let refresh_url = format!("{}/{}/refresh", self.proxy_config.base_url, token.provider);
+        let refresh_url = format!("{}/{}/refresh", self.proxy_config.base_url, token.source);
 
         let response = self
             .client
@@ -248,7 +248,7 @@ impl TokenManager {
         // Update tokens in database
         sqlx::query(
             r#"
-            UPDATE sources
+            UPDATE source_connections
             SET
                 access_token = $1,
                 refresh_token = COALESCE($2, refresh_token),
@@ -268,14 +268,14 @@ impl TokenManager {
             access_token: refresh_response.access_token,
             refresh_token: new_refresh_token,
             expires_at,
-            provider: token.provider.clone(),
+            source: token.source.clone(),
         })
     }
 
     /// Store initial OAuth tokens from a callback
     pub async fn store_initial_tokens(
         &self,
-        provider: &str,
+        source: &str,
         source_name: &str,
         access_token: String,
         refresh_token: Option<String>,
@@ -294,15 +294,15 @@ impl TokenManager {
 
         let source_id: Uuid = sqlx::query_scalar(
             r#"
-            INSERT INTO sources (
-                provider, name, access_token, refresh_token, token_expires_at, is_active, is_internal
+            INSERT INTO source_connections (
+                source, name, access_token, refresh_token, token_expires_at, is_active, is_internal
             ) VALUES (
                 $1, $2, $3, $4, $5, true, false
             )
             ON CONFLICT (name)
             DO UPDATE SET
                 access_token = EXCLUDED.access_token,
-                refresh_token = COALESCE(EXCLUDED.refresh_token, sources.refresh_token),
+                refresh_token = COALESCE(EXCLUDED.refresh_token, source_connections.refresh_token),
                 token_expires_at = EXCLUDED.token_expires_at,
                 is_active = true,
                 error_message = NULL,
@@ -311,7 +311,7 @@ impl TokenManager {
             RETURNING id
             "#,
         )
-        .bind(provider)
+        .bind(source)
         .bind(source_name)
         .bind(access_token_to_store)
         .bind(refresh_token_to_store)
@@ -326,7 +326,7 @@ impl TokenManager {
     pub async fn mark_auth_error(&self, source_id: Uuid, error_message: &str) -> Result<()> {
         sqlx::query(
             r#"
-            UPDATE sources
+            UPDATE source_connections
             SET
                 error_message = $1,
                 error_at = NOW(),
@@ -346,7 +346,7 @@ impl TokenManager {
     pub async fn clear_auth_error(&self, source_id: Uuid) -> Result<()> {
         sqlx::query(
             r#"
-            UPDATE sources
+            UPDATE source_connections
             SET
                 error_message = NULL,
                 error_at = NULL,
@@ -376,7 +376,7 @@ mod tests {
             access_token: "test".to_string(),
             refresh_token: Some("refresh".to_string()),
             expires_at: Some(Utc::now() + Duration::minutes(1)),
-            provider: "google".to_string(),
+            source: "google".to_string(),
         };
         assert!(manager.needs_refresh(&token));
 
@@ -385,7 +385,7 @@ mod tests {
             access_token: "test".to_string(),
             refresh_token: Some("refresh".to_string()),
             expires_at: Some(Utc::now() + Duration::minutes(10)),
-            provider: "google".to_string(),
+            source: "google".to_string(),
         };
         assert!(!manager.needs_refresh(&token));
 
@@ -394,7 +394,7 @@ mod tests {
             access_token: "test".to_string(),
             refresh_token: Some("refresh".to_string()),
             expires_at: None,
-            provider: "google".to_string(),
+            source: "google".to_string(),
         };
         assert!(!manager.needs_refresh(&token));
     }

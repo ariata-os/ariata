@@ -1,14 +1,15 @@
 //! Google source registration for the catalog
 
-use crate::registry::{AuthType, OAuthConfig, SourceDescriptor, SourceRegistry, StreamDescriptor};
+use crate::registry::{AuthType, OAuthConfig, RegisteredSource, SourceRegistry, RegisteredStream};
+use crate::sources::base::SyncStrategy;
 use serde_json::json;
 
 /// Google source registration
 pub struct GoogleSource;
 
 impl SourceRegistry for GoogleSource {
-    fn descriptor() -> SourceDescriptor {
-        SourceDescriptor {
+    fn descriptor() -> RegisteredSource {
+        RegisteredSource {
             name: "google",
             display_name: "Google",
             description: "Sync data from Google Workspace services (Calendar, Gmail, Drive)",
@@ -24,7 +25,7 @@ impl SourceRegistry for GoogleSource {
             icon: Some("ri:google-fill"),
             streams: vec![
                 // Calendar stream
-                StreamDescriptor::new("calendar")
+                RegisteredStream::new("calendar")
                     .display_name("Google Calendar")
                     .description(
                         "Sync calendar events with attendees, locations, and conference details",
@@ -37,7 +38,7 @@ impl SourceRegistry for GoogleSource {
                     .default_cron_schedule("0 0 */6 * * *") // Every 6 hours (6-field: sec min hour day month dow)
                     .build(),
                 // Gmail stream
-                StreamDescriptor::new("gmail")
+                RegisteredStream::new("gmail")
                     .display_name("Gmail")
                     .description("Sync email messages and threads with full metadata")
                     .table_name("stream_google_gmail")
@@ -63,55 +64,7 @@ fn calendar_config_schema() -> serde_json::Value {
                 "default": ["primary"],
                 "description": "List of calendar IDs to sync (use 'primary' for main calendar)"
             },
-            "sync_strategy": {
-                "type": "object",
-                "description": "Strategy for determining what data to sync during full refresh operations",
-                "oneOf": [
-                    {
-                        "type": "object",
-                        "required": ["type", "days_back"],
-                        "properties": {
-                            "type": { "const": "time_window" },
-                            "days_back": {
-                                "type": "integer",
-                                "default": 365,
-                                "minimum": 1,
-                                "maximum": 3650,
-                                "description": "Number of days to look back from now"
-                            }
-                        }
-                    },
-                    {
-                        "type": "object",
-                        "required": ["type"],
-                        "properties": {
-                            "type": { "const": "full_history" },
-                            "max_records": {
-                                "type": "integer",
-                                "nullable": true,
-                                "description": "Optional limit on number of records to prevent runaway syncs"
-                            }
-                        }
-                    },
-                    {
-                        "type": "object",
-                        "required": ["type", "start_date", "end_date"],
-                        "properties": {
-                            "type": { "const": "date_range" },
-                            "start_date": {
-                                "type": "string",
-                                "format": "date-time",
-                                "description": "Start of date range (ISO 8601)"
-                            },
-                            "end_date": {
-                                "type": "string",
-                                "format": "date-time",
-                                "description": "End of date range (ISO 8601)"
-                            }
-                        }
-                    }
-                ]
-            },
+            "sync_strategy": SyncStrategy::json_schema(),
             "include_declined": {
                 "type": "boolean",
                 "default": false,
@@ -174,55 +127,7 @@ fn gmail_config_schema() -> serde_json::Value {
                 "default": true,
                 "description": "Fetch full message body content"
             },
-            "sync_strategy": {
-                "type": "object",
-                "description": "Strategy for determining what data to sync during full refresh operations",
-                "oneOf": [
-                    {
-                        "type": "object",
-                        "required": ["type", "days_back"],
-                        "properties": {
-                            "type": { "const": "time_window" },
-                            "days_back": {
-                                "type": "integer",
-                                "default": 365,
-                                "minimum": 1,
-                                "maximum": 3650,
-                                "description": "Number of days to look back from now"
-                            }
-                        }
-                    },
-                    {
-                        "type": "object",
-                        "required": ["type"],
-                        "properties": {
-                            "type": { "const": "full_history" },
-                            "max_records": {
-                                "type": "integer",
-                                "nullable": true,
-                                "description": "Optional limit on number of records"
-                            }
-                        }
-                    },
-                    {
-                        "type": "object",
-                        "required": ["type", "start_date", "end_date"],
-                        "properties": {
-                            "type": { "const": "date_range" },
-                            "start_date": {
-                                "type": "string",
-                                "format": "date-time",
-                                "description": "Start of date range (ISO 8601)"
-                            },
-                            "end_date": {
-                                "type": "string",
-                                "format": "date-time",
-                                "description": "End of date range (ISO 8601)"
-                            }
-                        }
-                    }
-                ]
-            },
+            "sync_strategy": SyncStrategy::json_schema(),
             "max_messages_per_sync": {
                 "type": "integer",
                 "default": 500,

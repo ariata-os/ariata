@@ -78,9 +78,9 @@ pub use api::{
     RegisterDeviceRequest,
 
     // Types
-    Source,
-    SourceStatus,
-    StreamInfo,
+    SourceConnection,
+    SourceConnectionStatus,
+    StreamConnection,
     UpdateStreamConfigRequest,
     UpdateStreamScheduleRequest,
 };

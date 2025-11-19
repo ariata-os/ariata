@@ -35,7 +35,7 @@
         lg: "px-6 py-3 text-base",
     };
 
-    const computedClass = `${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`;
+    const computedClass = `${baseStyles} ${variantStyles[variant as keyof typeof variantStyles]} ${sizeStyles[size as keyof typeof sizeStyles]} ${className}`;
 </script>
 
 <button {type} class={computedClass} {disabled} {onclick}>

@@ -106,16 +106,17 @@ impl OntologyTransform for MacAppsTransform {
                 let stream_id = record
                     .get("id")
                     .and_then(|v| v.as_str())
-                    .and_then(|s| Uuid::parse_str(s).ok());
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(|| Uuid::new_v4());
 
                 // Validate required fields
-                if let (Some(ts), Some(et), Some(an), Some(sid)) = (timestamp, event_type, app_name, stream_id) {
+                if let (Some(ts), Some(et), Some(an)) = (timestamp, event_type, app_name) {
                     all_events.push(AppEvent {
                         timestamp: ts,
                         event_type: et,
                         app_name: an,
                         bundle_id,
-                        stream_id: sid,
+                        stream_id,
                     });
                 }
             }
@@ -288,6 +289,7 @@ struct AppSession {
 fn aggregate_app_events_to_sessions(events: Vec<AppEvent>) -> Vec<AppSession> {
     let mut sessions = Vec::new();
     let mut current_session: Option<AppSession> = None;
+    let events_count = events.len();
 
     for event in events {
         match event.event_type.as_str() {
@@ -311,9 +313,17 @@ fn aggregate_app_events_to_sessions(events: Vec<AppEvent>) -> Vec<AppSession> {
                 // End current session
                 if let Some(mut session) = current_session.take() {
                     session.end_time = event.timestamp;
-                    // Only add sessions with meaningful duration (> 0 seconds)
-                    if session.end_time > session.start_time {
+                    // Only add sessions with valid duration (>= 0 seconds, allows zero-duration for quick switches)
+                    if session.end_time >= session.start_time {
                         sessions.push(session);
+                    } else {
+                        tracing::warn!(
+                            app_name = %session.app_name,
+                            start = %session.start_time,
+                            end = %session.end_time,
+                            duration_ms = session.end_time.signed_duration_since(session.start_time).num_milliseconds(),
+                            "Filtering out session with negative duration (clock skew or data error)"
+                        );
                     }
                 }
             }
@@ -328,6 +338,12 @@ fn aggregate_app_events_to_sessions(events: Vec<AppEvent>) -> Vec<AppSession> {
         session.end_time = session.start_time + chrono::Duration::minutes(1);
         sessions.push(session);
     }
+
+    tracing::info!(
+        events_count = events_count,
+        sessions_count = sessions.len(),
+        "Aggregated app events into sessions"
+    );
 
     sessions
 }
@@ -708,7 +724,7 @@ impl OntologyTransform for MacIMessageTransform {
             crate::Error::Other("No data source available for transform".to_string())
         })?;
         let batches = data_source
-            .read_with_checkpoint(source_id, "messages", checkpoint_key)
+            .read_with_checkpoint(source_id, "imessage", checkpoint_key)
             .await?;
         let read_duration = read_start.elapsed();
 

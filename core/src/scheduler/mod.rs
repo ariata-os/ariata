@@ -61,21 +61,88 @@ impl Scheduler {
     ///
     /// Loads all enabled streams with cron schedules from the database
     /// and creates jobs for each.
+    ///
+    /// Note: Only pull streams (Google, Notion) are scheduled. Push streams
+    /// (Mac, iOS) are not scheduled since they're initiated by client devices.
     pub async fn start(&self) -> Result<()> {
+        // First, check for enabled streams WITHOUT cron schedules and log warnings
+        let streams_without_schedule = sqlx::query_as::<_, (Uuid, String, String, String)>(
+            r#"
+            SELECT
+                st.id as stream_connection_id,
+                s.source,
+                s.name as source_name,
+                st.stream_name
+            FROM stream_connections st
+            JOIN source_connections s ON st.source_connection_id = s.id
+            WHERE st.is_enabled = true
+              AND st.cron_schedule IS NULL
+              AND s.is_active = true
+              AND s.source NOT IN ('mac', 'ios')  -- Exclude push-only sources
+            "#,
+        )
+        .fetch_all(&self.db)
+        .await?;
+
+        // Check if any enabled streams are missing schedules
+        for (stream_id, source, source_name, stream_name) in &streams_without_schedule {
+            // Look up registry default
+            if let Some(registered_stream) = crate::registry::get_stream(source, stream_name) {
+                if let Some(default_cron) = registered_stream.default_cron_schedule {
+                    tracing::warn!(
+                        "Stream {}/{} ({}) is enabled but has no cron_schedule. \
+                        Registry default is '{}'. Consider updating the database or seed config.",
+                        source, stream_name, source_name, default_cron
+                    );
+
+                    // Apply the default schedule to the database
+                    tracing::info!(
+                        "Applying registry default cron schedule '{}' to {}/{}",
+                        default_cron, source, stream_name
+                    );
+
+                    sqlx::query!(
+                        r#"
+                        UPDATE data.stream_connections
+                        SET cron_schedule = $1, updated_at = NOW()
+                        WHERE id = $2
+                        "#,
+                        default_cron,
+                        stream_id
+                    )
+                    .execute(&self.db)
+                    .await?;
+                } else {
+                    tracing::debug!(
+                        "Stream {}/{} ({}) is enabled but has no cron_schedule and no registry default. \
+                        This stream may need manual scheduling or is not meant to be scheduled.",
+                        source, stream_name, source_name
+                    );
+                }
+            } else {
+                tracing::warn!(
+                    "Stream {}/{} ({}) not found in registry. Cannot apply default schedule.",
+                    source, stream_name, source_name
+                );
+            }
+        }
+
         // Load enabled streams from database
+        // Filter to only pull streams (not 'mac' or 'ios' which are push-only)
         let streams = sqlx::query_as::<_, (Uuid, String, String, String, Option<String>)>(
             r#"
             SELECT
                 s.id as source_id,
                 s.name as source_name,
-                s.provider,
+                s.source,
                 st.stream_name,
                 st.cron_schedule
-            FROM streams st
-            JOIN sources s ON st.source_id = s.id
+            FROM stream_connections st
+            JOIN source_connections s ON st.source_connection_id = s.id
             WHERE st.is_enabled = true
               AND st.cron_schedule IS NOT NULL
               AND s.is_active = true
+              AND s.source NOT IN ('mac', 'ios')  -- Exclude push-only sources
             "#,
         )
         .fetch_all(&self.db)
@@ -91,7 +158,7 @@ impl Scheduler {
             let storage = self.storage.clone();
             let stream_writer = self.stream_writer.clone();
 
-            tracing::info!(
+            tracing::debug!(
                 "Scheduling {}/{} ({}) with cron: {}",
                 provider,
                 stream_name,
@@ -180,7 +247,7 @@ impl Scheduler {
         let storage = self.storage.clone();
         let stream_writer = self.stream_writer.clone();
 
-        tracing::info!("Scheduling location visit clustering job (hourly)");
+        tracing::debug!("Scheduling location visit clustering job (hourly)");
 
         // Create transform context
         let api_keys = crate::jobs::ApiKeys::from_env();
@@ -196,7 +263,7 @@ impl Scheduler {
         )
         .await?;
 
-        tracing::info!("Location visit clustering job scheduled successfully");
+        tracing::debug!("Location visit clustering job scheduled successfully");
         Ok(())
     }
 
@@ -280,10 +347,11 @@ impl Scheduler {
                 st.stream_name,
                 st.cron_schedule,
                 st.last_sync_at
-            FROM streams st
-            JOIN sources s ON st.source_id = s.id
+            FROM stream_connections st
+            JOIN source_connections s ON st.source_connection_id = s.id
             WHERE st.is_enabled = true
               AND st.cron_schedule IS NOT NULL
+              AND s.source NOT IN ('mac', 'ios')  -- Exclude push-only sources
             ORDER BY s.name, st.stream_name
             "#,
         )

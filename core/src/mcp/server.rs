@@ -36,7 +36,7 @@ impl AriataMcpServer {
         let tool_count = tool_router.list_all().len();
         tracing::info!("MCP Server initialized with {} tools", tool_count);
         if tool_count > 0 {
-            tracing::info!(
+            tracing::debug!(
                 "Available MCP tools: {:?}",
                 tool_router
                     .list_all()

@@ -4,26 +4,32 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use ts_rs::TS;
 use uuid::Uuid;
 
 use super::sources::get_source;
 use crate::error::{Error, Result};
 use crate::storage::stream_writer::StreamWriter;
 
-/// Information about a stream, including enablement status and configuration
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
-pub struct StreamInfo {
+/// A user's stream connection
+/// Merges RegisteredStream (from registry) with user state (from DB).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export, export_to = "../../apps/web/src/lib/types/")]
+pub struct StreamConnection {
     pub stream_name: String,
     pub display_name: String,
     pub description: String,
     pub table_name: String,
     pub is_enabled: bool,
     pub cron_schedule: Option<String>,
+    #[ts(type = "any")]
     pub config: serde_json::Value,
     pub last_sync_at: Option<DateTime<Utc>>,
     pub supports_incremental: bool,
     pub supports_full_refresh: bool,
+    #[ts(type = "any")]
     pub config_schema: serde_json::Value,
+    #[ts(type = "any")]
     pub config_example: serde_json::Value,
     pub default_cron_schedule: Option<String>,
 }
@@ -47,7 +53,7 @@ pub struct UpdateStreamScheduleRequest {
 }
 
 /// # Returns
-/// List of StreamInfo with enablement status and configuration
+/// List of StreamConnection with enablement status and configuration
 ///
 /// # Example
 /// ```rust
@@ -60,10 +66,10 @@ pub struct UpdateStreamScheduleRequest {
 ///     );
 /// }
 /// ```
-pub async fn list_source_streams(db: &PgPool, source_id: Uuid) -> Result<Vec<StreamInfo>> {
+pub async fn list_source_streams(db: &PgPool, source_id: Uuid) -> Result<Vec<StreamConnection>> {
     // Get source to determine type
     let source = get_source(db, source_id).await?;
-    let provider = &source.provider;
+    let provider = &source.source;
 
     // Get source descriptor from registry
     let descriptor = crate::registry::get_source(provider)
@@ -79,8 +85,8 @@ pub async fn list_source_streams(db: &PgPool, source_id: Uuid) -> Result<Vec<Str
     )> = sqlx::query_as(
         r#"
             SELECT stream_name, is_enabled, cron_schedule, config, last_sync_at
-            FROM streams
-            WHERE source_id = $1
+            FROM stream_connections
+            WHERE source_connection_id = $1
             "#,
     )
     .bind(source_id)
@@ -102,7 +108,7 @@ pub async fn list_source_streams(db: &PgPool, source_id: Uuid) -> Result<Vec<Str
             (false, None, serde_json::json!({}), None)
         };
 
-        result.push(StreamInfo {
+        result.push(StreamConnection {
             stream_name: stream_desc.name.to_string(),
             display_name: stream_desc.display_name.to_string(),
             description: stream_desc.description.to_string(),
@@ -130,12 +136,12 @@ pub async fn list_source_streams(db: &PgPool, source_id: Uuid) -> Result<Vec<Str
 /// * `stream_name` - Name of the stream
 ///
 /// # Returns
-/// StreamInfo with current configuration
+/// StreamConnection with current configuration
 pub async fn get_stream_info(
     db: &PgPool,
     source_id: Uuid,
     stream_name: &str,
-) -> Result<StreamInfo> {
+) -> Result<StreamConnection> {
     let streams = list_source_streams(db, source_id).await?;
     streams
         .into_iter()
@@ -155,7 +161,7 @@ pub async fn get_stream_info(
 /// * `config` - Optional configuration (uses defaults if not provided)
 ///
 /// # Returns
-/// Updated StreamInfo
+/// Updated StreamConnection
 pub async fn enable_stream(
     db: &PgPool,
     storage: &crate::storage::Storage,
@@ -163,12 +169,12 @@ pub async fn enable_stream(
     source_id: Uuid,
     stream_name: &str,
     config: Option<serde_json::Value>,
-) -> Result<StreamInfo> {
+) -> Result<StreamConnection> {
     // Get source to determine type
     let source = get_source(db, source_id).await?;
 
     // Validate stream exists in registry
-    let stream_desc = crate::registry::get_stream(&source.provider, stream_name)
+    let stream_desc = crate::registry::get_stream(&source.source, stream_name)
         .ok_or_else(|| Error::Other(format!("Stream not found: {stream_name}")))?;
 
     // Use provided config or empty object (stream will load defaults)
@@ -180,13 +186,13 @@ pub async fn enable_stream(
     // Insert or update streams table
     sqlx::query(
         r#"
-        INSERT INTO streams (id, source_id, stream_name, table_name, is_enabled, config, cron_schedule, created_at, updated_at)
+        INSERT INTO stream_connections (id, source_connection_id, stream_name, table_name, is_enabled, config, cron_schedule, created_at, updated_at)
         VALUES ($1, $2, $3, $4, true, $5, $6, NOW(), NOW())
-        ON CONFLICT (source_id, stream_name)
+        ON CONFLICT (source_connection_id, stream_name)
         DO UPDATE SET
             is_enabled = true,
             config = EXCLUDED.config,
-            cron_schedule = COALESCE(streams.cron_schedule, EXCLUDED.cron_schedule),
+            cron_schedule = COALESCE(stream_connections.cron_schedule, EXCLUDED.cron_schedule),
             updated_at = NOW()
         "#
     )
@@ -256,9 +262,9 @@ pub async fn enable_stream(
 pub async fn disable_stream(db: &PgPool, source_id: Uuid, stream_name: &str) -> Result<()> {
     sqlx::query(
         r#"
-        UPDATE streams
+        UPDATE stream_connections
         SET is_enabled = false, updated_at = NOW()
-        WHERE source_id = $1 AND stream_name = $2
+        WHERE source_connection_id = $1 AND stream_name = $2
         "#,
     )
     .bind(source_id)
@@ -279,22 +285,22 @@ pub async fn disable_stream(db: &PgPool, source_id: Uuid, stream_name: &str) -> 
 /// * `config` - New configuration (JSONB)
 ///
 /// # Returns
-/// Updated StreamInfo
+/// Updated StreamConnection
 pub async fn update_stream_config(
     db: &PgPool,
     source_id: Uuid,
     stream_name: &str,
     config: serde_json::Value,
-) -> Result<StreamInfo> {
+) -> Result<StreamConnection> {
     // Validate stream exists
     get_stream_info(db, source_id, stream_name).await?;
 
     // Update config
     sqlx::query(
         r#"
-        UPDATE streams
+        UPDATE stream_connections
         SET config = $1, updated_at = NOW()
-        WHERE source_id = $2 AND stream_name = $3
+        WHERE source_connection_id = $2 AND stream_name = $3
         "#,
     )
     .bind(&config)
@@ -317,22 +323,22 @@ pub async fn update_stream_config(
 /// * `cron_schedule` - Cron expression in 6-field format (e.g., "0 0 */6 * * *" for every 6 hours) or None to disable scheduling
 ///
 /// # Returns
-/// Updated StreamInfo
+/// Updated StreamConnection
 pub async fn update_stream_schedule(
     db: &PgPool,
     source_id: Uuid,
     stream_name: &str,
     cron_schedule: Option<String>,
-) -> Result<StreamInfo> {
+) -> Result<StreamConnection> {
     // Validate stream exists
     get_stream_info(db, source_id, stream_name).await?;
 
     // Update schedule
     sqlx::query(
         r#"
-        UPDATE streams
+        UPDATE stream_connections
         SET cron_schedule = $1, updated_at = NOW()
-        WHERE source_id = $2 AND stream_name = $3
+        WHERE source_connection_id = $2 AND stream_name = $3
         "#,
     )
     .bind(&cron_schedule)
@@ -355,9 +361,9 @@ pub async fn enable_default_streams(db: &PgPool, source_id: Uuid, provider: &str
     for stream in &descriptor.streams {
         sqlx::query(
             r#"
-            INSERT INTO streams (id, source_id, stream_name, table_name, is_enabled, config, created_at, updated_at)
+            INSERT INTO stream_connections (id, source_connection_id, stream_name, table_name, is_enabled, config, created_at, updated_at)
             VALUES ($1, $2, $3, $4, false, '{}', NOW(), NOW())
-            ON CONFLICT (source_id, stream_name) DO NOTHING
+            ON CONFLICT (source_connection_id, stream_name) DO NOTHING
             "#
         )
         .bind(Uuid::new_v4())
@@ -370,4 +376,15 @@ pub async fn enable_default_streams(db: &PgPool, source_id: Uuid, provider: &str
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Export TypeScript types for frontend use
+    #[test]
+    fn export_typescript_types() {
+        StreamConnection::export().expect("Failed to export StreamConnection");
+    }
 }

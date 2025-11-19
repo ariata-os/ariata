@@ -14,13 +14,13 @@
 //! - `jobs` - Async job tracking and management
 //! - `registry` - Catalog/registry queries
 //! - `ontologies` - Ontology table queries
-//! - `actions` - Temporal pursuits management (tasks/initiatives/aspirations)
+//! - `praxis` - Temporal pursuits management (tasks/initiatives/aspirations)
 //! - `axiology` - Value system management (values/telos/virtues/vices/habits/temperaments/preferences)
 //! - `rate_limit` - API usage tracking and rate limiting
 //! - `models` - LLM model configurations
 //! - `agents` - AI agent configurations
 
-pub mod actions;
+pub mod praxis;
 pub mod agents;
 pub mod rate_limit;
 pub mod assistant_profile;
@@ -39,11 +39,11 @@ pub mod types;
 pub mod validation;
 
 // Re-export commonly used types
-pub use streams::StreamInfo;
-pub use types::{Source, SourceStatus};
+pub use streams::StreamConnection;
+pub use types::{SourceConnection, SourceConnectionStatus};
 
 // Re-export all functions for convenience
-pub use actions::{
+pub use praxis::{
     create_aspiration, create_initiative, create_task, delete_aspiration, delete_initiative,
     delete_task, get_aspiration, get_initiative, get_task, list_aspirations, list_initiatives,
     list_tags, list_tasks, update_aspiration, update_initiative, update_task, Aspiration,
@@ -51,18 +51,18 @@ pub use actions::{
     UpdateTaskRequest,
 };
 pub use assistant_profile::{
-    get_assistant_name, get_assistant_profile, get_pinned_tools, update_assistant_profile,
+    get_assistant_name, get_assistant_profile, update_assistant_profile,
     UpdateAssistantProfileRequest,
 };
 pub use axiology::{
-    create_habit, create_preference, create_telos, create_temperament, create_value, create_vice,
-    create_virtue, delete_habit, delete_preference, delete_telos, delete_temperament,
-    delete_value, delete_vice, delete_virtue, get_habit, get_preference, get_telos,
-    get_temperament, get_value, get_vice, get_virtue, list_habits, list_preferences, list_telos,
-    list_temperaments, list_values, list_vices, list_virtues, update_habit, update_preference,
+    create_preference, create_telos, create_temperament, create_value, create_vice,
+    create_virtue, delete_preference, delete_telos, delete_temperament,
+    delete_value, delete_vice, delete_virtue, get_preference, get_telos,
+    get_temperament, get_value, get_vice, get_virtue, list_preferences, list_telos,
+    list_temperaments, list_values, list_vices, list_virtues, update_preference,
     update_telos, update_temperament, update_value, update_vice, update_virtue,
-    CreateHabitRequest, CreatePreferenceRequest, CreateSimpleRequest, Habit, Preference,
-    Temperament, Telos, UpdateHabitRequest, UpdatePreferenceRequest, UpdateSimpleRequest, Value,
+    CreatePreferenceRequest, CreateSimpleRequest, Preference,
+    Temperament, Telos, UpdatePreferenceRequest, UpdateSimpleRequest, Value,
     Vice, Virtue,
 };
 pub use device_pairing::{

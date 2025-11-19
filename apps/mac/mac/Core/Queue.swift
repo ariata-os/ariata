@@ -128,7 +128,7 @@ class Queue {
         }
     }
     
-    func getPendingEvents(limit: Int = 1000) throws -> [(id: Int64, event: Event)] {
+    func getPendingEvents(limit: Int = 500) throws -> [(id: Int64, event: Event)] {
         try queue.sync {
             let querySQL = """
                 SELECT id, timestamp, event_type, app_name, bundle_id
@@ -151,24 +151,29 @@ class Queue {
             
             while sqlite3_step(statement) == SQLITE_ROW {
                 let id = sqlite3_column_int64(statement, 0)
-                
+
                 // Skip if required columns are NULL
-                guard sqlite3_column_type(statement, 2) != SQLITE_NULL,
+                guard sqlite3_column_type(statement, 1) != SQLITE_NULL,
+                      sqlite3_column_type(statement, 2) != SQLITE_NULL,
                       sqlite3_column_type(statement, 3) != SQLITE_NULL else {
                     continue
                 }
-                
+
+                // Read timestamp from database
+                let timestampString = String(cString: sqlite3_column_text(statement, 1))
+                let timestamp = ISO8601DateFormatter().date(from: timestampString) ?? Date()
+
                 let eventType = String(cString: sqlite3_column_text(statement, 2))
                 let appName = String(cString: sqlite3_column_text(statement, 3))
-                
+
                 let bundleId: String? = if sqlite3_column_type(statement, 4) != SQLITE_NULL {
                     String(cString: sqlite3_column_text(statement, 4))
                 } else {
                     nil
                 }
-                
-                // Create event with the data from database
-                let event = Event(eventType: eventType, appName: appName, bundleId: bundleId)
+
+                // Create event with original timestamp from database
+                let event = Event(timestamp: timestamp, eventType: eventType, appName: appName, bundleId: bundleId)
                 events.append((id: id, event: event))
             }
             
@@ -178,32 +183,74 @@ class Queue {
     
     func markEventsAsUploaded(_ eventIds: [Int64]) throws {
         try queue.sync(flags: .barrier) {
+            // Begin transaction for atomic updates
+            guard sqlite3_exec(db, "BEGIN TRANSACTION", nil, nil, nil) == SQLITE_OK else {
+                throw QueueError.cannotPrepareStatement
+            }
+
+            // Ensure rollback on failure
+            var shouldCommit = false
+            defer {
+                if !shouldCommit {
+                    sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+                }
+            }
+
             let updateSQL = "UPDATE events SET uploaded = 1 WHERE id = ?"
-            
+
             var statement: OpaquePointer?
             defer { sqlite3_finalize(statement) }
-            
+
             guard sqlite3_prepare_v2(db, updateSQL, -1, &statement, nil) == SQLITE_OK else {
                 throw QueueError.cannotPrepareStatement
             }
-            
+
             for id in eventIds {
                 sqlite3_bind_int64(statement, 1, id)
-                sqlite3_step(statement)
+
+                // Check return value to catch failures
+                guard sqlite3_step(statement) == SQLITE_DONE else {
+                    throw QueueError.cannotUpdateEvent
+                }
+
                 sqlite3_reset(statement)
             }
+
+            // Commit transaction
+            guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else {
+                throw QueueError.cannotPrepareStatement
+            }
+
+            shouldCommit = true
         }
     }
     
     func cleanupOldEvents(olderThanHours: Int = 168) throws {
         try queue.sync(flags: .barrier) {
+            // Calculate cutoff date in Swift to avoid string interpolation in SQL
+            let cutoffDate = Date().addingTimeInterval(TimeInterval(-olderThanHours * 3600))
+            let cutoffString = ISO8601DateFormatter().string(from: cutoffDate)
+
             let deleteSQL = """
                 DELETE FROM events
                 WHERE uploaded = 1
-                AND datetime(created_at) < datetime('now', '-\(olderThanHours) hours')
+                AND created_at < ?
             """
-            
-            if sqlite3_exec(db, deleteSQL, nil, nil, nil) != SQLITE_OK {
+
+            var statement: OpaquePointer?
+            defer {
+                if statement != nil {
+                    sqlite3_finalize(statement)
+                }
+            }
+
+            guard sqlite3_prepare_v2(db, deleteSQL, -1, &statement, nil) == SQLITE_OK else {
+                throw QueueError.cannotPrepareStatement
+            }
+
+            sqlite3_bind_text(statement, 1, (cutoffString as NSString).utf8String, -1, SQLITE_TRANSIENT)
+
+            guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw QueueError.cannotDeleteEvents
             }
         }
@@ -273,13 +320,14 @@ class Queue {
     
     // MARK: - Message Methods
     
-    func addMessage(_ message: Message) {
+    func addMessage(_ message: Message, completion: ((Result<Void, Error>) -> Void)? = nil) {
         queue.async(flags: .barrier) {
             // Validate date is reasonable (between 2000 and 2100)
             let calendar = Calendar.current
             let year = calendar.component(.year, from: message.date)
             guard year >= 2000 && year <= 2100 else {
                 print("⚠️ Skipping message with invalid date: \(message.date) (year: \(year))")
+                completion?(.failure(QueueError.cannotInsertEvent))
                 return
             }
             
@@ -298,6 +346,7 @@ class Queue {
                 
                 guard sqlite3_prepare_v2(self.db, insertSQL, -1, &statement, nil) == SQLITE_OK else {
                     print("Failed to prepare message insert statement")
+                    completion?(.failure(QueueError.cannotPrepareStatement))
                     return
                 }
                 
@@ -394,6 +443,9 @@ class Queue {
                 
             if sqlite3_step(statement) != SQLITE_DONE {
                 print("Failed to insert message: \(String(cString: sqlite3_errmsg(self.db)))")
+                completion?(.failure(QueueError.cannotInsertEvent))
+            } else {
+                completion?(.success(()))
             }
         }
     }
@@ -520,33 +572,75 @@ class Queue {
     
     func markMessagesAsUploaded(_ messageIds: [Int64]) throws {
         try queue.sync(flags: .barrier) {
+            // Begin transaction for atomic updates
+            guard sqlite3_exec(db, "BEGIN TRANSACTION", nil, nil, nil) == SQLITE_OK else {
+                throw QueueError.cannotPrepareStatement
+            }
+
+            // Ensure rollback on failure
+            var shouldCommit = false
+            defer {
+                if !shouldCommit {
+                    sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+                }
+            }
+
             let updateSQL = "UPDATE messages SET uploaded = 1 WHERE id = ?"
-            
+
             var statement: OpaquePointer?
             defer { sqlite3_finalize(statement) }
-            
+
             guard sqlite3_prepare_v2(db, updateSQL, -1, &statement, nil) == SQLITE_OK else {
                 throw QueueError.cannotPrepareStatement
             }
-            
+
             for id in messageIds {
                 sqlite3_bind_int64(statement, 1, id)
-                sqlite3_step(statement)
+
+                // Check return value to catch failures
+                guard sqlite3_step(statement) == SQLITE_DONE else {
+                    throw QueueError.cannotUpdateMessage
+                }
+
                 sqlite3_reset(statement)
             }
+
+            // Commit transaction
+            guard sqlite3_exec(db, "COMMIT", nil, nil, nil) == SQLITE_OK else {
+                throw QueueError.cannotPrepareStatement
+            }
+
+            shouldCommit = true
         }
     }
     
     func cleanupOldMessages(olderThanHours: Int = 168) throws {
         try queue.sync(flags: .barrier) {
+            // Calculate cutoff date in Swift to avoid string interpolation in SQL
+            let cutoffDate = Date().addingTimeInterval(TimeInterval(-olderThanHours * 3600))
+            let cutoffString = ISO8601DateFormatter().string(from: cutoffDate)
+
             let deleteSQL = """
                 DELETE FROM messages
                 WHERE uploaded = 1
-                AND datetime(created_at) < datetime('now', '-\(olderThanHours) hours')
+                AND created_at < ?
             """
-            
-            if sqlite3_exec(db, deleteSQL, nil, nil, nil) != SQLITE_OK {
-                throw QueueError.cannotDeleteEvents
+
+            var statement: OpaquePointer?
+            defer {
+                if statement != nil {
+                    sqlite3_finalize(statement)
+                }
+            }
+
+            guard sqlite3_prepare_v2(db, deleteSQL, -1, &statement, nil) == SQLITE_OK else {
+                throw QueueError.cannotPrepareStatement
+            }
+
+            sqlite3_bind_text(statement, 1, (cutoffString as NSString).utf8String, -1, SQLITE_TRANSIENT)
+
+            guard sqlite3_step(statement) == SQLITE_DONE else {
+                throw QueueError.cannotDeleteMessages
             }
         }
     }
@@ -558,7 +652,10 @@ enum QueueError: LocalizedError {
     case cannotPrepareStatement
     case cannotInsertEvent
     case cannotDeleteEvents
-    
+    case cannotUpdateEvent
+    case cannotUpdateMessage
+    case cannotDeleteMessages
+
     var errorDescription: String? {
         switch self {
         case .cannotOpenDatabase:
@@ -571,6 +668,12 @@ enum QueueError: LocalizedError {
             return "Cannot insert event"
         case .cannotDeleteEvents:
             return "Cannot delete events"
+        case .cannotUpdateEvent:
+            return "Cannot update event"
+        case .cannotUpdateMessage:
+            return "Cannot update message"
+        case .cannotDeleteMessages:
+            return "Cannot delete messages"
         }
     }
 }

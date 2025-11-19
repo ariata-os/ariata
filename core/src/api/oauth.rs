@@ -5,7 +5,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::sources::get_source;
-use super::types::Source;
+use super::types::SourceConnection;
 use crate::error::{Error, Result};
 use crate::sources::base::TokenManager;
 
@@ -111,7 +111,7 @@ pub async fn initiate_oauth_flow(
 
 /// Handle OAuth callback and create source
 /// Supports both direct token flow and code exchange flow
-pub async fn handle_oauth_callback(db: &PgPool, params: &OAuthCallbackParams) -> Result<Source> {
+pub async fn handle_oauth_callback(db: &PgPool, params: &OAuthCallbackParams) -> Result<SourceConnection> {
     // SECURITY: Validate state parameter to prevent CSRF attacks
     if let Some(ref state) = params.state {
         crate::sources::base::oauth::state::validate_state(state)?;
@@ -207,7 +207,7 @@ pub async fn handle_oauth_callback(db: &PgPool, params: &OAuthCallbackParams) ->
 }
 
 /// Create a source manually (for testing or direct token input)
-pub async fn create_source(db: &PgPool, request: CreateSourceRequest) -> Result<Source> {
+pub async fn create_source(db: &PgPool, request: CreateSourceRequest) -> Result<SourceConnection> {
     let descriptor = crate::registry::get_source(&request.source_type)
         .ok_or_else(|| Error::Other(format!("Unknown source type: {}", request.source_type)))?;
 
@@ -249,7 +249,7 @@ pub async fn create_source(db: &PgPool, request: CreateSourceRequest) -> Result<
 
     sqlx::query(
         r#"
-        INSERT INTO sources (id, provider, name, is_active, is_internal, created_at, updated_at)
+        INSERT INTO data.source_connections (id, source, name, is_active, is_internal, created_at, updated_at)
         VALUES ($1, $2, $3, true, false, NOW(), NOW())
         "#,
     )
@@ -266,7 +266,7 @@ pub async fn create_source(db: &PgPool, request: CreateSourceRequest) -> Result<
 }
 
 /// Register a device as a source
-pub async fn register_device(db: &PgPool, request: RegisterDeviceRequest) -> Result<Source> {
+pub async fn register_device(db: &PgPool, request: RegisterDeviceRequest) -> Result<SourceConnection> {
     let descriptor = crate::registry::get_source(&request.device_type)
         .ok_or_else(|| Error::Other(format!("Unknown device type: {}", request.device_type)))?;
 
@@ -281,7 +281,7 @@ pub async fn register_device(db: &PgPool, request: RegisterDeviceRequest) -> Res
 
     sqlx::query(
         r#"
-        INSERT INTO sources (id, provider, name, is_active, is_internal, created_at, updated_at)
+        INSERT INTO data.source_connections (id, source, name, is_active, is_internal, created_at, updated_at)
         VALUES ($1, $2, $3, true, false, NOW(), NOW())
         "#,
     )

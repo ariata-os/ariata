@@ -32,11 +32,11 @@ export const POST: RequestHandler = async ({ request }) => {
 			.map((m) => `${m.role}: ${m.content.substring(0, 200)}`)
 			.join('\n\n');
 
-		// Use Claude Haiku to generate a short title
+		// Use GPT-OSS 20B to generate a short title (smaller open-source model)
 		// When using AI Gateway, simply pass the model string
 		// The AI SDK will automatically use the AI_GATEWAY_API_KEY environment variable
 		const { text } = await generateText({
-			model: 'anthropic/claude-haiku-4.5',
+			model: 'openai/gpt-oss-20b',
 			maxSteps: 1,
 			prompt: `Based on this conversation, generate a very short title (3-6 words maximum) that captures the main topic or theme. Only return the title, nothing else.
 

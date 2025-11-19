@@ -44,9 +44,9 @@ pub async fn seed_ontologies(db: &Database) -> Result<usize> {
 async fn get_or_create_seed_stream(pool: &PgPool, source_id: Uuid) -> Result<Uuid> {
     let stream_id = sqlx::query_scalar!(
         r#"
-        INSERT INTO data.streams (source_id, stream_name, table_name, is_enabled)
+        INSERT INTO data.stream_connections (source_connection_id, stream_name, table_name, is_enabled)
         VALUES ($1, 'seed_data', 'stream_seed_data', true)
-        ON CONFLICT (source_id, stream_name)
+        ON CONFLICT (source_connection_id, stream_name)
         DO UPDATE SET updated_at = NOW()
         RETURNING id
         "#,
@@ -322,7 +322,7 @@ async fn seed_location_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                 INSERT INTO data.location_point
                 (latitude, longitude, coordinates, accuracy_meters, timestamp,
                  source_stream_id, source_table, source_provider)
-                VALUES ($1, $2, data.ST_GeogFromText($3), $4, $5, $6, 'stream_seed_data', 'seed')
+                VALUES ($1, $2, ST_GeogFromText($3), $4, $5, $6, 'stream_seed_data', 'seed')
                 ON CONFLICT DO NOTHING
                 "#,
                 lat,
@@ -361,7 +361,7 @@ async fn seed_location_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
         //         INSERT INTO data.location_visit
         //         (latitude, longitude, centroid_coordinates, start_time, end_time,
         //          source_stream_id, source_table, source_provider)
-        //         VALUES ($1, $2, data.ST_GeogFromText($3), $4, $5, $6, 'stream_seed_data', 'seed')
+        //         VALUES ($1, $2, ST_GeogFromText($3), $4, $5, $6, 'stream_seed_data', 'seed')
         //         ON CONFLICT DO NOTHING
         //         "#,
         //         lat,
@@ -412,7 +412,7 @@ async fn seed_activity_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 
             sqlx::query!(
                 r#"
-                INSERT INTO data.activity_calendar_entry
+                INSERT INTO data.praxis_calendar
                 (title, calendar_name, start_time, end_time, is_all_day,
                  source_stream_id, source_table, source_provider)
                 VALUES ($1, $2, $3, $4, $5, $6, 'stream_seed_data', 'seed')

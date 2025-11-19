@@ -12,7 +12,7 @@ use crate::error::Result;
 /// Unified authentication abstraction for all source types
 ///
 /// This enum encapsulates the different authentication patterns used across sources:
-/// - OAuth2: Google, Strava, Notion (requires token management and refresh)
+/// - OAuth2: Google, Notion (requires token management and refresh)
 /// - Device: iOS, Mac (identified by device_id, no external auth)
 /// - ApiKey: Future sources that use API keys
 /// - None: Public data sources or sources without authentication

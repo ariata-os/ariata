@@ -4,10 +4,10 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 /**
  * Application Database Client
  *
- * This connects to the ariata_app database (separate from ariata_elt).
- * Used for UI-specific state: preferences, dashboards, saved queries.
+ * This connects to the ariata database (app schema).
+ * Used for UI-specific state: chat sessions, models, agents, tools, API usage.
  *
- * The ELT database (ariata_elt) is managed by Rust and accessed via API.
+ * The data schema contains pipeline data and is managed by Rust.
  */
 
 export const db = drizzle(process.env.DATABASE_URL!);

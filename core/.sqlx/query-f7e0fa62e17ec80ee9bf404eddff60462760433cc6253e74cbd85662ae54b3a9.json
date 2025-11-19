@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT pairing_status, device_info\n        FROM data.source_connections\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pairing_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "device_info",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "f7e0fa62e17ec80ee9bf404eddff60462760433cc6253e74cbd85662ae54b3a9"
+}

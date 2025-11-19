@@ -1,13 +1,17 @@
 //! Shared types used across the API
 
 use chrono::{DateTime, Utc};
+use ts_rs::TS;
 use uuid::Uuid;
 
-/// Represents a configured data source
-#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
-pub struct Source {
+/// A user's connected source instance
+/// This represents an actual connected account with auth tokens.
+/// For source type info, see registry::RegisteredSource.
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow, TS)]
+#[ts(export, export_to = "../../apps/web/src/lib/types/")]
+pub struct SourceConnection {
     pub id: Uuid,
-    pub provider: String,
+    pub source: String,
     pub name: String,
     pub auth_type: String,
     pub is_active: bool,
@@ -20,12 +24,13 @@ pub struct Source {
     pub total_streams_count: i64,
 }
 
-/// Source status with sync statistics
-#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
-pub struct SourceStatus {
+/// Connection status with sync statistics
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow, TS)]
+#[ts(export, export_to = "../../apps/web/src/lib/types/")]
+pub struct SourceConnectionStatus {
     pub id: Uuid,
     pub name: String,
-    pub provider: String,
+    pub source: String,
     pub is_active: bool,
     pub is_internal: bool,
     pub last_sync_at: Option<DateTime<Utc>>,
@@ -35,4 +40,16 @@ pub struct SourceStatus {
     pub failed_syncs: i64,
     pub last_sync_status: Option<String>,
     pub last_sync_duration_ms: Option<i32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Export TypeScript types for frontend use
+    #[test]
+    fn export_typescript_types() {
+        SourceConnection::export().expect("Failed to export SourceConnection");
+        SourceConnectionStatus::export().expect("Failed to export SourceConnectionStatus");
+    }
 }

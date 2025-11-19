@@ -1,14 +1,14 @@
 //! iOS source registration for the catalog
 
-use crate::registry::{AuthType, SourceDescriptor, SourceRegistry, StreamDescriptor};
+use crate::registry::{AuthType, RegisteredSource, SourceRegistry, RegisteredStream};
 use serde_json::json;
 
 /// iOS source registration
 pub struct IosSource;
 
 impl SourceRegistry for IosSource {
-    fn descriptor() -> SourceDescriptor {
-        SourceDescriptor {
+    fn descriptor() -> RegisteredSource {
+        RegisteredSource {
             name: "ios",
             display_name: "iOS",
             description: "Personal data from iOS devices (HealthKit, Location, Microphone)",
@@ -17,7 +17,7 @@ impl SourceRegistry for IosSource {
             icon: Some("ri:apple-fill"),
             streams: vec![
                 // HealthKit stream
-                StreamDescriptor::new("healthkit")
+                RegisteredStream::new("healthkit")
                     .display_name("HealthKit")
                     .description("Health and fitness metrics including heart rate, steps, sleep, and workouts")
                     .table_name("stream_ios_healthkit")
@@ -29,7 +29,7 @@ impl SourceRegistry for IosSource {
                     .build(),
 
                 // Location stream
-                StreamDescriptor::new("location")
+                RegisteredStream::new("location")
                     .display_name("Location")
                     .description("GPS coordinates, speed, altitude, and activity type")
                     .table_name("stream_ios_location")
@@ -41,7 +41,7 @@ impl SourceRegistry for IosSource {
                     .build(),
 
                 // Microphone stream
-                StreamDescriptor::new("microphone")
+                RegisteredStream::new("microphone")
                     .display_name("Microphone")
                     .description("Audio levels, transcriptions, and recordings")
                     .table_name("stream_ios_microphone")

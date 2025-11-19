@@ -10,9 +10,9 @@ use uuid::Uuid;
 
 use super::base::TokenManager;
 use crate::error::{Error, Result};
-use crate::storage::stream_writer::StreamWriter;
+use crate::storage::{stream_writer::StreamWriter, Storage};
 
-use super::{auth::SourceAuth, stream::Stream};
+use super::{auth::SourceAuth, stream_type::StreamType};
 
 /// Factory for creating stream instances
 ///
@@ -24,69 +24,77 @@ use super::{auth::SourceAuth, stream::Stream};
 /// # Example
 ///
 /// ```rust
-/// let factory = StreamFactory::new(db.clone(), stream_writer);
+/// let factory = StreamFactory::new(db.clone(), storage.clone(), stream_writer.clone());
 ///
-/// // Create a Google Calendar stream
-/// let mut stream = factory.create_stream(source_id, "calendar").await?;
+/// // Create a Google Calendar stream (returns StreamType::Pull)
+/// let mut stream_type = factory.create_stream_typed(source_id, "calendar").await?;
 ///
-/// // Load config and sync
-/// stream.load_config(&db, source_id).await?;
-/// let result = stream.sync(SyncMode::auto()).await?;
+/// // Get mutable access to the PullStream
+/// if let Some(pull_stream) = stream_type.as_pull_mut() {
+///     pull_stream.load_config(&db, source_id).await?;
+///     let result = pull_stream.sync_pull(SyncMode::incremental(None)).await?;
+/// }
 /// ```
 pub struct StreamFactory {
     db: PgPool,
+    storage: Arc<Storage>,
     stream_writer: Arc<Mutex<StreamWriter>>,
 }
 
 impl StreamFactory {
     /// Create a new stream factory
-    pub fn new(db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>) -> Self {
-        Self { db, stream_writer }
+    pub fn new(db: PgPool, storage: Arc<Storage>, stream_writer: Arc<Mutex<StreamWriter>>) -> Self {
+        Self {
+            db,
+            storage,
+            stream_writer,
+        }
     }
 
-    /// Create a stream instance for syncing
+    /// Create a stream instance with the new StreamType enum
     ///
     /// This looks up the source in the database, creates the appropriate
-    /// authentication, and instantiates the correct stream implementation.
+    /// authentication, and instantiates the correct stream implementation
+    /// wrapped in either Pull or Push variant.
     ///
     /// # Arguments
     /// * `source_id` - UUID of the source
-    /// * `stream_name` - Name of the stream (e.g., "calendar", "gmail")
+    /// * `stream_name` - Name of the stream (e.g., "calendar", "gmail", "apps")
     ///
     /// # Returns
-    /// A boxed Stream trait object ready for syncing
+    /// A StreamType enum (either Pull or Push) containing the stream
     ///
     /// # Errors
     /// - If the source doesn't exist
     /// - If the source type is unknown
     /// - If the stream name is not supported for this source
-    pub async fn create_stream(
+    pub async fn create_stream_typed(
         &self,
         source_id: Uuid,
         stream_name: &str,
-    ) -> Result<Box<dyn Stream>> {
+    ) -> Result<StreamType> {
         // Load source info from database
         let source = self.load_source(source_id).await?;
 
         // Create auth abstraction
-        let auth = self.create_auth(source_id, &source.provider).await?;
+        let auth = self.create_auth(source_id, &source.source).await?;
 
         // Create the appropriate stream implementation
-        self.create_stream_impl(source_id, &source.provider, stream_name, auth)
+        self.create_stream_typed_impl(source_id, &source.source, stream_name, auth)
             .await
     }
 
     /// Load source information from the database
     async fn load_source(&self, source_id: Uuid) -> Result<SourceInfo> {
         let result = sqlx::query_as::<_, (String, String)>(
-            "SELECT provider, name FROM sources WHERE id = $1 AND is_active = true",
+            "SELECT source, name FROM source_connections WHERE id = $1 AND is_active = true",
         )
         .bind(source_id)
         .fetch_optional(&self.db)
         .await?;
 
         match result {
-            Some((provider, name)) => Ok(SourceInfo { provider, name }),
+            Some((source, name)) => Ok(SourceInfo { source, name }),
             None => Err(Error::Database(format!(
                 "Source not found or inactive: {}",
                 source_id
@@ -97,8 +105,8 @@ impl StreamFactory {
     /// Create authentication for a source
     async fn create_auth(&self, source_id: Uuid, provider: &str) -> Result<SourceAuth> {
         match provider {
-            "google" | "strava" | "notion" => {
-                // Create a new TokenManager (requires encryption key)
+            "google" | "notion" => {
+                // OAuth2 sources - create TokenManager for token refresh
                 let token_manager = Arc::new(TokenManager::new(self.db.clone())?);
                 Ok(SourceAuth::oauth2(source_id, token_manager))
             }
@@ -117,74 +125,101 @@ impl StreamFactory {
         }
     }
 
-    /// Create the stream implementation
+    /// Create the stream implementation with StreamType enum
     ///
     /// This is where we match on provider + stream name and instantiate
-    /// the correct struct. As we refactor sources to use the Stream trait,
-    /// they'll be added here.
-    async fn create_stream_impl(
+    /// the correct struct wrapped in StreamType::Pull or StreamType::Push.
+    ///
+    /// All streams now implement either PullStream (backend-initiated) or
+    /// PushStream (client-initiated) traits for clear architectural boundaries.
+    async fn create_stream_typed_impl(
         &self,
-        source_id: Uuid,
+        _source_id: Uuid,
         provider: &str,
         stream_name: &str,
-        auth: SourceAuth,
-    ) -> Result<Box<dyn Stream>> {
+        _auth: SourceAuth,
+    ) -> Result<StreamType> {
         match (provider, stream_name) {
-            // Internal streams
-            ("ariata", "app_export") => {
-                use crate::sources::ariata::AppChatExportStream;
-                Ok(Box::new(AppChatExportStream::new(
-                    self.db.clone(),
-                    source_id,
-                    self.stream_writer.clone(),
-                )))
-            }
-
-            // Google streams
+            // Pull streams (backend-initiated from external APIs)
             ("google", "calendar") => {
                 use crate::sources::google::calendar::GoogleCalendarStream;
-                Ok(Box::new(GoogleCalendarStream::new(
-                    source_id,
+                Ok(StreamType::Pull(Box::new(GoogleCalendarStream::new(
+                    _source_id,
                     self.db.clone(),
                     self.stream_writer.clone(),
-                    auth,
-                )))
+                    _auth,
+                ))))
             }
             ("google", "gmail") => {
                 use crate::sources::google::gmail::GoogleGmailStream;
-                Ok(Box::new(GoogleGmailStream::new(
-                    source_id,
+                Ok(StreamType::Pull(Box::new(GoogleGmailStream::new(
+                    _source_id,
                     self.db.clone(),
                     self.stream_writer.clone(),
-                    auth,
-                )))
+                    _auth,
+                ))))
             }
-
-            // Notion streams
             ("notion", "pages") => {
                 use crate::sources::notion::NotionPagesStream;
-                Ok(Box::new(NotionPagesStream::new(
-                    source_id,
+                Ok(StreamType::Pull(Box::new(NotionPagesStream::new(
+                    _source_id,
                     self.db.clone(),
                     self.stream_writer.clone(),
-                    auth,
-                )))
+                    _auth,
+                ))))
+            }
+            ("ariata", "app_export") => {
+                use crate::sources::ariata::AppChatExportStream;
+                Ok(StreamType::Pull(Box::new(AppChatExportStream::new(
+                    self.db.clone(),
+                    _source_id,
+                    self.stream_writer.clone(),
+                ))))
             }
 
-            // iOS streams
-            ("ios", "healthkit") | ("ios", "location") | ("ios", "microphone") => {
-                // TODO: Refactor iOS processors to implement Stream trait
-                Err(Error::Other(
-                    "iOS streams not yet refactored to new pattern".to_string(),
-                ))
+            // Push streams (client-initiated from devices)
+            ("mac", "apps") => {
+                use crate::sources::mac::MacAppsStream;
+                Ok(StreamType::Push(Box::new(MacAppsStream::new(
+                    self.db.clone(),
+                    self.stream_writer.clone(),
+                ))))
             }
-
-            // Mac streams
-            ("mac", "apps") | ("mac", "browser") | ("mac", "imessage") => {
-                // TODO: Refactor Mac processors to implement Stream trait
-                Err(Error::Other(
-                    "Mac streams not yet refactored to new pattern".to_string(),
-                ))
+            ("mac", "imessage") => {
+                use crate::sources::mac::MacIMessageStream;
+                Ok(StreamType::Push(Box::new(MacIMessageStream::new(
+                    self.db.clone(),
+                    self.stream_writer.clone(),
+                ))))
+            }
+            ("mac", "browser") => {
+                use crate::sources::mac::MacBrowserStream;
+                Ok(StreamType::Push(Box::new(MacBrowserStream::new(
+                    self.db.clone(),
+                    self.stream_writer.clone(),
+                ))))
+            }
+            ("ios", "location") => {
+                use crate::sources::ios::IosLocationStream;
+                Ok(StreamType::Push(Box::new(IosLocationStream::new(
+                    self.db.clone(),
+                    self.stream_writer.clone(),
+                ))))
+            }
+            ("ios", "healthkit") => {
+                use crate::sources::ios::IosHealthKitStream;
+                Ok(StreamType::Push(Box::new(IosHealthKitStream::new(
+                    self.db.clone(),
+                    self.stream_writer.clone(),
+                ))))
+            }
+            ("ios", "microphone") => {
+                use crate::sources::ios::IosMicrophoneStream;
+                Ok(StreamType::Push(Box::new(IosMicrophoneStream::new(
+                    self.db.clone(),
+                    self.storage.clone(),
+                    self.stream_writer.clone(),
+                ))))
             }
 
             _ => Err(Error::Other(format!(
@@ -199,6 +234,7 @@ impl Clone for StreamFactory {
     fn clone(&self) -> Self {
         Self {
             db: self.db.clone(),
+            storage: self.storage.clone(),
             stream_writer: self.stream_writer.clone(),
         }
     }
@@ -206,7 +242,7 @@ impl Clone for StreamFactory {
 
 /// Source information loaded from database
 struct SourceInfo {
-    provider: String,
+    source: String,
     name: String,
 }
 
@@ -218,15 +254,17 @@ mod tests {
     #[tokio::test]
     async fn test_factory_creation() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
+        let storage = Arc::new(Storage::local("./test_data".to_string()).unwrap());
         let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
-        let _factory = StreamFactory::new(pool, stream_writer);
+        let _factory = StreamFactory::new(pool, storage, stream_writer);
     }
 
     #[tokio::test]
     async fn test_factory_clone() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
+        let storage = Arc::new(Storage::local("./test_data".to_string()).unwrap());
         let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
-        let factory = StreamFactory::new(pool, stream_writer);
+        let factory = StreamFactory::new(pool, storage, stream_writer);
         let _factory2 = factory.clone();
     }
 
@@ -236,8 +274,9 @@ mod tests {
         std::env::set_var("ARIATA_ALLOW_INSECURE", "true");
 
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
+        let storage = Arc::new(Storage::local("./test_data".to_string()).unwrap());
         let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
-        let factory = StreamFactory::new(pool, stream_writer);
+        let factory = StreamFactory::new(pool, storage, stream_writer);
 
         let auth = factory.create_auth(Uuid::new_v4(), "google").await;
         assert!(auth.is_ok());
@@ -253,8 +292,9 @@ mod tests {
     #[tokio::test]
     async fn test_create_auth_device() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
+        let storage = Arc::new(Storage::local("./test_data".to_string()).unwrap());
         let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
-        let factory = StreamFactory::new(pool, stream_writer);
+        let factory = StreamFactory::new(pool, storage, stream_writer);
 
         // Note: This will fail without a source in the database
         // That's expected - this tests the code path, not the database
@@ -267,51 +307,55 @@ mod tests {
     #[tokio::test]
     async fn test_create_auth_unknown_source() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
+        let storage = Arc::new(Storage::local("./test_data".to_string()).unwrap());
         let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
-        let factory = StreamFactory::new(pool, stream_writer);
+        let factory = StreamFactory::new(pool, storage, stream_writer);
 
         let result = factory.create_auth(Uuid::new_v4(), "unknown_source").await;
         assert!(result.is_err());
 
         match result {
-            Err(Error::Other(msg)) => assert!(msg.contains("Unknown source type")),
+            Err(Error::Other(msg)) => assert!(msg.contains("Unknown provider")),
             _ => panic!("Expected Error::Other"),
         }
     }
 
     #[tokio::test]
-    async fn test_create_stream_impl_google_calendar() {
+    async fn test_create_stream_typed_impl_google_calendar() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
+        let storage = Arc::new(Storage::local("./test_data".to_string()).unwrap());
         let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
-        let factory = StreamFactory::new(pool.clone(), stream_writer.clone());
+        let factory = StreamFactory::new(pool.clone(), storage, stream_writer.clone());
 
         let source_id = Uuid::new_v4();
         let tm = Arc::new(TokenManager::new_insecure(pool));
         let auth = SourceAuth::oauth2(source_id, tm);
 
         let result = factory
-            .create_stream_impl(source_id, "google", "calendar", auth)
+            .create_stream_typed_impl(source_id, "google", "calendar", auth)
             .await;
 
         assert!(result.is_ok());
-        let stream = result.unwrap();
-        assert_eq!(stream.stream_name(), "calendar");
-        assert_eq!(stream.source_name(), "google");
-        assert_eq!(stream.table_name(), "stream_google_calendar");
+        let stream_type = result.unwrap();
+        assert_eq!(stream_type.stream_name(), "calendar");
+        assert_eq!(stream_type.source_name(), "google");
+        assert_eq!(stream_type.table_name(), "stream_google_calendar");
+        assert!(stream_type.is_pull());
     }
 
     #[tokio::test]
-    async fn test_create_stream_impl_unknown_stream() {
+    async fn test_create_stream_typed_impl_unknown_stream() {
         let pool = PgPool::connect_lazy("postgres://test").unwrap();
+        let storage = Arc::new(Storage::local("./test_data".to_string()).unwrap());
         let stream_writer = Arc::new(Mutex::new(StreamWriter::new()));
-        let factory = StreamFactory::new(pool.clone(), stream_writer.clone());
+        let factory = StreamFactory::new(pool.clone(), storage, stream_writer.clone());
 
         let source_id = Uuid::new_v4();
         let tm = Arc::new(TokenManager::new_insecure(pool));
         let auth = SourceAuth::oauth2(source_id, tm);
 
         let result = factory
-            .create_stream_impl(source_id, "google", "nonexistent", auth)
+            .create_stream_typed_impl(source_id, "google", "nonexistent", auth)
             .await;
 
         assert!(result.is_err());

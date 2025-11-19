@@ -48,11 +48,12 @@ pub async fn create_transform_job_for_stream(
     let route = match crate::transforms::get_transform_route(&table_name) {
         Ok(route) => route,
         Err(e) => {
-            tracing::debug!(
+            tracing::error!(
                 error = %e,
-                stream_name,
-                table_name,
-                "No transform configured for stream, skipping transform job creation"
+                stream_name = %stream_name,
+                normalized_table_name = %table_name,
+                source_id = %source_id,
+                "Transform route not found - stream→ontology mapping failed. Check transforms::registry::get_transform_route()"
             );
             return Err(e);
         }
@@ -69,7 +70,7 @@ pub async fn create_transform_job_for_stream(
     let request = CreateJobRequest {
         job_type: JobType::Transform,
         status: JobStatus::Pending,
-        source_id: Some(source_id),
+        source_connection_id: Some(source_id),
         stream_name: Some(stream_name.to_string()),
         sync_mode: None,
         transform_id: None,

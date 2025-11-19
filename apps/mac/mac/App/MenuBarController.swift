@@ -12,6 +12,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
     private var pairingWindowController: PairingWindowController?
 
     // Menu items that need dynamic updates
+    private var daemonStatusItem: NSMenuItem!
     private var lastSyncItem: NSMenuItem!
     private var queuedRecordsItem: NSMenuItem!
     private var pauseResumeItem: NSMenuItem!
@@ -110,6 +111,11 @@ class MenuBarController: NSObject, NSMenuDelegate {
         print("🔍 menuWillOpen called, current event: \(String(describing: NSApp.currentEvent))")
         print("🔍 Current event modifierFlags: \(String(describing: NSApp.currentEvent?.modifierFlags.rawValue))")
         buildMenu()
+
+        // Update status immediately so menu shows correct permissions
+        if !needsPairing {
+            updateStatus()
+        }
     }
 
     private func buildMenu() {
@@ -149,6 +155,16 @@ class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func buildPairedMenu() {
+        // Background service status
+        daemonStatusItem = menu.addItem(
+            withTitle: "Background Service: Checking...",
+            action: nil,
+            keyEquivalent: ""
+        )
+        daemonStatusItem.isEnabled = false
+
+        menu.addItem(NSMenuItem.separator())
+
         // Status section
         lastSyncItem = menu.addItem(
             withTitle: "Last sync: --",
@@ -186,29 +202,31 @@ class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Permissions section
-        accessibilityItem = menu.addItem(
-            withTitle: "⚠️ Accessibility Access",
-            action: nil,
-            keyEquivalent: ""
-        )
-        accessibilityItem.isEnabled = false
+        // Permissions section - only show if not all permissions are granted
+        if !permissionsManager.allPermissionsGranted() {
+            accessibilityItem = menu.addItem(
+                withTitle: "⚠️ Accessibility Access",
+                action: nil,
+                keyEquivalent: ""
+            )
+            accessibilityItem.isEnabled = false
 
-        fullDiskAccessItem = menu.addItem(
-            withTitle: "⚠️ Full Disk Access",
-            action: nil,
-            keyEquivalent: ""
-        )
-        fullDiskAccessItem.isEnabled = false
+            fullDiskAccessItem = menu.addItem(
+                withTitle: "⚠️ Full Disk Access",
+                action: nil,
+                keyEquivalent: ""
+            )
+            fullDiskAccessItem.isEnabled = false
 
-        let grantPermissionsItem = menu.addItem(
-            withTitle: "Grant Permissions...",
-            action: #selector(openSystemPreferences),
-            keyEquivalent: ""
-        )
-        grantPermissionsItem.target = self
+            let grantPermissionsItem = menu.addItem(
+                withTitle: "Grant Permissions...",
+                action: #selector(openSystemPreferences),
+                keyEquivalent: ""
+            )
+            grantPermissionsItem.target = self
 
-        menu.addItem(NSMenuItem.separator())
+            menu.addItem(NSMenuItem.separator())
+        }
 
         // Icon customization section - opens system emoji picker
         let changeIconItem = menu.addItem(
@@ -264,15 +282,15 @@ class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(NSMenuItem.separator())
 
             let stopMonitoringItem = menu.addItem(
-                withTitle: "Stop Monitoring",
+                withTitle: "Stop Monitoring & Quit App",
                 action: #selector(stopDaemon),
                 keyEquivalent: "q"
             )
             stopMonitoringItem.target = self
         } else {
-            // Normal quit: just hide menu bar
+            // Normal quit: just hide menu bar, background service keeps running
             let quitItem = menu.addItem(
-                withTitle: "Hide Menu Bar",
+                withTitle: "Quit (Monitoring Continues)",
                 action: #selector(quit),
                 keyEquivalent: "q"
             )
@@ -280,9 +298,21 @@ class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func updateStatus() {
+    func updateStatus() {
         // Get daemon stats
         let stats = daemonController.getStats()
+
+        // Update background service status
+        let isRunning = daemonController.isRunning()
+        if isRunning {
+            if stats.isPaused {
+                daemonStatusItem.title = "⏸️ Background Service: Paused"
+            } else {
+                daemonStatusItem.title = "🟢 Background Service: Running"
+            }
+        } else {
+            daemonStatusItem.title = "❌ Background Service: Stopped"
+        }
 
         // Update last sync time
         if let lastSync = stats.lastSyncTime {
@@ -302,14 +332,18 @@ class MenuBarController: NSObject, NSMenuDelegate {
             pauseResumeItem.title = "⏸ Pause Monitoring"
         }
 
-        // Update permissions status
+        // Update permissions status (only if items exist - they're hidden when all permissions are granted)
         let hasAccessibility = permissionsManager.checkAccessibility()
         let hasFullDiskAccess = permissionsManager.checkFullDiskAccess()
 
-        print("🔐 Permissions check: Accessibility=\(hasAccessibility), FullDiskAccess=\(hasFullDiskAccess)")
+        Logger.log("🔐 Menu updating with permissions: Accessibility=\(hasAccessibility), FullDiskAccess=\(hasFullDiskAccess)", level: .debug)
 
-        accessibilityItem.title = hasAccessibility ? "✓ Accessibility Access" : "⚠️ Accessibility Access"
-        fullDiskAccessItem.title = hasFullDiskAccess ? "✓ Full Disk Access" : "⚠️ Full Disk Access"
+        if let accessibilityItem = accessibilityItem {
+            accessibilityItem.title = hasAccessibility ? "✓ Accessibility Access" : "⚠️ Accessibility Access"
+        }
+        if let fullDiskAccessItem = fullDiskAccessItem {
+            fullDiskAccessItem.title = hasFullDiskAccess ? "✓ Full Disk Access" : "⚠️ Full Disk Access"
+        }
 
         // Update icon color based on state
         updateIcon(state: determineState(stats: stats, hasPermissions: hasAccessibility && hasFullDiskAccess))
@@ -416,15 +450,44 @@ class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         statusUpdateTimer?.invalidate()
+        statusUpdateTimer = nil  // Set to nil so timer restarts on relaunch
         pairingWindowController?.close()
         emojiPickerPopover?.close()
         streamStatusPopover?.close()
 
-        // Hide menu bar but keep daemon running in background
+        // Hide menu bar but keep background service running
         statusItem.isVisible = false
 
-        print("✅ Menu bar hidden, daemon continues running in background")
+        print("✅ Menu bar hidden, background service continues running")
         print("💡 Tip: Launch the app again to show the menu bar")
+    }
+
+    /// Show the menu bar icon when app is relaunched while running
+    func showMenuBar() {
+        Logger.log("🔄 Re-showing menu bar after relaunch", level: .info)
+
+        // Make status item visible again
+        statusItem.isVisible = true
+
+        // Restart status updates if not already running
+        if statusUpdateTimer == nil {
+            statusUpdateTimer = Timer.scheduledTimer(
+                withTimeInterval: 30,
+                repeats: true
+            ) { [weak self] _ in
+                self?.updateStatus()
+            }
+
+            // Immediate status update
+            updateStatus()
+        }
+
+        // Re-setup global keyboard shortcut if needed
+        if globalEventMonitor == nil {
+            setupGlobalKeyboardShortcut()
+        }
+
+        Logger.log("✅ Menu bar restored", level: .success)
     }
 
     @objc private func stopDaemon() {
@@ -436,7 +499,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
         alert.addButton(withTitle: "Cancel")
 
         if alert.runModal() == .alertFirstButtonReturn {
-            print("🛑 User confirmed: Stopping daemon and quitting app")
+            print("🛑 User confirmed: Stopping background service and quitting app")
 
             // Clean up everything
             if let monitor = globalEventMonitor {
@@ -448,7 +511,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
             emojiPickerPopover?.close()
             streamStatusPopover?.close()
 
-            // Stop the daemon
+            // Stop the background service
             daemonController.stop()
 
             // Terminate the app completely
@@ -570,7 +633,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    private func showNotification(title: String, message: String) {
+    func showNotification(title: String, message: String) {
         let center = UNUserNotificationCenter.current()
 
         // Request authorization if not already done

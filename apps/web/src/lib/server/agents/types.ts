@@ -2,7 +2,6 @@
  * Agent type definitions for multi-agent system
  */
 import type { ToolLoopAgent } from 'ai';
-import type { ToolCategory } from '../tools/types';
 
 /**
  * Agent identifiers

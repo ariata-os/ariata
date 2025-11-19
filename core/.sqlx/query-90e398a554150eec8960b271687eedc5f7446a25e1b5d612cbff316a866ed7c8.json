@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT table_name\n        FROM information_schema.tables\n        WHERE table_schema = 'data'\n          AND table_name NOT LIKE 'stream_%'\n          AND table_name NOT IN ('sources', 'streams', 'sync_logs')\n          AND table_type = 'BASE TABLE'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "table_name",
+        "type_info": "Name"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "90e398a554150eec8960b271687eedc5f7446a25e1b5d612cbff316a866ed7c8"
+}

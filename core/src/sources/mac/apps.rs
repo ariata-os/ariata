@@ -1,64 +1,87 @@
 //! macOS application usage data processor
 
-use serde_json::Value;
+use async_trait::async_trait;
+use chrono::Utc;
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use crate::{
-    database::Database,
     error::{Error, Result},
-    sources::base::{get_or_create_device_source, validation::validate_timestamp_reasonable},
-    storage::{stream_writer::StreamWriter, Storage},
+    sources::{
+        base::validation::validate_timestamp_reasonable,
+        push_stream::{IngestPayload, PushResult, PushStream},
+    },
+    storage::stream_writer::StreamWriter,
 };
 
-/// Process Mac application usage data
+/// Mac Apps stream implementing PushStream trait
 ///
-/// Parses and stores app names, bundle IDs, window titles, and usage duration from macOS devices.
-///
-/// # Arguments
-/// * `db` - Database connection
-/// * `_storage` - Storage layer (unused for apps, but kept for API consistency)
-/// * `stream_writer` - StreamWriter for writing to S3/object storage
-/// * `record` - JSON record from the device
-#[tracing::instrument(
-    skip(db, _storage, stream_writer, record),
-    fields(source = "mac", stream = "apps")
-)]
-pub async fn process(
-    db: &Database,
-    _storage: &Arc<Storage>,
-    stream_writer: &Arc<Mutex<StreamWriter>>,
-    record: &Value,
-) -> Result<()> {
-    let device_id = record
-        .get("device_id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::Other("Missing device_id".into()))?;
+/// Receives app usage data pushed from macOS devices via /ingest endpoint.
+pub struct MacAppsStream {
+    db: PgPool,
+    stream_writer: Arc<Mutex<StreamWriter>>,
+}
 
-    let source_id = get_or_create_device_source(db, "mac", device_id).await?;
+impl MacAppsStream {
+    /// Create a new MacAppsStream
+    pub fn new(db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>) -> Self {
+        Self { db, stream_writer }
+    }
+}
 
-    let timestamp = record
-        .get("timestamp")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| Error::Other("Missing timestamp".into()))?;
+#[async_trait]
+impl PushStream for MacAppsStream {
+    async fn receive_push(&self, source_id: Uuid, payload: IngestPayload) -> Result<PushResult> {
+        // Validate payload
+        self.validate_payload(&payload)?;
 
-    // Validate timestamp
-    let timestamp_dt = chrono::DateTime::parse_from_rfc3339(timestamp)
-        .map_err(|e| Error::Other(format!("Invalid timestamp format: {e}")))?
-        .with_timezone(&chrono::Utc);
-    validate_timestamp_reasonable(timestamp_dt)?;
+        let mut result = PushResult::new(payload.records.len());
 
-    // Write to S3/object storage via StreamWriter
-    // This replaces the previous SQL INSERT INTO stream_mac_apps
-    {
-        let mut writer = stream_writer.lock().await;
+        // source_id is passed from handler - single source of truth, no duplicate DB query
 
-        writer.write_record(source_id, "apps", record.clone(), Some(timestamp_dt))?;
+        // Process each record
+        for record in &payload.records {
+            // Extract timestamp
+            let timestamp = record
+                .get("timestamp")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Other("Missing timestamp in record".into()))?;
+
+            let timestamp_dt = chrono::DateTime::parse_from_rfc3339(timestamp)
+                .map_err(|e| Error::Other(format!("Invalid timestamp format: {e}")))?
+                .with_timezone(&Utc);
+
+            validate_timestamp_reasonable(timestamp_dt)?;
+
+            // Write to object storage via StreamWriter
+            {
+                let mut writer = self.stream_writer.lock().await;
+                writer.write_record(source_id, "apps", record.clone(), Some(timestamp_dt))?;
+            }
+
+            result.records_written += 1;
+        }
+
+        tracing::info!(
+            "Processed {} app records from device {}",
+            result.records_written,
+            payload.device_id
+        );
+
+        Ok(result)
     }
 
-    tracing::debug!(
-        "Wrote app usage record to object storage for device {}",
-        device_id
-    );
-    Ok(())
+    fn table_name(&self) -> &str {
+        "stream_mac_apps"
+    }
+
+    fn stream_name(&self) -> &str {
+        "apps"
+    }
+
+    fn source_name(&self) -> &str {
+        "mac"
+    }
 }

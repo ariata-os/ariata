@@ -3,41 +3,43 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use uuid::Uuid;
 
-/// Source configuration from JSON
+/// Source connection seed configuration from JSON
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SourceConfig {
+pub struct SourceConnectionSeed {
     pub id: Uuid,
-    pub provider: String,
+    pub source: String,
     pub name: String,
     pub auth_type: String,
     pub is_active: bool,
     pub is_internal: bool,
 }
 
-/// Sources JSON structure
+/// Source connections JSON structure
 #[derive(Debug, Deserialize)]
-struct SourcesJson {
+struct SourceConnectionsJson {
     #[allow(dead_code)]
     version: String,
-    sources: Vec<SourceConfig>,
+    connections: Vec<SourceConnectionSeed>,
 }
 
-/// Stream configuration from JSON
+/// Stream connection seed configuration from JSON
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct StreamConfig {
+pub struct StreamConnectionSeed {
     pub id: Uuid,
-    pub source_id: Uuid,
+    pub source_connection_id: Uuid,
     pub stream_name: String,
     pub table_name: String,
     pub is_enabled: bool,
+    /// Optional cron schedule override (if None, will use registry default)
+    pub cron_schedule: Option<String>,
 }
 
-/// Streams JSON structure
+/// Stream connections JSON structure
 #[derive(Debug, Deserialize)]
-struct StreamsJson {
+struct StreamConnectionsJson {
     #[allow(dead_code)]
     version: String,
-    streams: Vec<StreamConfig>,
+    connections: Vec<StreamConnectionSeed>,
 }
 
 /// Model configuration from JSON
@@ -91,6 +93,7 @@ pub struct ToolConfig {
     pub id: String,
     pub name: String,
     pub description: String,
+    pub tool_type: String,
     pub category: String,
     pub icon: String,
     pub is_pinnable: bool,
@@ -143,7 +146,6 @@ pub struct AssistantProfileDefaults {
     pub default_agent_id: String,
     pub default_model_id: String,
     pub enabled_tools: serde_json::Value,
-    pub pinned_tool_ids: Vec<String>,
     pub ui_preferences: serde_json::Value,
 }
 
@@ -165,24 +167,24 @@ pub fn load_assistant_profile_defaults() -> Result<AssistantProfileDefaults> {
     Ok(config.defaults)
 }
 
-/// Load source configurations from JSON
-pub fn load_sources() -> Result<Vec<SourceConfig>> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config/seeds/sources.json");
+/// Load source connection configurations from JSON
+pub fn load_source_connections() -> Result<Vec<SourceConnectionSeed>> {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config/seeds/_generated_source_connections.json");
     let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read sources.json from {}", path))?;
-    let config: SourcesJson = serde_json::from_str(&content)
-        .context("Failed to parse sources.json")?;
-    Ok(config.sources)
+        .with_context(|| format!("Failed to read _generated_source_connections.json from {}", path))?;
+    let config: SourceConnectionsJson = serde_json::from_str(&content)
+        .context("Failed to parse _generated_source_connections.json")?;
+    Ok(config.connections)
 }
 
-/// Load stream configurations from JSON
-pub fn load_streams() -> Result<Vec<StreamConfig>> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config/seeds/streams.json");
+/// Load stream connection configurations from JSON
+pub fn load_stream_connections() -> Result<Vec<StreamConnectionSeed>> {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../config/seeds/_generated_stream_connections.json");
     let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read streams.json from {}", path))?;
-    let config: StreamsJson = serde_json::from_str(&content)
-        .context("Failed to parse streams.json")?;
-    Ok(config.streams)
+        .with_context(|| format!("Failed to read _generated_stream_connections.json from {}", path))?;
+    let config: StreamConnectionsJson = serde_json::from_str(&content)
+        .context("Failed to parse _generated_stream_connections.json")?;
+    Ok(config.connections)
 }
 
 #[cfg(test)]
@@ -234,5 +236,106 @@ mod tests {
         // Verify UI preferences structure
         let ui_prefs = &defaults.ui_preferences;
         assert!(ui_prefs.get("contextIndicator").is_some(), "Should have contextIndicator preferences");
+    }
+
+    /// CRITICAL VALIDATION: Verify seed configs match registry
+    /// This catches mismatches between config/seeds/*.json and the Rust registry
+    #[test]
+    fn test_source_connections_match_registry() {
+        let connections = load_source_connections().expect("Failed to load source connections");
+
+        for conn in &connections {
+            // Verify source exists in registry
+            let registered_source = crate::registry::get_source(&conn.source)
+                .unwrap_or_else(|| panic!(
+                    "Source '{}' in _generated_source_connections.json not found in registry. \
+                     Did you forget to register it in core/src/registry/mod.rs?",
+                    conn.source
+                ));
+
+            // Verify auth_type matches
+            let registry_auth_type = match registered_source.auth_type {
+                crate::registry::AuthType::OAuth2 => "oauth2",
+                crate::registry::AuthType::Device => "device",
+                crate::registry::AuthType::ApiKey => "api_key",
+                crate::registry::AuthType::None => "none",
+            };
+
+            assert_eq!(
+                conn.auth_type, registry_auth_type,
+                "Auth type mismatch for source '{}': config says '{}', registry says '{}'. \
+                 Run 'make generate-seeds' to regenerate config from registry.",
+                conn.source, conn.auth_type, registry_auth_type
+            );
+        }
+    }
+
+    /// CRITICAL VALIDATION: Verify stream configs match registry
+    #[test]
+    fn test_stream_connections_match_registry() {
+        let source_connections = load_source_connections().expect("Failed to load source connections");
+        let stream_connections = load_stream_connections().expect("Failed to load stream connections");
+
+        for stream_conn in &stream_connections {
+            // Find the parent source connection
+            let source_conn = source_connections.iter()
+                .find(|s| s.id == stream_conn.source_connection_id)
+                .unwrap_or_else(|| panic!(
+                    "Stream '{}' references unknown source_connection_id {}. \
+                     Check _generated_stream_connections.json.",
+                    stream_conn.stream_name, stream_conn.source_connection_id
+                ));
+
+            // Verify stream exists in registry
+            let registered_stream = crate::registry::get_stream(&source_conn.source, &stream_conn.stream_name)
+                .unwrap_or_else(|| panic!(
+                    "Stream '{}' for source '{}' not found in registry. \
+                     Available streams: {:?}. \
+                     Run 'make generate-seeds' to regenerate config from registry.",
+                    stream_conn.stream_name,
+                    source_conn.source,
+                    crate::registry::get_source(&source_conn.source)
+                        .map(|s| s.streams.iter().map(|st| st.name).collect::<Vec<_>>())
+                        .unwrap_or_default()
+                ));
+
+            // Verify table_name matches
+            assert_eq!(
+                stream_conn.table_name, registered_stream.table_name,
+                "Table name mismatch for {}/{}: config says '{}', registry says '{}'. \
+                 Run 'make generate-seeds' to regenerate config from registry.",
+                source_conn.source, stream_conn.stream_name,
+                stream_conn.table_name, registered_stream.table_name
+            );
+        }
+    }
+
+    /// Verify only internal sources are in seed config
+    /// OAuth/Device sources should NOT be seeded (created via auth flows)
+    #[test]
+    fn test_only_internal_sources_in_seeds() {
+        let connections = load_source_connections().expect("Failed to load source connections");
+
+        for conn in &connections {
+            let registry_source = crate::registry::get_source(&conn.source)
+                .unwrap();
+
+            if registry_source.auth_type != crate::registry::AuthType::None {
+                panic!(
+                    "Source '{}' has auth_type '{}' but is in seed config! \
+                     Only internal sources (auth_type=None) should be seeded. \
+                     OAuth/Device sources are created via auth flows. \
+                     Run 'make generate-seeds' to regenerate config from registry.",
+                    conn.source,
+                    conn.auth_type
+                );
+            }
+
+            assert!(
+                conn.is_internal,
+                "Source '{}' in seed config should have is_internal=true",
+                conn.source
+            );
+        }
     }
 }

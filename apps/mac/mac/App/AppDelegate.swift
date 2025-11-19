@@ -10,11 +10,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isDaemonMode = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Set up shared file logging
+        Logger.setup()
+
         // Log app information at startup
-        print("🚀 Ariata Mac starting up")
-        print("   Bundle path: \(Bundle.main.bundlePath)")
-        print("   Executable: \(Bundle.main.executablePath ?? "unknown")")
-        print("   Bundle ID: \(Bundle.main.bundleIdentifier ?? "unknown")")
+        Logger.log("🚀 Ariata Mac starting up")
+        Logger.log("   Bundle path: \(Bundle.main.bundlePath)")
+        Logger.log("   Executable: \(Bundle.main.executablePath ?? "unknown")")
+        Logger.log("   Bundle ID: \(Bundle.main.bundleIdentifier ?? "unknown")")
 
         // Check if launched in daemon mode (--daemon flag)
         isDaemonMode = CommandLine.arguments.contains("--daemon")
@@ -26,30 +29,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if isDaemonMode {
             // Headless daemon mode - no menu bar, no dock icon
             NSApp.setActivationPolicy(.prohibited)
-            print("Starting in daemon mode (headless)...")
+            Logger.log("Starting in daemon mode (headless)...")
 
             // Start daemon directly
             daemonController?.start()
         } else {
             // Interactive mode - show menu bar
             NSApp.setActivationPolicy(.accessory) // No dock icon, but menu bar visible
-            print("Starting in interactive mode (menu bar)...")
+            Logger.log("Starting in interactive mode (menu bar)...")
 
             // Check if app is paired (config exists)
-            print("🔍 Checking if app is paired...")
+            Logger.log("🔍 Checking if app is paired...")
             let isPaired = Config.load() != nil
-            print("📱 Paired status: \(isPaired)")
+            Logger.log("📱 Paired status: \(isPaired)")
 
             // Initialize menu bar
-            print("🎨 Creating menu bar controller...")
+            Logger.log("🎨 Creating menu bar controller...")
             menuBarController = MenuBarController(
                 daemonController: daemonController!,
                 permissionsManager: permissionsManager!,
                 needsPairing: !isPaired
             )
-            print("🎨 Calling menuBarController.setup()...")
+            Logger.log("🎨 Calling menuBarController.setup()...")
             menuBarController?.setup()
-            print("✅ Menu bar setup complete")
+            Logger.log("✅ Menu bar setup complete", level: .success)
 
             // Only start daemon if paired AND has permissions
             if isPaired {
@@ -57,12 +60,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self = self else { return }
 
-                    print("🔐 Checking permissions...")
+                    Logger.log("🔐 Checking permissions...")
                     if let perms = self.permissionsManager, perms.allPermissionsGranted() {
-                        print("✅ All permissions granted, starting daemon...")
+                        Logger.log("✅ All permissions granted, starting daemon...", level: .success)
                         self.daemonController?.start()
+
+                        // Trigger immediate menu update
+                        self.menuBarController?.updateStatus()
                     } else {
-                        print("⚠️ Missing permissions, showing alert...")
+                        Logger.log("⚠️ Missing permissions, showing alert...", level: .warning)
                         self.showPermissionsAlert()
                     }
                 }
@@ -74,9 +80,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // Stop daemon unless we're in daemon mode and just closing menu bar
         if !isDaemonMode {
-            print("Stopping daemon...")
+            Logger.log("Stopping daemon...")
             daemonController?.stop()
         }
+        Logger.close()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // This is called when user tries to relaunch the app while it's already running
+        // (e.g., clicking app icon again or using `open` command)
+        Logger.log("🔄 App reopen requested (hasVisibleWindows: \(flag))")
+
+        // If we're in daemon mode, ignore reopen requests
+        if isDaemonMode {
+            Logger.log("   Ignoring reopen in daemon mode")
+            return false
+        }
+
+        // Re-show the menu bar if it was hidden
+        if let menuBar = menuBarController {
+            menuBar.showMenuBar()
+        }
+
+        return true
     }
 
     private func showPermissionsAlert() {
@@ -135,18 +161,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let perms = self.permissionsManager, perms.allPermissionsGranted() {
                 timer.invalidate()
 
-                print("✅ All permissions granted! Starting daemon...")
+                Logger.log("✅ All permissions granted! Starting daemon...", level: .success)
 
                 // Start the daemon immediately
                 DispatchQueue.main.async {
                     self.daemonController?.start()
 
-                    // Show brief success notification (non-blocking)
-                    let notification = NSUserNotification()
-                    notification.title = "Ariata Ready"
-                    notification.informativeText = "Now monitoring your activity and messages"
-                    notification.soundName = NSUserNotificationDefaultSoundName
-                    NSUserNotificationCenter.default.deliver(notification)
+                    // Show brief success notification using modern API
+                    self.menuBarController?.showNotification(
+                        title: "Ariata Ready",
+                        message: "Now monitoring your activity and messages"
+                    )
+
+                    // Update menu bar status immediately
+                    self.menuBarController?.updateStatus()
                 }
             }
         }

@@ -8,6 +8,7 @@ pub struct Tool {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    pub tool_type: String,
     pub category: Option<String>,
     pub icon: Option<String>,
     pub is_pinnable: bool,
@@ -29,6 +30,7 @@ pub struct ListToolsQuery {
 pub struct UpdateToolRequest {
     pub name: Option<String>,
     pub description: Option<String>,
+    pub tool_type: Option<String>,
     pub category: Option<String>,
     pub icon: Option<String>,
     pub is_pinnable: Option<bool>,
@@ -85,6 +87,11 @@ pub async fn update_tool(db: &PgPool, id: String, payload: UpdateToolRequest) ->
         param_count += 1;
     }
 
+    if payload.tool_type.is_some() {
+        updates.push(format!("tool_type = ${}", param_count));
+        param_count += 1;
+    }
+
     if payload.category.is_some() {
         updates.push(format!("category = ${}", param_count));
         param_count += 1;
@@ -131,6 +138,9 @@ pub async fn update_tool(db: &PgPool, id: String, payload: UpdateToolRequest) ->
     }
     if let Some(description) = payload.description {
         sqlx_query = sqlx_query.bind(description);
+    }
+    if let Some(tool_type) = payload.tool_type {
+        sqlx_query = sqlx_query.bind(tool_type);
     }
     if let Some(category) = payload.category {
         sqlx_query = sqlx_query.bind(category);
