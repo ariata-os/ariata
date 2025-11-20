@@ -207,7 +207,8 @@ class AudioManager: NSObject, ObservableObject {
     func refreshAvailableInputs() {
         // Temporarily activate audio session to get full list of inputs
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth])
+            // Use .mixWithOthers to avoid interrupting music playback
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth, .mixWithOthers])
             try audioSession.setActive(true)
 
             // Update the list
@@ -240,10 +241,12 @@ class AudioManager: NSObject, ObservableObject {
             if let savedUID = UserDefaults.standard.string(forKey: "selectedAudioInputUID") {
                 // Try to find the saved device in available inputs
                 if let matchingInput = self.availableAudioInputs.first(where: { $0.uid == savedUID }) {
-                    // Saved device is available - use it
+                    // Saved device is available - update UI state but DON'T auto-switch
+                    // Only apply when user explicitly starts/restarts recording
                     self.selectedAudioInput = matchingInput
                     #if DEBUG
-                    print("Preferred audio input available: \(self.getDisplayName(for: matchingInput))")
+                    print("   Preferred audio input available: \(self.getDisplayName(for: matchingInput))")
+                    print("   Will be used on next recording start (no auto-switch to avoid interrupting other apps)")
                     #endif
                 } else {
                     // Saved device not available (disconnected) - use built-in mic temporarily
@@ -327,19 +330,21 @@ class AudioManager: NSObject, ObservableObject {
     func setupAudioSession() throws {
         // Configure audio session without .allowBluetooth if user selected built-in mic
         let shouldAllowBluetooth = selectedAudioInput?.portType != .builtInMic
-        
-        var options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .mixWithOthers]
+
+        // Use .mixWithOthers to allow music apps (Spotify, etc.) to play simultaneously
+        // Remove .defaultToSpeaker as it can interfere with Bluetooth routing
+        var options: AVAudioSession.CategoryOptions = [.mixWithOthers]
         if shouldAllowBluetooth {
             options.insert(.allowBluetooth)
         }
-        
+
         try audioSession.setCategory(.playAndRecord, mode: .default, options: options)
-        
+
         // Set preferred input if one is selected
         if let selectedInput = selectedAudioInput {
             try audioSession.setPreferredInput(selectedInput)
         }
-        
+
         try audioSession.setActive(true)
     }
     
