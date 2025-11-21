@@ -16,6 +16,7 @@ struct SettingsView: View {
     @ObservedObject private var audioManager = AudioManager.shared
     
     @Environment(\.dismiss) var dismiss
+    @AppStorage("isOnboardingComplete") private var isOnboardingComplete = false
     @State private var showingResetAlert = false
     @State private var showingStorageDetails = false
     @State private var showingEndpointEdit = false
@@ -155,7 +156,23 @@ struct SettingsView: View {
                                     .font(.caption)
                             }
                         }
-                        
+
+                        // Show saved preference if device is disconnected
+                        if let savedUID = UserDefaults.standard.string(forKey: "selectedAudioInputUID"),
+                           audioManager.selectedAudioInput?.uid != savedUID {
+                            HStack {
+                                Text("Preferred Device")
+                                Spacer()
+                                Text("Disconnected")
+                                    .foregroundColor(.orange)
+                                    .font(.caption)
+                            }
+
+                            Text("Your preferred audio device will be used automatically when connected")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
                         Text("Select 'iPhone Microphone' to prevent Bluetooth devices from being used")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -215,6 +232,10 @@ struct SettingsView: View {
                     }
                 }
             }
+            .onAppear {
+                // Refresh audio inputs when Settings opens (to detect Bluetooth devices)
+                audioManager.refreshAvailableInputs()
+            }
             .alert("Reset App?", isPresented: $showingResetAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Reset", role: .destructive) {
@@ -241,21 +262,24 @@ struct SettingsView: View {
     private func resetApp() {
         // Stop all services (this stops all data collection)
         uploadCoordinator.stopPeriodicUploads()
-        
+
         // Stop individual trackers
         locationManager.stopTracking()
         audioManager.stopRecording()
-        
+
         // Clear configuration
         deviceManager.clearConfiguration()
-        
+
         // Clear UserDefaults
         if let bundleId = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: bundleId)
         }
-        
-        // Exit app (user will need to restart)
-        exit(0)
+
+        // Reset onboarding flag - this will trigger app to show onboarding screen
+        isOnboardingComplete = false
+
+        // Close settings view - app will show onboarding
+        dismiss()
     }
 }
 
