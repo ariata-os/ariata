@@ -270,11 +270,15 @@ class AudioManager: NSObject, ObservableObject {
     func selectAudioInput(_ input: AVAudioSessionPortDescription?) {
         selectedAudioInput = input
         saveSelectedInput()
-        
+
         // Apply the selection if currently recording
+        // This happens when user EXPLICITLY selects in Settings
         if isRecording {
             do {
                 try audioSession.setPreferredInput(input)
+                #if DEBUG
+                print("   Switched recording input to: \(input.map { getDisplayName(for: $0) } ?? "default")")
+                #endif
             } catch {
                 print("❌ Failed to set preferred audio input: \(error)")
             }
@@ -328,19 +332,15 @@ class AudioManager: NSObject, ObservableObject {
     // MARK: - Audio Session Setup
     
     func setupAudioSession() throws {
-        // Configure audio session without .allowBluetooth if user selected built-in mic
-        let shouldAllowBluetooth = selectedAudioInput?.portType != .builtInMic
-
-        // Use .mixWithOthers to allow music apps (Spotify, etc.) to play simultaneously
-        // Remove .defaultToSpeaker as it can interfere with Bluetooth routing
-        var options: AVAudioSession.CategoryOptions = [.mixWithOthers]
-        if shouldAllowBluetooth {
-            options.insert(.allowBluetooth)
-        }
+        // Always allow Bluetooth devices to connect (for music playback, calls, etc.)
+        // Control which device is used for recording via setPreferredInput() instead
+        let options: AVAudioSession.CategoryOptions = [.mixWithOthers, .allowBluetooth]
 
         try audioSession.setCategory(.playAndRecord, mode: .default, options: options)
 
-        // Set preferred input if one is selected
+        // Set preferred input to control which device records
+        // If user selected iPhone mic, this will use built-in mic for recording
+        // while still allowing AirPods to connect for music playback
         if let selectedInput = selectedAudioInput {
             try audioSession.setPreferredInput(selectedInput)
         }
