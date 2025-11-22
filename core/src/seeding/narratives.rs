@@ -415,11 +415,11 @@ pub async fn seed_rome_monday_narrative(db: &Database) -> Result<usize> {
     let mut count = 0;
 
     // Get microphone transcription IDs to link
-    let microphone_ids = get_sample_ontology_ids(pool, "ios_microphone_transcription", 10).await?;
+    let microphone_ids = get_sample_ontology_ids(pool, "speech_transcription", 10).await?;
 
     // Build ontology references
     let ontology_refs = json!({
-        "ios_microphone_transcription": microphone_ids,
+        "speech_transcription": microphone_ids,
     });
 
     // Skip embedding for now - can generate later if needed

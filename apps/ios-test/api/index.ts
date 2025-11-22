@@ -69,6 +69,32 @@ interface VerifyResponse {
   enabled_streams: StreamInfo[];
 }
 
+interface IngestRequest {
+  source: string;
+  stream: string;
+  device_id: string;
+  records: any[];
+  timestamp: string;
+  checkpoint?: string;
+}
+
+interface IngestResponse {
+  accepted: number;
+  rejected: number;
+  next_checkpoint?: string;
+  activity_id: string;
+}
+
+interface IngestedRecord {
+  id: string;
+  timestamp: Date;
+  source: string;
+  stream: string;
+  device_id: string;
+  records: any[];
+  record_count: number;
+}
+
 // Generate random pairing code
 function generatePairingCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -228,6 +254,20 @@ function setCORS(res: VercelResponse) {
 // In-memory store (note: will reset on cold starts)
 const pairingCodes = new Map<string, { source_id: string, expires_at: Date }>();
 
+// In-memory store for ingested data (1-minute TTL, resets on cold starts)
+const ingestedData: IngestedRecord[] = [];
+const MAX_AGE_MS = 60000; // 1 minute
+
+// Cleanup function for old records
+function cleanupOldRecords() {
+  const cutoff = Date.now() - MAX_AGE_MS;
+  const validIndex = ingestedData.findIndex(r => r.timestamp.getTime() > cutoff);
+
+  if (validIndex > 0) {
+    ingestedData.splice(0, validIndex);
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCORS(res);
 
@@ -247,6 +287,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'POST /api/devices/pairing/initiate - Initiate device pairing (web/CLI)',
         'POST /api/devices/pairing/complete - Complete device pairing (iOS app)',
         'POST /api/devices/verify - Verify device token',
+        'POST /ingest - Ingest device data (iOS app)',
+        'GET /api/debug/recent-uploads - View recent ingested data',
         'GET /health - Health check'
       ]
     });
@@ -345,6 +387,124 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (error) {
       return res.status(500).json({
         error: 'Verification failed',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  // Ingest endpoint
+  if (path === '/ingest' && req.method === 'POST') {
+    try {
+      const authHeader = req.headers.authorization;
+
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+      }
+
+      const token = authHeader.substring(7);
+      const payload = req.body as IngestRequest;
+
+      // Validate required fields
+      if (!payload.source || !payload.stream || !payload.device_id || !payload.records) {
+        return res.status(400).json({
+          error: 'Missing required fields: source, stream, device_id, records'
+        });
+      }
+
+      // Store the ingested data with timestamp
+      const record: IngestedRecord = {
+        id: generateUUID(),
+        timestamp: new Date(),
+        source: payload.source,
+        stream: payload.stream,
+        device_id: payload.device_id,
+        records: payload.records,
+        record_count: payload.records.length
+      };
+
+      ingestedData.push(record);
+
+      // Cleanup old records
+      cleanupOldRecords();
+
+      // Log the ingest
+      console.log(`[INGEST] ${payload.stream}: ${payload.records.length} records from ${payload.device_id.substring(0, 8)}...`);
+
+      // Return success response
+      const response: IngestResponse = {
+        accepted: payload.records.length,
+        rejected: 0,
+        next_checkpoint: payload.checkpoint || null,
+        activity_id: record.id
+      };
+
+      return res.status(200).json(response);
+    } catch (error) {
+      return res.status(500).json({
+        error: 'Ingest failed',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
+  // Debug endpoint - view recent uploads
+  if (path === '/api/debug/recent-uploads' && req.method === 'GET') {
+    try {
+      // Cleanup before showing data
+      cleanupOldRecords();
+
+      const now = Date.now();
+      const recent = ingestedData.filter(r =>
+        now - r.timestamp.getTime() <= MAX_AGE_MS
+      );
+
+      // Group by stream
+      const byStream: Record<string, IngestedRecord[]> = {};
+      for (const record of recent) {
+        if (!byStream[record.stream]) {
+          byStream[record.stream] = [];
+        }
+        byStream[record.stream].push(record);
+      }
+
+      // Calculate stats
+      const totalRecords = recent.reduce((sum, r) => sum + r.record_count, 0);
+      const oldestUpload = recent[0]?.timestamp;
+      const newestUpload = recent[recent.length - 1]?.timestamp;
+
+      const response = {
+        total_uploads: recent.length,
+        total_records: totalRecords,
+        oldest_upload: oldestUpload?.toISOString() || null,
+        newest_upload: newestUpload?.toISOString() || null,
+        uploads_by_stream: Object.keys(byStream).reduce((acc, stream) => {
+          acc[stream] = {
+            upload_count: byStream[stream].length,
+            record_count: byStream[stream].reduce((sum, r) => sum + r.record_count, 0),
+            uploads: byStream[stream].map(r => ({
+              id: r.id,
+              timestamp: r.timestamp.toISOString(),
+              device_id: r.device_id,
+              record_count: r.record_count
+            }))
+          };
+          return acc;
+        }, {} as Record<string, any>),
+        data: recent.map(r => ({
+          id: r.id,
+          timestamp: r.timestamp.toISOString(),
+          source: r.source,
+          stream: r.stream,
+          device_id: r.device_id,
+          record_count: r.record_count,
+          records: r.records
+        }))
+      };
+
+      return res.status(200).json(response);
+    } catch (error) {
+      return res.status(500).json({
+        error: 'Failed to retrieve debug data',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
     }

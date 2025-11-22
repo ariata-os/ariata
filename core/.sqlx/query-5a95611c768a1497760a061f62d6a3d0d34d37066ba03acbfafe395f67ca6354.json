@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE data.event_boundaries\n        SET is_primary = true\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a95611c768a1497760a061f62d6a3d0d34d37066ba03acbfafe395f67ca6354"
+}

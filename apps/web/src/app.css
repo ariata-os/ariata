@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './themes.css';
 
 /* Add Streamdown styles to Tailwind build */
 @source "../node_modules/svelte-streamdown/**/*";
@@ -11,72 +12,49 @@
   font-display: swap;
 }
 
+/* ===================================
+   COMPONENT STYLES
+   =================================== */
 
-@theme {
-	/* Ariata Color Palette */
-	--color-navy: #14283D;
-	--color-navy-light: #1a3550;
-	--color-paper: #FAF9F5;
-	--color-paper-dark: #F3F2E9;
-	--color-white: #FFFFFF;
-	--color-blue: #2883DE;
-	--color-blue-light: #4a9ae5;
-
-	/* Stone palette for grays */
-	--color-stone-200: #e7e5e4;
-	--color-stone-300: #d6d3d1;
-	--color-stone-400: #a8a29e;
-	--color-stone-500: #78716c;
-	--color-stone-600: #57534e;
-	--color-stone-700: #44403c;
-	--color-stone-800: #292524;
-	--color-stone-900: #1c1917;
-
-	/* Font Families */
-	--font-mono: 'IBM Plex Mono', monospace;
-	--font-sans: 'Avenir', sans-serif;
-	--font-serif: 'PP Writer', Lora, serif;
-}
-
-/* Markdown Styles */
+/* Markdown Styles - Using semantic colors */
 .markdown {
-	color: var(--color-stone-800);
+	color: var(--color-foreground);
 	line-height: 1.5;
 }
 
 .markdown h1 {
 	@apply text-2xl font-light font-serif mb-6;
-	color: var(--color-navy);
+	color: var(--color-foreground);
 	line-height: 1.5;
 }
 
 .markdown h2 {
 	@apply text-xl font-light font-serif mb-5;
-	color: var(--color-navy);
+	color: var(--color-foreground);
 	line-height: 1.5;
 }
 
 .markdown h3 {
 	@apply text-xl font-light font-serif mb-4;
-	color: var(--color-navy);
+	color: var(--color-foreground);
 	line-height: 1.5;
 }
 
 .markdown h4 {
 	@apply text-lg font-light font-serif mb-2;
-	color: var(--color-navy-light);
+	color: var(--color-foreground-muted);
 	line-height: 1.5;
 }
 
 .markdown h5 {
 	@apply text-base font-light font-serif mb-1;
-	color: var(--color-navy-light);
+	color: var(--color-foreground-muted);
 	line-height: 1.5;
 }
 
 .markdown h6 {
 	@apply text-sm font-light font-serif mb-1;
-	color: var(--color-stone-700);
+	color: var(--color-foreground-subtle);
 	line-height: 1.5;
 }
 
@@ -95,7 +73,9 @@
 
 /* Inline code styling - block code is handled by Streamdown */
 .markdown :not(pre) > code {
-	@apply px-1.5 py-0.5 rounded text-stone-800 text-xs font-mono bg-stone-200;
+	@apply px-1.5 py-0.5 rounded text-xs font-mono;
+	color: var(--color-foreground);
+	background-color: var(--color-surface-elevated);
 }
 
 /* Size SVG icons in code block action buttons */
@@ -132,38 +112,38 @@
 
 .markdown blockquote {
 	@apply border-l-4 pl-4 italic my-4;
-	border-color: var(--color-navy);
-	color: var(--color-stone-600);
+	border-color: var(--color-primary);
+	color: var(--color-foreground-muted);
 }
 
 .markdown a {
 	@apply underline;
-	color: var(--color-blue);
+	color: var(--color-primary);
 }
 
 .markdown a:hover {
-	color: var(--color-navy);
+	color: var(--color-primary-hover);
 }
 
 .markdown hr {
 	@apply my-6;
-	border-color: var(--color-stone-300);
+	border-color: var(--color-border-subtle);
 }
 
 /* Override Streamdown's table wrapper styling to match our theme */
 .markdown [data-streamdown-table] {
-	border-color: var(--color-stone-300) !important;
+	border-color: var(--color-border-subtle) !important;
 	background-color: transparent !important;
 }
 
 /* Override Streamdown's thead background to match our theme */
 .markdown [data-streamdown-thead] {
-	background-color: var(--color-stone-200) !important;
+	background-color: var(--color-surface-elevated) !important;
 }
 
 /* Override Streamdown's row hover to match our theme */
 .markdown [data-streamdown-tr]:hover {
-	background-color: var(--color-paper) !important;
+	background-color: var(--color-background) !important;
 }
 
 .markdown table {
@@ -176,8 +156,8 @@
 	@apply px-4 py-2 text-left text-sm;
 	font-weight: 400;
 	font-family: var(--font-serif);
-	border-right: 1px solid var(--color-stone-300);
-	border-bottom: 1px solid var(--color-stone-300);
+	border-right: 1px solid var(--color-border-subtle);
+	border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .markdown th:last-child {
@@ -186,8 +166,8 @@
 
 .markdown td {
 	@apply px-4 py-2 text-sm;
-	border-right: 1px solid var(--color-stone-300);
-	border-bottom: 1px solid var(--color-stone-300);
+	border-right: 1px solid var(--color-border-subtle);
+	border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .markdown td:last-child {
@@ -202,32 +182,35 @@
 	@apply max-w-full h-auto rounded-lg my-4;
 }
 
-/* Button Variants */
+/* Button Variants - Using semantic colors */
 .btn-primary {
-	background-color: var(--color-navy);
-	color: var(--color-white);
+	background-color: var(--color-secondary);
+	color: var(--color-surface);
 }
 
 .btn-primary:hover:not(:disabled) {
-	background-color: var(--color-navy-light);
+	background-color: var(--color-secondary-hover);
+}
+
+.btn-primary:active:not(:disabled) {
+	background-color: var(--color-secondary-active);
 }
 
 .btn-secondary {
-	background-color: var(--color-paper);
-	color: var(--color-navy);
-	border: 1px solid var(--color-navy);
+	background-color: var(--color-background);
+	color: var(--color-secondary);
+	border: 1px solid var(--color-secondary);
 }
 
 .btn-secondary:hover:not(:disabled) {
-	background-color: var(--color-paper-dark);
+	background-color: var(--color-surface-elevated);
 }
 
 .btn-ghost {
 	background-color: transparent;
-	color: var(--color-stone-700);
+	color: var(--color-foreground-muted);
 }
 
 .btn-ghost:hover:not(:disabled) {
-	background-color: var(--color-paper);
+	background-color: var(--color-background);
 }
-

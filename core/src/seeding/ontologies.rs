@@ -42,6 +42,18 @@ pub async fn seed_ontologies(db: &Database) -> Result<usize> {
 
 /// Get or create a stream for seed data
 async fn get_or_create_seed_stream(pool: &PgPool, source_id: Uuid) -> Result<Uuid> {
+    // Ensure source exists first
+    sqlx::query!(
+        r#"
+        INSERT INTO data.source_connections (id, source, name, auth_type, is_active)
+        VALUES ($1, 'seed_source', 'Seed Data Source', 'none', true)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+        source_id
+    )
+    .execute(pool)
+    .await?;
+
     let stream_id = sqlx::query_scalar!(
         r#"
         INSERT INTO data.stream_connections (source_connection_id, stream_name, table_name, is_enabled)
@@ -62,7 +74,7 @@ async fn get_or_create_seed_stream(pool: &PgPool, source_id: Uuid) -> Result<Uui
 async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
     let mut count = 0;
     let now = Utc::now();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // Generate 30 days of health data
     for day in 0..30 {
@@ -78,11 +90,11 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                     .and_utc();
 
                 let bpm = match hour {
-                    7..=9 => rng.gen_range(65..85),   // Morning
-                    10..=12 => rng.gen_range(70..90), // Mid-morning
-                    13..=17 => rng.gen_range(75..95), // Afternoon
-                    18..=22 => rng.gen_range(65..80), // Evening
-                    _ => rng.gen_range(60..75),
+                    7..=9 => rng.random_range(65..85),   // Morning
+                    10..=12 => rng.random_range(70..90), // Mid-morning
+                    13..=17 => rng.random_range(75..95), // Afternoon
+                    18..=22 => rng.random_range(65..80), // Evening
+                    _ => rng.random_range(60..75),
                 };
 
                 let context = match hour {
@@ -117,7 +129,7 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
             .and_hms_opt(23, 0, 0)
             .unwrap()
             .and_utc();
-        let sleep_duration = rng.gen_range(360..540); // 6-9 hours
+        let sleep_duration = rng.random_range(360..540); // 6-9 hours
         let sleep_end = sleep_start + Duration::minutes(sleep_duration);
 
         sqlx::query!(
@@ -129,7 +141,7 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
             ON CONFLICT DO NOTHING
             "#,
             sleep_duration as i32,
-            rng.gen_range(0.6..1.0),
+            rng.random_range(0.6..1.0),
             sleep_start,
             sleep_end,
             stream_id
@@ -146,7 +158,7 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                 .and_hms_opt(18, 0, 0)
                 .unwrap()
                 .and_utc();
-            let workout_duration = rng.gen_range(30..90);
+            let workout_duration = rng.random_range(30..90);
             let workout_end = workout_start + Duration::minutes(workout_duration);
 
             let activities = vec!["running", "cycling", "swimming", "weightlifting", "yoga"];
@@ -160,10 +172,10 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'stream_seed_data', 'seed')
                 ON CONFLICT DO NOTHING
                 "#,
-                activities[rng.gen_range(0..activities.len())],
-                intensities[rng.gen_range(0..intensities.len())],
-                rng.gen_range(200..800),
-                rng.gen_range(120..170),
+                activities[rng.random_range(0..activities.len())],
+                intensities[rng.random_range(0..intensities.len())],
+                rng.random_range(200..800),
+                rng.random_range(120..170),
                 workout_start,
                 workout_end,
                 stream_id
@@ -187,7 +199,7 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
             VALUES ($1, $2, $3, 'stream_seed_data', 'seed')
             ON CONFLICT DO NOTHING
             "#,
-            rng.gen_range(4000..15000),
+            rng.random_range(4000..15000),
             steps_time,
             stream_id
         )
@@ -204,18 +216,18 @@ async fn seed_health_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 async fn seed_social_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
     let mut count = 0;
     let now = Utc::now();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // Generate 30 days of social data
     for day in 0..30 {
         let base_time = now - Duration::days(day);
 
         // Email messages (5-10 per day = ~225 total)
-        let email_count = rng.gen_range(5..11);
+        let email_count = rng.random_range(5..11);
         for i in 0..email_count {
             let timestamp = base_time
                 .date_naive()
-                .and_hms_opt(rng.gen_range(8..20), rng.gen_range(0..60), 0)
+                .and_hms_opt(rng.random_range(8..20), rng.random_range(0..60), 0)
                 .unwrap()
                 .and_utc();
 
@@ -239,11 +251,11 @@ async fn seed_social_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                 ON CONFLICT DO NOTHING
                 "#,
                 format!("seed-email-{}-{}", day, i),
-                subjects[rng.gen_range(0..subjects.len())],
+                subjects[rng.random_range(0..subjects.len())],
                 SafeEmail().fake::<String>(),
                 Name().fake::<String>(),
                 &vec![SafeEmail().fake::<String>()],
-                directions[rng.gen_range(0..directions.len())],
+                directions[rng.random_range(0..directions.len())],
                 timestamp,
                 stream_id
             )
@@ -254,11 +266,11 @@ async fn seed_social_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
         }
 
         // Messages (10-20 per day = ~450 total)
-        let message_count = rng.gen_range(10..21);
+        let message_count = rng.random_range(10..21);
         for i in 0..message_count {
             let timestamp = base_time
                 .date_naive()
-                .and_hms_opt(rng.gen_range(8..23), rng.gen_range(0..60), 0)
+                .and_hms_opt(rng.random_range(8..23), rng.random_range(0..60), 0)
                 .unwrap()
                 .and_utc();
 
@@ -274,10 +286,10 @@ async fn seed_social_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                 ON CONFLICT DO NOTHING
                 "#,
                 format!("seed-msg-{}-{}", day, i),
-                channels[rng.gen_range(0..channels.len())],
+                channels[rng.random_range(0..channels.len())],
                 "Sample message content",
                 PhoneNumber().fake::<String>(),
-                directions[rng.gen_range(0..directions.len())],
+                directions[rng.random_range(0..directions.len())],
                 timestamp,
                 stream_id
             )
@@ -295,7 +307,7 @@ async fn seed_social_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 async fn seed_location_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
     let mut count = 0;
     let now = Utc::now();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // Base coordinates (San Francisco area)
     let base_lat = 37.7749;
@@ -314,8 +326,8 @@ async fn seed_location_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                 .and_utc();
 
             // Add some random variation
-            let lat = base_lat + rng.gen_range(-0.05..0.05);
-            let lon = base_lon + rng.gen_range(-0.05..0.05);
+            let lat = base_lat + rng.random_range(-0.05..0.05);
+            let lon = base_lon + rng.random_range(-0.05..0.05);
 
             sqlx::query!(
                 r#"
@@ -328,7 +340,7 @@ async fn seed_location_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                 lat,
                 lon,
                 format!("POINT({} {})", lon, lat),
-                rng.gen_range(5.0..50.0),
+                rng.random_range(5.0..50.0),
                 timestamp,
                 stream_id
             )
@@ -343,18 +355,18 @@ async fn seed_location_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
         // Once the table exists and transform is implemented, uncomment this section:
         //
         // // Location visits (1-2 per day = ~45 total)
-        // let visit_count = rng.gen_range(1..3);
+        // let visit_count = rng.random_range(1..3);
         // for _ in 0..visit_count {
         //     let start_time = base_time
         //         .date_naive()
-        //         .and_hms_opt(rng.gen_range(9..20), 0, 0)
+        //         .and_hms_opt(rng.random_range(9..20), 0, 0)
         //         .unwrap()
         //         .and_utc();
-        //     let duration = rng.gen_range(30..180); // 30 mins to 3 hours
+        //     let duration = rng.random_range(30..180); // 30 mins to 3 hours
         //     let end_time = start_time + Duration::minutes(duration);
         //
-        //     let lat = base_lat + rng.gen_range(-0.05..0.05);
-        //     let lon = base_lon + rng.gen_range(-0.05..0.05);
+        //     let lat = base_lat + rng.random_range(-0.05..0.05);
+        //     let lon = base_lon + rng.random_range(-0.05..0.05);
         //
         //     sqlx::query!(
         //         r#"
@@ -385,21 +397,21 @@ async fn seed_location_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
 async fn seed_activity_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
     let mut count = 0;
     let now = Utc::now();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // Generate 30 days of activity data
     for day in 0..30 {
         let base_time = now - Duration::days(day);
 
         // Calendar entries (2-4 per day = ~90 total)
-        let cal_count = rng.gen_range(2..5);
+        let cal_count = rng.random_range(2..5);
         for _ in 0..cal_count {
             let start_time = base_time
                 .date_naive()
-                .and_hms_opt(rng.gen_range(9..17), 0, 0)
+                .and_hms_opt(rng.random_range(9..17), 0, 0)
                 .unwrap()
                 .and_utc();
-            let duration = rng.gen_range(30..120); // 30 mins to 2 hours
+            let duration = rng.random_range(30..120); // 30 mins to 2 hours
             let end_time = start_time + Duration::minutes(duration);
 
             let titles = vec![
@@ -418,7 +430,7 @@ async fn seed_activity_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                 VALUES ($1, $2, $3, $4, $5, $6, 'stream_seed_data', 'seed')
                 ON CONFLICT DO NOTHING
                 "#,
-                titles[rng.gen_range(0..titles.len())],
+                titles[rng.random_range(0..titles.len())],
                 "Work",
                 start_time,
                 end_time,
@@ -432,14 +444,14 @@ async fn seed_activity_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
         }
 
         // App usage (5-10 per day = ~225 total)
-        let app_count = rng.gen_range(5..11);
+        let app_count = rng.random_range(5..11);
         for _ in 0..app_count {
             let start_time = base_time
                 .date_naive()
-                .and_hms_opt(rng.gen_range(8..22), rng.gen_range(0..60), 0)
+                .and_hms_opt(rng.random_range(8..22), rng.random_range(0..60), 0)
                 .unwrap()
                 .and_utc();
-            let duration = rng.gen_range(5..120); // 5 mins to 2 hours
+            let duration = rng.random_range(5..120); // 5 mins to 2 hours
             let end_time = start_time + Duration::minutes(duration);
 
             let apps = vec![
@@ -449,7 +461,7 @@ async fn seed_activity_data(pool: &PgPool, stream_id: Uuid) -> Result<usize> {
                 ("Terminal", "development"),
                 ("Notion", "productivity"),
             ];
-            let (app_name, app_category) = apps[rng.gen_range(0..apps.len())];
+            let (app_name, app_category) = apps[rng.random_range(0..apps.len())];
 
             sqlx::query!(
                 r#"

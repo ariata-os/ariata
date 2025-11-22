@@ -3,6 +3,8 @@
  * This provides a single source of truth for model metadata including context window limits
  */
 
+import { browser } from '$app/environment';
+
 export interface ModelOption {
 	id: string;
 	displayName: string;
@@ -19,6 +21,10 @@ export interface ModelOption {
  * Fetch all models from API
  */
 export async function fetchModels(): Promise<ModelOption[]> {
+	if (!browser) {
+		return [];
+	}
+
 	const response = await fetch('/api/models');
 	if (!response.ok) {
 		throw new Error(`Failed to fetch models: ${response.statusText}`);
@@ -43,6 +49,10 @@ export async function fetchModels(): Promise<ModelOption[]> {
  * Get model configuration by ID from API
  */
 export async function getModelById(modelId: string): Promise<ModelOption | null> {
+	if (!browser) {
+		return null;
+	}
+
 	const response = await fetch(`/api/models/${encodeURIComponent(modelId)}`);
 	if (!response.ok) {
 		if (response.status === 404) return null;

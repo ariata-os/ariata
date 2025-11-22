@@ -107,7 +107,6 @@ CREATE TABLE IF NOT EXISTS data.praxis_task (
     vice_ids UUID[],                   -- Links to axiology_vice
     value_ids UUID[],                  -- Links to axiology_value
     purpose TEXT,                      -- Why am I doing this?
-    telos_alignment_score INTEGER,     -- 1-10: How much does this serve my telos?
 
     -- Context
     context_energy TEXT,               -- 'deep_focus', 'shallow', 'creative'
@@ -150,7 +149,6 @@ CREATE TABLE IF NOT EXISTS data.praxis_initiative (
     vice_ids UUID[],
     value_ids UUID[],
     purpose TEXT,
-    telos_alignment_score INTEGER,
 
     -- For commitment-level initiatives (overcoming addiction, etc.)
     is_commitment BOOLEAN DEFAULT FALSE,
@@ -183,7 +181,6 @@ CREATE TABLE IF NOT EXISTS data.praxis_aspiration (
     virtue_ids UUID[],
     value_ids UUID[],
     purpose TEXT,
-    telos_alignment_score INTEGER,
 
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -266,58 +263,7 @@ BEGIN
     END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS data.narrative_chunks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    narrative_text TEXT NOT NULL,
-    narrative_type TEXT NOT NULL,
-    time_start TIMESTAMPTZ NOT NULL,
-    time_end TIMESTAMPTZ NOT NULL,
-    time_granularity TEXT NOT NULL,
-    parent_narrative_id UUID REFERENCES narrative_chunks(id) ON DELETE CASCADE,
-    child_narrative_ids UUID[],
-    ontology_primitive_ids JSONB NOT NULL DEFAULT '{}'::jsonb,
-    person_ids UUID[],
-    place_ids UUID[],
-    topic_ids UUID[],
-    embedding vector(1536),
-    token_count INTEGER,
-    confidence_score FLOAT CHECK (confidence_score >= 0 AND confidence_score <= 1),
-    generation_model TEXT,
-    generated_by TEXT NOT NULL DEFAULT 'narrative_agent_v1',
-    generation_prompt_version TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (time_end > time_start),
-    CHECK (narrative_type IN ('action', 'event', 'day', 'week', 'chapter', 'telos'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_narrative_time_range
-    ON narrative_chunks(time_start, time_end);
-
-CREATE INDEX IF NOT EXISTS idx_narrative_parent
-    ON narrative_chunks(parent_narrative_id)
-    WHERE parent_narrative_id IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_narrative_type
-    ON narrative_chunks(narrative_type);
-
-CREATE INDEX IF NOT EXISTS idx_narrative_people
-    ON data.narrative_chunks USING GIN (person_ids);
-
-CREATE INDEX IF NOT EXISTS idx_narrative_places
-    ON data.narrative_chunks USING GIN (place_ids);
-
-CREATE INDEX IF NOT EXISTS idx_narrative_topics
-    ON data.narrative_chunks USING GIN (topic_ids);
-
-CREATE INDEX IF NOT EXISTS idx_narrative_primitives
-    ON data.narrative_chunks USING GIN (ontology_primitive_ids jsonb_path_ops);
-
-DROP TRIGGER IF EXISTS narrative_chunks_updated_at ON data.narrative_chunks;
-CREATE TRIGGER narrative_chunks_updated_at
-    BEFORE UPDATE ON data.narrative_chunks
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at();
+-- Note: narrative_chunks table removed - superseded by narrative_primitive in migration 006
 
 CREATE TABLE IF NOT EXISTS data.prudent_context_snapshot (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -334,7 +280,7 @@ CREATE INDEX IF NOT EXISTS idx_prudent_context_expires ON data.prudent_context_s
 CREATE OR REPLACE FUNCTION cleanup_expired_context()
 RETURNS void AS $$
 BEGIN
-    DELETE FROM prudent_context_snapshot
+    DELETE FROM data.prudent_context_snapshot
     WHERE expires_at < NOW() - INTERVAL '7 days';
 END;
 $$ LANGUAGE plpgsql;
@@ -354,6 +300,7 @@ CREATE TABLE IF NOT EXISTS data.user_profile (
     home_country TEXT,
     occupation TEXT,
     employer TEXT,
+    is_onboarding BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT user_profile_singleton CHECK (id = '00000000-0000-0000-0000-000000000001'::uuid)
@@ -363,7 +310,6 @@ INSERT INTO data.user_profile (id)
 VALUES ('00000000-0000-0000-0000-000000000001'::uuid)
 ON CONFLICT (id) DO NOTHING;
 
-DROP TRIGGER IF EXISTS user_profile_updated_at ON data.user_profile;
 DROP TRIGGER IF EXISTS user_profile_updated_at ON data.user_profile;
 CREATE TRIGGER user_profile_updated_at
     BEFORE UPDATE ON data.user_profile

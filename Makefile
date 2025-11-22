@@ -106,14 +106,38 @@ dev: env-check
 	@echo ""
 	@echo "📦 Starting infrastructure (Postgres + MinIO)..."
 	@docker-compose -f docker-compose.dev.yml up -d
-	@echo "⏳ Waiting for services..."
-	@sleep 8
+	@echo "⏳ Waiting for Postgres to be ready..."
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do \
+		if docker-compose -f docker-compose.dev.yml exec -T postgres pg_isready -U $(DB_USER) > /dev/null 2>&1; then \
+			echo "   ✅ Postgres ready (attempt $$i)"; \
+			sleep 2; \
+			break; \
+		fi; \
+		if [ $$i -eq 15 ]; then \
+			echo "   ❌ Postgres failed to start after 30 seconds"; \
+			exit 1; \
+		fi; \
+		sleep 2; \
+	done
 	@echo ""
 	@echo "🗄️  Running database migrations..."
 	@$(MAKE) migrate
 	@echo ""
+	@echo "🔍 Verifying critical tables exist..."
+	@if ! docker-compose -f docker-compose.dev.yml exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "SELECT 1 FROM data.event_boundaries LIMIT 0" > /dev/null 2>&1; then \
+		echo "   ❌ event_boundaries table missing - migrations may have failed!"; \
+		echo "   💡 Try: make db-reset && make dev"; \
+		exit 1; \
+	fi
+	@if ! docker-compose -f docker-compose.dev.yml exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "SELECT 1 FROM data.narrative_primitive LIMIT 0" > /dev/null 2>&1; then \
+		echo "   ❌ narrative_primitive table missing - migrations may have failed!"; \
+		echo "   💡 Try: make db-reset && make dev"; \
+		exit 1; \
+	fi
+	@echo "   ✅ All critical tables verified"
+	@echo ""
 	@echo "🔄 Checking SQLx query cache..."
-	@if [ ! -f core/.sqlx/query-*.json ]; then \
+	@if ! ls core/.sqlx/query-*.json >/dev/null 2>&1; then \
 		echo "   Setting up database for SQLx..."; \
 		docker-compose -f docker-compose.dev.yml exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -c "ALTER ROLE $(DB_USER) IN DATABASE $(DB_NAME) SET search_path TO data, public;" > /dev/null 2>&1; \
 		echo "   Generating SQLx cache (first time setup)..."; \
@@ -247,10 +271,13 @@ migrate: migrate-rust
 # Run SQLx migrations (data + app schemas) - works with native dev
 migrate-rust:
 	@echo "🗄️  Running SQLx migrations (data + app schemas)..."
+	@# Clean up duplicate migration tracking tables that can cause conflicts
+	@docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP TABLE IF EXISTS data._sqlx_migrations CASCADE;" 2>/dev/null || \
+		docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP TABLE IF EXISTS data._sqlx_migrations CASCADE;" 2>/dev/null || true
 	@if docker ps | grep -q ariata-core; then \
 		docker-compose exec core ariata migrate; \
 	else \
-		cd core && sqlx migrate run --database-url $(DB_URL); \
+		cd core && sqlx migrate run --database-url "$(DB_URL)?options=-csearch_path%3Dpublic%2Cdata%2Capp"; \
 	fi
 	@echo "✅ Migrations complete"
 
@@ -316,6 +343,9 @@ db-reset:
 		echo "🗑️  Dropping old elt schema (deprecated)..."; \
 		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS elt CASCADE;" 2>/dev/null || \
 			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA IF EXISTS elt CASCADE;" 2>/dev/null || true; \
+		echo "🗑️  Dropping SQLx migrations tables (all schemas)..."; \
+		docker-compose -f docker-compose.dev.yml exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP TABLE IF EXISTS public._sqlx_migrations CASCADE; DROP TABLE IF EXISTS data._sqlx_migrations CASCADE; DROP TABLE IF EXISTS app._sqlx_migrations CASCADE;" 2>/dev/null || \
+			docker-compose exec postgres psql -U $(DB_USER) -d $(DB_NAME) -c "DROP TABLE IF EXISTS public._sqlx_migrations CASCADE; DROP TABLE IF EXISTS data._sqlx_migrations CASCADE; DROP TABLE IF EXISTS app._sqlx_migrations CASCADE;" 2>/dev/null || true; \
 		echo "📝 Running migrations (will create schemas)..."; \
 		$(MAKE) migrate; \
 		echo "✨ Database reset complete!"; \
@@ -394,6 +424,7 @@ clean-all:
 	@echo ""
 	@echo "This will:"
 	@echo "  - Stop and remove all Docker containers + volumes"
+	@echo "  - Delete SQLx query cache"
 	@echo "  - Delete Mac app config, credentials, and queue"
 	@echo ""
 	@read -p "Continue? [y/N] " -n 1 -r; \
@@ -439,6 +470,7 @@ clean:
 	@echo "  - All containers"
 	@echo "  - All volumes (including databases!)"
 	@echo "  - All cached images"
+	@echo "  - SQLx query cache (core/.sqlx/)"
 	@read -p "Continue? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
@@ -446,6 +478,7 @@ clean:
 		docker-compose -f docker-compose.yml -f docker-compose.prod.yml down -v --rmi all 2>/dev/null || true; \
 		pkill -f "cargo run" 2>/dev/null || true; \
 		pkill -f "vite dev" 2>/dev/null || true; \
+		rm -rf core/.sqlx/*.json 2>/dev/null || true; \
 		echo "✅ Cleaned. Run 'make dev' to start fresh."; \
 	else \
 		echo "❌ Cancelled"; \

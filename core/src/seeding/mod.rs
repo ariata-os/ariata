@@ -6,7 +6,7 @@
 
 pub mod config_loader;
 pub mod monday_in_rome;
-pub mod narratives;
+// pub mod narratives;  // Commented out - narrative_chunks table removed, use narrative_primitive instead
 pub mod ontologies;
 pub mod prod_seed;
 

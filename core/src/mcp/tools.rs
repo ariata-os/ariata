@@ -106,44 +106,132 @@ fn convert_rows_to_json(rows: &[sqlx::postgres::PgRow]) -> Vec<serde_json::Value
 }
 
 // ============================================================================
-// Query Ontology Tool
+// Query Ontology Tool (Unified)
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct QueryOntologyRequest {
-    /// SQL query to execute (SELECT only, read-only)
-    pub query: String,
-    /// Optional limit on number of rows returned (default: 100, max: 1000)
+    /// Operation to perform: "query" (execute SQL), "list_tables" (discover tables), or "get_schema" (get table schema)
+    pub operation: String,
+
+    // Query operation parameters
+    /// SQL query to execute (required for "query" operation, SELECT only, read-only)
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Optional limit on number of rows returned (for "query" operation, default: 100, max: 1000)
     #[serde(default)]
     pub limit: Option<u32>,
+
+    // Schema operation parameters
+    /// Table name (required for "get_schema" operation)
+    #[serde(default)]
+    pub table_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct QueryOntologyResponse {
-    /// Query results as JSON array
-    pub rows: serde_json::Value,
-    /// Number of rows returned
-    pub row_count: usize,
-    /// Whether more results exist beyond the returned rows
-    pub has_more: bool,
-    /// The limit that was applied to the query
-    pub limit_applied: u32,
-    /// Schema information for the queried tables
-    pub schema_info: Option<String>,
+    /// Operation that was performed
+    pub operation: String,
+
+    // Query operation fields
+    /// Query results as JSON array (for "query" operation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rows: Option<serde_json::Value>,
+    /// Number of rows returned (for "query" operation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub row_count: Option<usize>,
+    /// Whether more results exist beyond the returned rows (for "query" operation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_more: Option<bool>,
+    /// The limit that was applied to the query (for "query" operation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_applied: Option<u32>,
+
+    // List tables operation fields
+    /// List of tables (for "list_tables" operation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tables: Option<Vec<OntologyTableInfo>>,
+
+    // Get schema operation fields
+    /// Table schema (for "get_schema" operation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema: Option<schema::TableSchema>,
 }
 
-/// Execute a read-only SQL query against ontology tables
+/// Unified ontology tool - routes to specific operations
 pub async fn query_ontology(
     pool: &PgPool,
     request: QueryOntologyRequest,
 ) -> Result<QueryOntologyResponse, String> {
+    match request.operation.as_str() {
+        "query" => {
+            let query = request.query.ok_or("Missing 'query' parameter for query operation")?;
+            let result = query_ontology_sql(pool, query, request.limit).await?;
+            Ok(QueryOntologyResponse {
+                operation: "query".to_string(),
+                rows: Some(result.rows),
+                row_count: Some(result.row_count),
+                has_more: Some(result.has_more),
+                limit_applied: Some(result.limit_applied),
+                tables: None,
+                schema: None,
+            })
+        }
+        "list_tables" => {
+            let tables = list_ontology_tables_internal(pool).await?;
+            Ok(QueryOntologyResponse {
+                operation: "list_tables".to_string(),
+                rows: None,
+                row_count: None,
+                has_more: None,
+                limit_applied: None,
+                tables: Some(tables),
+                schema: None,
+            })
+        }
+        "get_schema" => {
+            let table_name = request
+                .table_name
+                .ok_or("Missing 'table_name' parameter for get_schema operation")?;
+            let schema = get_table_schema_internal(pool, &table_name).await?;
+            Ok(QueryOntologyResponse {
+                operation: "get_schema".to_string(),
+                rows: None,
+                row_count: None,
+                has_more: None,
+                limit_applied: None,
+                tables: None,
+                schema: Some(schema),
+            })
+        }
+        _ => Err(format!(
+            "Invalid operation '{}'. Must be one of: query, list_tables, get_schema",
+            request.operation
+        )),
+    }
+}
+
+// Internal struct for query operation results
+struct QueryOntologyInternalResponse {
+    rows: serde_json::Value,
+    row_count: usize,
+    has_more: bool,
+    limit_applied: u32,
+}
+
+/// Internal: Execute a read-only SQL query against ontology tables
+async fn query_ontology_sql(
+    pool: &PgPool,
+    query: String,
+    limit: Option<u32>,
+) -> Result<QueryOntologyInternalResponse, String> {
     // Security: Validate query length to prevent DOS
-    if request.query.len() > 10000 {
+    if query.len() > 10000 {
         return Err("Query exceeds maximum length of 10KB".to_string());
     }
 
     // Security: Validate that query is read-only
-    let query_lower = request.query.trim().to_lowercase();
+    let query_lower = query.trim().to_lowercase();
 
     if !query_lower.starts_with("select") && !query_lower.starts_with("with") {
         return Err("Only SELECT queries are allowed".to_string());
@@ -160,14 +248,14 @@ pub async fn query_ontology(
     }
 
     // Apply limit (fetch one extra row to detect if more results exist)
-    let limit = request.limit.unwrap_or(100).min(1000);
+    let limit = limit.unwrap_or(100).min(1000);
     let fetch_limit = limit + 1; // Fetch one extra to detect has_more
 
     let query_with_limit = if query_lower.contains("limit") {
         // User provided their own LIMIT, use as-is
-        request.query.clone()
+        query.clone()
     } else {
-        format!("{} LIMIT {}", request.query, fetch_limit)
+        format!("{} LIMIT {}", query, fetch_limit)
     };
 
     // Execute query in a read-only transaction
@@ -194,12 +282,11 @@ pub async fn query_ontology(
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    Ok(QueryOntologyResponse {
+    Ok(QueryOntologyInternalResponse {
         row_count: final_rows.len(),
         rows: serde_json::Value::Array(final_rows),
         has_more,
         limit_applied: limit,
-        schema_info: None,
     })
 }
 
@@ -416,18 +503,8 @@ pub async fn list_sources(pool: &PgPool) -> Result<ListSourcesResponse, String> 
 }
 
 // ============================================================================
-// List Ontology Tables Tool
+// Internal Helper Types
 // ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ListOntologyTablesRequest {
-    // Empty struct - this tool takes no parameters
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ListOntologyTablesResponse {
-    pub tables: Vec<OntologyTableInfo>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OntologyTableInfo {
@@ -436,8 +513,8 @@ pub struct OntologyTableInfo {
     pub row_count: Option<i64>,
 }
 
-/// List all available ontology tables with their schemas
-pub async fn list_ontology_tables(pool: &PgPool) -> Result<ListOntologyTablesResponse, String> {
+/// Internal: List all available ontology tables with their schemas
+async fn list_ontology_tables_internal(pool: &PgPool) -> Result<Vec<OntologyTableInfo>, String> {
     let table_names = schema::list_ontology_tables(pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -469,104 +546,17 @@ pub async fn list_ontology_tables(pool: &PgPool) -> Result<ListOntologyTablesRes
         });
     }
 
-    Ok(ListOntologyTablesResponse { tables })
+    Ok(tables)
 }
 
-// ============================================================================
-// Get Table Schema Tool
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GetTableSchemaRequest {
-    pub table_name: String,
-}
-
-/// Get detailed schema for a specific ontology table
-pub async fn get_table_schema(
+/// Internal: Get detailed schema for a specific ontology table
+async fn get_table_schema_internal(
     pool: &PgPool,
-    request: GetTableSchemaRequest,
+    table_name: &str,
 ) -> Result<schema::TableSchema, String> {
-    schema::get_table_schema(pool, &request.table_name)
+    schema::get_table_schema(pool, table_name)
         .await
         .map_err(|e| e.to_string())
-}
-
-// ============================================================================
-// Trigger Sync Tool
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct TriggerSyncRequest {
-    pub source_id: String,
-    pub stream_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct TriggerSyncResponse {
-    pub job_ids: Vec<String>,
-    pub message: String,
-}
-
-/// Trigger a manual sync for a source or specific stream
-pub async fn trigger_sync(
-    pool: &PgPool,
-    request: TriggerSyncRequest,
-) -> Result<TriggerSyncResponse, String> {
-    // Parse source UUID
-    let source_uuid = uuid::Uuid::parse_str(&request.source_id)
-        .map_err(|_| "Invalid source ID format".to_string())?;
-
-    // Get streams to sync
-    let streams: Vec<(String,)> = if let Some(stream_name) = &request.stream_name {
-        sqlx::query_as(
-            "SELECT stream_name FROM data.stream_connections WHERE source_connection_id = $1 AND stream_name = $2 AND is_enabled = true",
-        )
-        .bind(source_uuid)
-        .bind(stream_name)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?
-    } else {
-        sqlx::query_as("SELECT stream_name FROM data.stream_connections WHERE source_connection_id = $1 AND is_enabled = true")
-            .bind(source_uuid)
-            .fetch_all(pool)
-            .await
-            .map_err(|e| e.to_string())?
-    };
-
-    if streams.is_empty() {
-        return Err("No enabled streams found for this source".to_string());
-    }
-
-    // Create sync jobs
-    let mut job_ids = Vec::new();
-
-    for (stream_name,) in streams {
-        let job_id = uuid::Uuid::new_v4();
-
-        sqlx::query(
-            r#"
-            INSERT INTO data.jobs (id, source_connection_id, stream_name, job_type, status, created_at)
-            VALUES ($1, $2, $3, 'sync', 'pending', NOW())
-            "#,
-        )
-        .bind(job_id)
-        .bind(source_uuid)
-        .bind(&stream_name)
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        job_ids.push(job_id.to_string());
-    }
-
-    let message = format!(
-        "Created {} sync job(s) for source {}",
-        job_ids.len(),
-        request.source_id
-    );
-
-    Ok(TriggerSyncResponse { job_ids, message })
 }
 
 // ============================================================================
@@ -577,12 +567,6 @@ pub async fn trigger_sync(
 pub struct QueryNarrativesRequest {
     /// Date to query narratives for (YYYY-MM-DD format)
     pub date: String,
-    /// Optional location filter (e.g., "Rome", "San Francisco")
-    #[serde(default)]
-    pub location: Option<String>,
-    /// Optional person filter (name of person met/interacted with)
-    #[serde(default)]
-    pub person: Option<String>,
     /// Optional narrative type filter (action, event, day, week, chapter, telos)
     #[serde(default)]
     pub narrative_type: Option<String>,
@@ -596,7 +580,7 @@ pub struct QueryNarrativesResponse {
     pub narrative_count: usize,
 }
 
-/// Query narrative biography summaries for a specific date, location, or person
+/// Query narrative biography summaries for a specific date
 pub async fn query_narratives(
     pool: &PgPool,
     request: QueryNarrativesRequest,
@@ -612,21 +596,20 @@ pub async fn query_narratives(
         .and_utc();
 
     // Build the query dynamically based on filters
+    // Note: Uses narrative_primitive table (narrative_chunks was removed)
     let mut query = String::from(
-        "SELECT narrative_text, narrative_type, time_start, time_end, confidence_score \
-         FROM data.narrative_chunks \
-         WHERE time_start >= $1 AND time_end <= $2",
+        "SELECT narrative_summary as narrative_text, primary_activity as narrative_type, \
+                start_time as time_start, end_time as time_end \
+         FROM data.narrative_primitive \
+         WHERE start_time >= $1 AND end_time <= $2",
     );
 
-    // Add narrative_type filter if provided
+    // Add activity filter if provided (maps to old narrative_type concept)
     if let Some(ref nt) = request.narrative_type {
-        query.push_str(&format!(" AND narrative_type = '{}'", nt));
-    } else {
-        // Default to day and event narratives
-        query.push_str(" AND narrative_type IN ('day', 'event')");
+        query.push_str(&format!(" AND primary_activity = '{}'", nt));
     }
 
-    query.push_str(" ORDER BY time_start DESC LIMIT 10");
+    query.push_str(" ORDER BY start_time DESC LIMIT 10");
 
     // Execute the query
     let rows = sqlx::query(&query)

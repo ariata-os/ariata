@@ -11,7 +11,6 @@ pub struct Tool {
     pub tool_type: String,
     pub category: Option<String>,
     pub icon: Option<String>,
-    pub is_pinnable: bool,
     pub default_params: Option<JsonValue>,
     pub display_order: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -22,7 +21,6 @@ pub struct Tool {
 
 #[derive(Debug, Deserialize)]
 pub struct ListToolsQuery {
-    pub pinnable: Option<bool>,
     pub category: Option<String>,
 }
 
@@ -33,7 +31,6 @@ pub struct UpdateToolRequest {
     pub tool_type: Option<String>,
     pub category: Option<String>,
     pub icon: Option<String>,
-    pub is_pinnable: Option<bool>,
     pub default_params: Option<JsonValue>,
     pub display_order: Option<i32>,
 }
@@ -41,10 +38,6 @@ pub struct UpdateToolRequest {
 /// List all tools with optional filtering
 pub async fn list_tools(db: &PgPool, params: ListToolsQuery) -> Result<Vec<Tool>> {
     let mut query = "SELECT * FROM app.tools WHERE 1=1".to_string();
-
-    if params.pinnable.unwrap_or(false) {
-        query.push_str(" AND is_pinnable = true");
-    }
 
     if let Some(category) = params.category {
         query.push_str(&format!(" AND category = '{}'", category));
@@ -102,11 +95,6 @@ pub async fn update_tool(db: &PgPool, id: String, payload: UpdateToolRequest) ->
         param_count += 1;
     }
 
-    if payload.is_pinnable.is_some() {
-        updates.push(format!("is_pinnable = ${}", param_count));
-        param_count += 1;
-    }
-
     if payload.display_order.is_some() {
         updates.push(format!("display_order = ${}", param_count));
         param_count += 1;
@@ -147,9 +135,6 @@ pub async fn update_tool(db: &PgPool, id: String, payload: UpdateToolRequest) ->
     }
     if let Some(icon) = payload.icon {
         sqlx_query = sqlx_query.bind(icon);
-    }
-    if let Some(is_pinnable) = payload.is_pinnable {
-        sqlx_query = sqlx_query.bind(is_pinnable);
     }
     if let Some(display_order) = payload.display_order {
         sqlx_query = sqlx_query.bind(display_order);

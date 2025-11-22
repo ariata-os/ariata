@@ -1,0 +1,75 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO data.event_boundaries\n            (timestamp, boundary_type, source_ontology, fidelity, weight, metadata)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            ON CONFLICT (timestamp, source_ontology, boundary_type)\n            DO UPDATE SET\n                fidelity = EXCLUDED.fidelity,\n                weight = EXCLUDED.weight,\n                metadata = EXCLUDED.metadata\n            RETURNING *\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "timestamp",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "boundary_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "source_ontology",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "fidelity",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "weight",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_primary",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Float8",
+        "Int4",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "0ebfffa0e5b839bdba6cf60f07115292dfb6ae1b7c41bf3bf553b905bc1ed94d"
+}

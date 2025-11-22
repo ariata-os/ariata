@@ -30,14 +30,14 @@ pub use transform::{
 ///
 /// Receives health data pushed from iOS devices via /ingest endpoint.
 pub struct IosHealthKitStream {
-    db: PgPool,
+    _db: PgPool,
     stream_writer: Arc<Mutex<StreamWriter>>,
 }
 
 impl IosHealthKitStream {
     /// Create a new IosHealthKitStream
     pub fn new(db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>) -> Self {
-        Self { db, stream_writer }
+        Self { _db: db, stream_writer }
     }
 }
 

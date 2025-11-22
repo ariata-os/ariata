@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE data.praxis_calendar\n        SET attendee_person_ids = $1,\n            updated_at = NOW()\n        WHERE id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "232407ea15abc9aa7e81723156d400202db6fa2bad2ff7b9da8ab58a3ab6ff11"
+}

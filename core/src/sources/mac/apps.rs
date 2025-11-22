@@ -20,14 +20,14 @@ use crate::{
 ///
 /// Receives app usage data pushed from macOS devices via /ingest endpoint.
 pub struct MacAppsStream {
-    db: PgPool,
+    _db: PgPool,
     stream_writer: Arc<Mutex<StreamWriter>>,
 }
 
 impl MacAppsStream {
     /// Create a new MacAppsStream
     pub fn new(db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>) -> Self {
-        Self { db, stream_writer }
+        Self { _db: db, stream_writer }
     }
 }
 

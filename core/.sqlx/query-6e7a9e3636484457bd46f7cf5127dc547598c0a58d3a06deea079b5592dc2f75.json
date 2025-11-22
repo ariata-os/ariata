@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH ordered_events AS (\n                SELECT\n                    start_time,\n                    end_time,\n                    app_name,\n                    app_category,\n                    LAG(end_time) OVER (ORDER BY start_time) as prev_end_time\n                FROM data.activity_app_usage\n                WHERE start_time < $2 AND end_time > $1\n                ORDER BY start_time ASC\n            ),\n            session_starts AS (\n                SELECT start_time, app_name, app_category\n                FROM ordered_events\n                WHERE prev_end_time IS NULL\n                   OR EXTRACT(EPOCH FROM (start_time - prev_end_time)) > 60\n            )\n            SELECT start_time, app_name, app_category\n            FROM session_starts\n            ORDER BY start_time ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "start_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "app_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_category",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "6e7a9e3636484457bd46f7cf5127dc547598c0a58d3a06deea079b5592dc2f75"
+}

@@ -1,7 +1,6 @@
 //! Device pairing API - Secure device registration and authentication
 
 use chrono::{DateTime, Duration, Utc};
-use rand::Rng;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -377,12 +376,13 @@ pub async fn verify_device(db: &PgPool, token: &str) -> Result<DeviceVerified> {
 
 /// Generate a 6-character alphanumeric pairing code
 fn generate_pairing_code() -> String {
+    use rand::Rng;
     const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Removed ambiguous: 0, O, 1, I
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     (0..6)
         .map(|_| {
-            let idx = rng.gen_range(0..CHARSET.len());
+            let idx = rng.random_range(0..CHARSET.len());
             CHARSET[idx] as char
         })
         .collect()
@@ -392,7 +392,7 @@ fn generate_pairing_code() -> String {
 fn generate_device_token() -> String {
     use rand::RngCore;
     let mut token = [0u8; 32]; // 256 bits
-    rand::thread_rng().fill_bytes(&mut token);
+    rand::rng().fill_bytes(&mut token);
     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &token)
 }
 

@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            lv.id,\n            lv.place_id,\n            ep.canonical_name as place_name\n        FROM data.location_visit lv\n        LEFT JOIN data.entities_place ep ON lv.place_id = ep.id\n        WHERE lv.start_time <= $2\n          AND lv.end_time >= $1\n        ORDER BY (lv.end_time - lv.start_time) DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "place_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "place_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "7c8bcacbba035880ffa694334524ddda4edc0d7178a1796d5c7a6e8b3a1ec933"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO data.source_connections (id, source, name, auth_type, is_active)\n        VALUES ($1, 'seed_source', 'Seed Data Source', 'none', true)\n        ON CONFLICT (id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "80e2e4d954820501a7ea9296281828706b4a025287919a18232942e2424ce157"
+}

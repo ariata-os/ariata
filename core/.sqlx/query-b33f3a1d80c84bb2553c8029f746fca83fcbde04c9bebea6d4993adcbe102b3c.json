@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                lv.start_time,\n                lv.end_time,\n                lv.place_id,\n                ep.canonical_name as place_name\n            FROM data.location_visit lv\n            LEFT JOIN data.entities_place ep ON lv.place_id = ep.id\n            WHERE lv.start_time < $2 AND lv.end_time > $1\n              AND (lv.end_time - lv.start_time) >= INTERVAL '30 minutes'\n            ORDER BY lv.start_time ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "start_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "end_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "place_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "place_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "b33f3a1d80c84bb2553c8029f746fca83fcbde04c9bebea6d4993adcbe102b3c"
+}

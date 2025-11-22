@@ -11,7 +11,7 @@ import type { Pool } from 'pg';
  * Tools that can be controlled via user preferences
  * Other tools (MCP tools, system tools) are always enabled
  */
-export const PREFERENCE_CONTROLLED_TOOLS = ['query_location_map', 'query_pursuits', 'web_search'] as const;
+export const PREFERENCE_CONTROLLED_TOOLS = ['query_location_map', 'web_search'] as const;
 
 /**
  * Tool preferences object
@@ -19,7 +19,6 @@ export const PREFERENCE_CONTROLLED_TOOLS = ['query_location_map', 'query_pursuit
  * - Tools set to true are enabled
  * - Tools set to false are disabled
  *
- * Example: { "query_location_map": true, "query_pursuits": false }
  */
 export type ToolPreferences = Record<string, boolean>;
 
@@ -29,7 +28,6 @@ export type ToolPreferences = Record<string, boolean>;
  */
 export const DEFAULT_TOOL_PREFERENCES: ToolPreferences = {
 	query_location_map: true,
-	query_pursuits: true,
 	web_search: true
 };
 

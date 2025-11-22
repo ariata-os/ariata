@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            id,\n            attendee_identifiers\n        FROM data.praxis_calendar\n        WHERE start_time >= $1\n          AND start_time < $2\n          AND array_length(attendee_identifiers, 1) > 0\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "attendee_identifiers",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "997a36997ecbc8847a6a3b46f4e61f3087dfc8b00098428dd50de1a040407963"
+}

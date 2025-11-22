@@ -24,7 +24,7 @@ An **event** is a temporally bounded period of coherent activity.
 Minimum event duration: 15 minutes
 Maximum event duration: 4 hours
 Target event duration: 30 minutes - 2 hours
-Expected events per day: 12-20 events (for 16-hour waking day)
+Expected events per day: 8-16 events (for 16-hour waking day)
 ```
 
 **Rationale:**
@@ -52,8 +52,6 @@ For a typical 16-hour waking day:
 16 events = 1 hour/event      (ideal - balanced granularity) ✅
 24 events = 40 min/event      (acceptable - high detail)
 32+ events = <30 min/event    (too granular - noisy)
-
-Target: 12-20 events per waking day (45-80 min average duration)
 ```
 
 ---
@@ -61,50 +59,6 @@ Target: 12-20 events per waking day (45-80 min average duration)
 ## 2. Event Salience (Quality Hierarchy)
 
 Not all events are equally important. **Salience** (from cognitive science) refers to the subjective importance or memorability of an event.
-
-### Salience Tiers
-
-**Tier 1: High Salience Events** (Major life moments)
-
-- Duration: 90+ minutes
-- High-fidelity boundaries (calendar, location)
-- Semantically rich (meetings, workouts, social gatherings, focused work)
-- Examples:
-  - Deep work session (2 hours)
-  - Important client meeting (1.5 hours)
-  - Dinner with family (1.5 hours)
-  - Workout at gym (1 hour)
-
-**Tier 2: Medium Salience Events** (Standard activities)
-
-- Duration: 30-90 minutes
-- Clear boundaries (calendar, location, activity change)
-- Routine but meaningful
-- Examples:
-  - Quick standup meeting (30 min)
-  - Lunch break (45 min)
-  - Email processing session (30 min)
-  - Grocery shopping (1 hour)
-
-**Tier 3: Low Salience Events** (Micro-events / Transitions)
-
-- Duration: 15-30 minutes
-- May have fuzzy boundaries
-- Functional but less memorable
-- Examples:
-  - Coffee break (15 min)
-  - Commute segment (20 min)
-  - Bathroom/stretch break (10 min)
-  - Quick phone call (15 min)
-
-### LLM Guidance on Salience
-
-The LLM should:
-
-- **Prefer creating Tier 1 and Tier 2 events** (these form the narrative backbone)
-- **Only create Tier 3 events if semantically meaningful** (e.g., commute is important context even if only 20 min)
-- **Merge or absorb low-salience micro-events** into adjacent higher-salience events when appropriate
-- **Use salience to resolve ambiguous boundaries**: Extend boundaries toward higher-salience activities
 
 ---
 
@@ -156,78 +110,6 @@ enum BoundaryConfidence {
     /// No clear signal, assumed based on time or fallback (fidelity: 0.3)
     Assumed,
 }
-```
-
-### Example Scenarios
-
-#### Scenario A: Both Boundaries Explicit ✅
-
-```
-9:00 AM: calendar_entry_start("Standup") → BEGIN (Explicit)
-9:30 AM: calendar_entry_end("Standup") → END (Explicit)
-
-Event: 9:00-9:30 AM "Daily standup meeting"
-- Start confidence: Explicit ✅
-- End confidence: Explicit ✅
-- Duration: 30 min (certain)
-```
-
-#### Scenario B: Begin Explicit, End Inferred ⚠️
-
-```
-9:30 AM: app_usage_start("VSCode") → BEGIN (Explicit)
-[... 2 hours of VSCode activity ...]
-11:35 AM: app_usage_end("VSCode"), app_usage_start("Slack") → END (Inferred)
-
-Event: 9:30-11:35 AM "Deep work coding session"
-- Start confidence: Explicit ✅
-- End confidence: Inferred ⚠️
-- Duration: ~2 hours (likely accurate, but end boundary fuzzy)
-
-Narrative: "After standup, you dove into a deep work session in VSCode that lasted about 2 hours. Around 11:35, you switched to Slack."
-```
-
-#### Scenario C: Begin Explicit, End Unknown ❓
-
-```
-9:30 AM: app_usage_start("VSCode") → BEGIN (Explicit)
-[... VSCode activity ...]
-10:45 AM: last_ontology(app_usage "VSCode") → Last known signal
-[... 30 minutes NO DATA ...]
-11:15 AM: location_visit("Cafe") → BEGIN (Explicit, new event)
-
-Event 1: 9:30-10:45+ AM "Deep work coding"
-- Start confidence: Explicit ✅
-- End confidence: Unknown ❓
-- Duration: AT LEAST 1h 15min (could have continued during gap)
-
-Gap: 10:45-11:15 AM (30 min unknown)
-
-Event 2: 11:15 AM-... "Working at cafe"
-- Start confidence: Explicit ✅
-
-Narrative: "You worked in VSCode from 9:30 until at least 10:45 AM. After a gap in tracking, you arrived at a cafe around 11:15 AM."
-```
-
-#### Scenario D: No Clear Boundaries (Smooth Transition) 🌫️
-
-```
-10:00 AM: app_usage("Slack")
-10:15 AM: app_usage("Chrome")
-10:30 AM: app_usage("VSCode")
-10:45 AM: app_usage("Slack")
-
-No location change, no calendar, no major signal changes.
-
-LLM decision: Don't create 4 separate events for app switches.
-Instead: Single event with fuzzy boundaries.
-
-Event: 10:00-11:00 AM "Mixed work activities"
-- Start confidence: Assumed
-- End confidence: Assumed
-- Duration: ~1 hour (fuzzy boundaries)
-
-Narrative: "During the late morning, you bounced between Slack conversations, web browsing, and coding—typical multitasking mode."
 ```
 
 ---
@@ -444,48 +326,6 @@ Gaps in data are inevitable. The system must decide how to interpret them.
 | **10-30 minutes** | Ambiguous (could be transition or brief activity) | Create "transition" event OR extend boundary with note |
 | **>30 minutes** | Separate events (clear unknown period) | Create explicit "unknown period" in narrative |
 
-### Example: Short Gap (<10 min)
-
-```
-9:00-9:25 AM: Speech detected (meeting)
-9:25-9:32 AM: NO DATA (7 min gap)
-9:32-9:45 AM: Speech detected (same meeting continued)
-
-Decision: Merge into single event
-Event: 9:00-9:45 AM "Team meeting"
-Narrative: "You participated in a team meeting from 9:00-9:45 AM."
-```
-
-### Example: Medium Gap (10-30 min)
-
-```
-10:00-10:30 AM: App usage (VSCode)
-10:30-10:50 AM: NO DATA (20 min gap)
-10:50-11:30 AM: App usage (VSCode)
-
-Decision: Options
-A) Merge: "10:00-11:30 AM Deep work (with brief break)"
-B) Split: "10:00-10:30 AM Work", "10:50-11:30 AM Work (resumed)"
-
-LLM chooses based on context (A if no other signals, B if location changed)
-```
-
-### Example: Long Gap (>30 min)
-
-```
-2:00-3:00 PM: Location (Office)
-3:00-4:15 PM: NO DATA (75 min gap)
-4:15-5:00 PM: Location (Home)
-
-Decision: Explicit unknown period
-Events:
-- 2:00-3:00 PM "Working at office"
-- 3:00-4:15 PM "Unknown (no data)"
-- 4:15-5:00 PM "Arrived home"
-
-Narrative: "You were working at the office until 3:00 PM. After a gap in tracking, you were back home by 4:15 PM."
-```
-
 ---
 
 ## 9. LLM Context & Prompting
@@ -668,124 +508,3 @@ Rule 8: Low-salience events → Merge into adjacent high-salience events when ap
 ```
 
 ---
-
-## 12. Implementation Phases
-
-### Week 1: Simplified MVP
-
-**Goal:** Prove the concept with minimal complexity.
-
-**Ontologies used:**
-
-- `calendar_entry` (fidelity: 1.0)
-- `location_visit` (fidelity: 0.95)
-
-**Detection method:**
-
-```rust
-fn detect_boundaries_mvp(ontologies: Vec<Ontology>) -> Vec<EventBoundary> {
-    let mut boundaries = vec![];
-
-    // Strategy 1: Calendar events (ground truth)
-    for cal in ontologies.iter().filter(|o| o.is_calendar_entry()) {
-        boundaries.push(EventBoundary::from_calendar(cal));
-    }
-
-    // Strategy 2: Location visits
-    for visit in ontologies.iter().filter(|o| o.is_location_visit()) {
-        boundaries.push(EventBoundary::from_location(visit));
-    }
-
-    // Strategy 3: Fallback to 2-hour fixed windows if no boundaries
-    if boundaries.len() < 2 {
-        boundaries = fixed_2hour_windows(&ontologies);
-    }
-
-    // Smooth nearby boundaries (<5 min apart)
-    smooth_boundaries(boundaries, Duration::minutes(5))
-}
-```
-
-**LLM prompt:** Simplified (no prior context, just current window)
-
----
-
-### Week 2-3: Full System
-
-**Ontologies added:**
-
-- `activity_app_usage` (fidelity: 0.75)
-- `speech_audio_classification` (fidelity: 0.70)
-- `health_heart_rate` (fidelity: 0.50)
-- `social_email` (fidelity: 0.30)
-
-**Detection methods:**
-
-- Implement per-ontology trait system
-- Add PELT for continuous signals
-- Add fidelity weighting
-- Add prior event context to LLM
-
-**LLM prompt:** Full context (prior events, last known state, temporal metadata)
-
----
-
-### Post-MVP: Advanced Features
-
-- Community detection for recurring patterns (e.g., "Tuesday standup")
-- Semantic similarity for event clustering (e.g., "all coding sessions")
-- User feedback loop (correct boundaries manually → retrain weights)
-- Predictive boundaries (e.g., "meeting about to start")
-
----
-
-## 13. References
-
-### Academic Background
-
-- **PELT Algorithm**: Killick, R., Fearnhead, P., & Eckley, I. A. (2012). Optimal detection of changepoints with a linear computational cost. *Journal of the American Statistical Association*.
-- **Activity Segmentation**: Ward, J. A., Lukowicz, P., & Gellersen, H. W. (2011). Performance metrics for activity recognition. *ACM Transactions on Intelligent Systems and Technology*.
-- **Salience in Memory**: Kahneman, D., & Tversky, A. (1979). Prospect theory: An analysis of decision under risk. *Econometrica*.
-
-### Implementation Libraries
-
-- **Rust**: `ruptures` (Python, call via PyO3), `changepoint` (Rust crate)
-- **Statistical tests**: `statrs` (Rust), `scipy.stats` (Python)
-
----
-
-## 14. Example: Full Day Walkthrough
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete data pipeline architecture.
-
-**Input:** All ontologies from 7 AM - 11 PM
-
-**Output:** 16 events with narratives
-
-```
-1. 7:00-8:00 AM: Morning routine at home (salience: medium)
-2. 8:00-8:30 AM: Commute to office (salience: low)
-3. 8:30-9:00 AM: Settled at desk (salience: low)
-4. 9:00-9:30 AM: Daily standup meeting (salience: high)
-5. 9:30-11:30 AM: Deep work coding session (salience: high)
-6. 11:30 AM-12:00 PM: Slack communication (salience: medium)
-7. 12:00-1:00 PM: Lunch at cafe (salience: medium)
-8. 1:00-1:30 PM: Return to office (salience: low)
-9. 1:30-3:00 PM: Client meeting (salience: high)
-10. 3:00-3:15 PM: Coffee break (salience: low)
-11. 3:15-5:00 PM: Email processing and planning (salience: medium)
-12. 5:00-5:30 PM: Commute home (salience: low)
-13. 5:30-6:30 PM: Exercise at gym (salience: high)
-14. 6:30-7:30 PM: Dinner with family (salience: high)
-15. 7:30-10:00 PM: Leisure time at home (salience: medium)
-16. 10:00 PM-7:00 AM: Sleep (salience: special)
-
-Total: 16 events (average 1 hour each)
-High salience: 6 events
-Medium salience: 5 events
-Low salience: 5 events
-```
-
----
-
-**Next Steps:** See implementation in `core/ontologies/changepoints/` for Rust code.

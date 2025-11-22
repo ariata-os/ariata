@@ -14,7 +14,6 @@
 		tool_type: string;
 		category: string | null;
 		icon: string | null;
-		is_pinnable: boolean;
 		display_order: number | null;
 	}
 
@@ -32,8 +31,6 @@
 	let defaultModelId = $state("");
 	let selectedModel: ModelOption | undefined = $state(undefined);
 	let enabledTools: Record<string, boolean> = $state({});
-	let pinnedToolIds: string[] = $state([]);
-	let availablePinnableTools: Array<{ id: string; name: string; description: string | null; icon: string | null }> = $state([]);
 
 	// UI preferences
 	let contextIndicatorAlwaysVisible = $state(false);
@@ -85,7 +82,6 @@
 				defaultAgentId = profile.default_agent_id || "auto";
 				defaultModelId = profile.default_model_id || DEFAULT_MODEL?.id || "";
 				enabledTools = profile.enabled_tools || {};
-				pinnedToolIds = profile.pinned_tool_ids || [];
 
 				// Load UI preferences
 				if (profile.ui_preferences?.contextIndicator) {
@@ -121,9 +117,6 @@
 						enabledTools[tool.id] = true;
 					}
 				}
-
-				// Filter pinnable tools from the loaded tools
-				availablePinnableTools = tools.filter(t => t.is_pinnable);
 			} else {
 				console.error(
 					"[Assistant Settings] Failed to load tools, status:",
@@ -135,14 +128,6 @@
 		} finally {
 			loading = false;
 			console.log("[Assistant Settings] Loading complete");
-		}
-	}
-
-	function togglePinnedTool(toolId: string) {
-		if (pinnedToolIds.includes(toolId)) {
-			pinnedToolIds = pinnedToolIds.filter(id => id !== toolId);
-		} else {
-			pinnedToolIds = [...pinnedToolIds, toolId];
 		}
 	}
 
@@ -158,7 +143,6 @@
 					default_agent_id: defaultAgentId || null,
 					default_model_id: defaultModelId || null,
 					enabled_tools: enabledTools,
-					pinned_tool_ids: pinnedToolIds,
 					ui_preferences: {
 						contextIndicator: {
 							alwaysVisible: contextIndicatorAlwaysVisible,
@@ -203,50 +187,6 @@
 			</div>
 		{:else}
 			<form onsubmit={(e) => { e.preventDefault(); saveProfile(); }} class="space-y-6">
-				<!-- Pinned Tools Section -->
-				<div class="bg-white border border-neutral-200 rounded-lg p-6">
-					<h2 class="text-lg font-medium text-neutral-900 mb-4">
-						Pinned Tools
-					</h2>
-					<p class="text-sm text-neutral-600 mb-6">
-						Select tools to pin to your chat interface. Pinned tools appear as quick-access buttons when starting a new conversation.
-					</p>
-
-					<div class="space-y-3">
-						{#each availablePinnableTools as tool}
-							<label class="flex items-start gap-3 cursor-pointer group">
-								<input
-									type="checkbox"
-									checked={pinnedToolIds.includes(tool.id)}
-									onchange={() => togglePinnedTool(tool.id)}
-									class="mt-0.5 w-4 h-4 border-neutral-300 rounded text-neutral-900 focus:ring-2 focus:ring-neutral-900 cursor-pointer"
-								/>
-								<div class="flex-1 min-w-0 flex items-center gap-2">
-									{#if tool.icon}
-										<iconify-icon icon={tool.icon} width="16" class="text-neutral-500"></iconify-icon>
-									{/if}
-									<div class="flex-1">
-										<div class="text-sm font-medium text-neutral-900 group-hover:text-neutral-700">
-											{tool.name}
-										</div>
-										{#if tool.description}
-											<div class="text-xs text-neutral-600 mt-0.5">
-												{tool.description}
-											</div>
-										{/if}
-									</div>
-								</div>
-							</label>
-						{/each}
-					</div>
-
-					<div class="mt-4 p-3 bg-neutral-50 border border-neutral-200 rounded-md">
-						<p class="text-xs text-neutral-600">
-							<strong>Tip:</strong> Pinned tools appear as quick-access buttons below the chat input when starting a new conversation. Click them to instantly execute the tool.
-						</p>
-					</div>
-				</div>
-
 				<!-- Display Preferences Section -->
 				<div class="bg-white border border-neutral-200 rounded-lg p-6">
 					<h2 class="text-lg font-medium text-neutral-900 mb-4">

@@ -103,12 +103,12 @@ export async function checkRateLimit(
 	// This prevents race conditions by using database-level atomicity
 	const result = await pool.query(
 		`
-		INSERT INTO api_usage
+		INSERT INTO app.api_usage
 			(endpoint, day_bucket, request_count)
 		VALUES ($1, $2, 1)
 		ON CONFLICT (endpoint, day_bucket)
 		DO UPDATE SET
-			request_count = api_usage.request_count + 1,
+			request_count = app.api_usage.request_count + 1,
 			updated_at = NOW()
 		RETURNING request_count
 		`,
@@ -181,7 +181,7 @@ export async function recordUsage(endpoint: string, tokens: TokenUsage): Promise
 	// Update token usage (request count already incremented by checkRateLimit)
 	const result = await pool.query(
 		`
-		UPDATE api_usage
+		UPDATE app.api_usage
 		SET
 			token_count = token_count + $3,
 			input_tokens = input_tokens + $4,
@@ -256,7 +256,7 @@ async function getDailyUsage(pool: Pool, endpoint: string, dayBucket: string): P
 		SELECT
 			COALESCE(request_count, 0) as request_count,
 			COALESCE(token_count, 0) as token_count
-		FROM api_usage
+		FROM app.api_usage
 		WHERE endpoint = $1 AND day_bucket = $2
 		`,
 		[endpoint, dayBucket]
@@ -272,7 +272,7 @@ async function getTotalDailyTokens(pool: Pool, dayBucket: string): Promise<numbe
 	const result = await pool.query(
 		`
 		SELECT COALESCE(SUM(token_count), 0)::int as total_tokens
-		FROM api_usage
+		FROM app.api_usage
 		WHERE day_bucket = $1
 		`,
 		[dayBucket]
@@ -285,7 +285,7 @@ async function getDailyCost(pool: Pool, dayBucket: string): Promise<number> {
 	const result = await pool.query(
 		`
 		SELECT COALESCE(SUM(estimated_cost_usd), 0)::numeric as total_cost
-		FROM api_usage
+		FROM app.api_usage
 		WHERE day_bucket = $1
 		`,
 		[dayBucket]

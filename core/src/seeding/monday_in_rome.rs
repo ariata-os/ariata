@@ -17,13 +17,34 @@ use crate::{
     },
     storage::{stream_writer::StreamWriter, Storage},
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 use uuid::Uuid;
+
+/// Shift a timestamp from the seed data to be relative to today
+///
+/// Seed data is from Nov 9-10, 2025 (sleep starts Nov 9 22:00, wakes Nov 10 06:30).
+/// We shift it to be within the last 6 hours so boundary detection works immediately.
+#[allow(dead_code)]
+fn shift_to_recent_date(original_timestamp: DateTime<Utc>) -> DateTime<Utc> {
+    // Reference point: Nov 10, 2025 00:00 UTC (midnight of the "Monday in Rome" day)
+    let seed_reference = DateTime::parse_from_rfc3339("2025-11-10T00:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+
+    // Calculate offset from reference point
+    let offset = original_timestamp.signed_duration_since(seed_reference);
+
+    // Apply offset to "now - 3 hours" (puts data in recent past, within 6-hour sweeper window)
+    let now = Utc::now();
+    let target_base = now - Duration::hours(3);
+
+    target_base + offset
+}
 
 /// Device metadata from Monday in Rome recording
 const DEVICE_ID: &str = "a1162b36-4606-4b50-a875-8be0f7274ff0";
@@ -232,6 +253,8 @@ async fn seed_stream_pipeline(
 ///
 /// Loads microphone.csv and directly inserts into speech_transcription ontology table,
 /// bypassing the transform layer to avoid calling AssemblyAI API during seeding.
+///
+/// Groups utterances into conversation sessions based on VAD segment gaps (>2 min silence).
 async fn seed_microphone_transcriptions(
     db: &Database,
     source_id: Uuid,
@@ -243,10 +266,9 @@ async fn seed_microphone_transcriptions(
         .map_err(|e| Error::Other(format!("Failed to read microphone CSV: {}", e)))?;
 
     let mut rdr = csv::Reader::from_reader(file_content.as_bytes());
-    let mut count = 0;
 
-    // Create a seed stream ID for microphone (similar to other streams)
-    let seed_stream_id = sqlx::query_scalar::<_, Uuid>(
+    // Create a seed stream connection for microphone (similar to other streams)
+    let _seed_stream_id = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO data.stream_connections (source_connection_id, stream_name, table_name, created_at, updated_at)
          VALUES ($1, 'microphone', 'stream_ios_microphone', NOW(), NOW())
          ON CONFLICT (source_connection_id, stream_name) DO UPDATE SET updated_at = NOW()
@@ -256,33 +278,47 @@ async fn seed_microphone_transcriptions(
     .fetch_one(db.pool())
     .await?;
 
+    // Base timestamp: Nov 10, 2025 06:30:00 UTC (recording started when user woke up)
+    // The seconds_elapsed field is seconds from recording start
+    let base_timestamp = DateTime::parse_from_rfc3339("2025-11-10T06:30:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+
+    // Collect all utterances first to group into conversations
+    #[allow(dead_code)]
+    struct Utterance {
+        seconds_elapsed: f64,
+        actual_speech_duration: f64, // From metadata: concatenated_end - concatenated_start
+        segment_id: i64,
+        transcript_text: String,
+        confidence_score: f64,
+        speaker_count: Option<i32>,
+        speaker_labels: Option<serde_json::Value>,
+        metadata: serde_json::Value,
+    }
+
+    let mut utterances: Vec<Utterance> = Vec::new();
+
     for result in rdr.deserialize() {
         let record: serde_json::Map<String, serde_json::Value> =
             result.map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
 
-        // Extract fields from CSV
-        let time_ns = record
-            .get("time")
+        // Use seconds_elapsed (NOT time which is relative nanoseconds)
+        let seconds_elapsed = record
+            .get("seconds_elapsed")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| Error::Other("Missing time field".into()))?;
+            .ok_or_else(|| Error::Other("Missing seconds_elapsed field".into()))?;
 
-        let timestamp = DateTime::<Utc>::from_timestamp(
-            (time_ns / 1_000_000_000.0) as i64,
-            (time_ns % 1_000_000_000.0) as u32,
-        )
-        .ok_or_else(|| Error::Other("Invalid timestamp".into()))?;
-
-        let duration_seconds = record
-            .get("duration_seconds")
-            .and_then(|v| v.as_f64())
-            .map(|d| d as i32);
+        let segment_id = record
+            .get("segment_id")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
 
         let transcript_text = record
             .get("transcript_text")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::Other("Missing transcript_text".into()))?;
-
-        let language = record.get("language").and_then(|v| v.as_str());
+            .ok_or_else(|| Error::Other("Missing transcript_text".into()))?
+            .to_string();
 
         let confidence_score = record
             .get("confidence_score")
@@ -294,18 +330,127 @@ async fn seed_microphone_transcriptions(
             .and_then(|v| v.as_i64())
             .map(|c| c as i32);
 
-        let speaker_labels_json = record
+        let speaker_labels = record
             .get("speaker_labels_json")
             .and_then(|v| v.as_str())
             .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
 
-        let metadata_json = record
+        let metadata = record
             .get("metadata_json")
             .and_then(|v| v.as_str())
             .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
             .unwrap_or(json!({}));
 
-        // Insert into speech_transcription table
+        // Calculate actual speech duration from metadata (concatenated_end - concatenated_start)
+        // This excludes silence and represents only the speech portion
+        let actual_speech_duration = {
+            let concat_start = metadata.get("concatenated_start").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let concat_end = metadata.get("concatenated_end").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            concat_end - concat_start
+        };
+
+        utterances.push(Utterance {
+            seconds_elapsed,
+            actual_speech_duration,
+            segment_id,
+            transcript_text,
+            confidence_score,
+            speaker_count,
+            speaker_labels,
+            metadata,
+        });
+    }
+
+    // Sort by time
+    utterances.sort_by(|a, b| a.seconds_elapsed.partial_cmp(&b.seconds_elapsed).unwrap());
+
+    // Group utterances into conversations by VAD segment_id
+    // Each segment_id represents a distinct VAD-detected speech period
+    struct Conversation {
+        #[allow(dead_code)]
+        segment_id: i64,
+        start_seconds: f64,
+        total_speech_duration: f64, // Sum of actual speech durations (excludes silence)
+        transcripts: Vec<String>,
+        avg_confidence: f64,
+        max_speaker_count: Option<i32>,
+        utterance_count: usize,
+    }
+
+    let mut conversations: Vec<Conversation> = Vec::new();
+    let mut current_conv: Option<Conversation> = None;
+
+    for utterance in &utterances {
+        match &mut current_conv {
+            Some(conv) => {
+                // Check if this utterance belongs to a different VAD segment
+                if utterance.segment_id != conv.segment_id {
+                    // Save current conversation and start new one
+                    conversations.push(std::mem::replace(
+                        conv,
+                        Conversation {
+                            segment_id: utterance.segment_id,
+                            start_seconds: utterance.seconds_elapsed,
+                            total_speech_duration: utterance.actual_speech_duration,
+                            transcripts: vec![utterance.transcript_text.clone()],
+                            avg_confidence: utterance.confidence_score,
+                            max_speaker_count: utterance.speaker_count,
+                            utterance_count: 1,
+                        },
+                    ));
+                } else {
+                    // Add to current conversation (same segment)
+                    // Accumulate actual speech duration
+                    conv.total_speech_duration += utterance.actual_speech_duration;
+                    conv.transcripts.push(utterance.transcript_text.clone());
+                    conv.avg_confidence =
+                        (conv.avg_confidence * conv.utterance_count as f64 + utterance.confidence_score)
+                            / (conv.utterance_count + 1) as f64;
+                    conv.max_speaker_count = match (conv.max_speaker_count, utterance.speaker_count) {
+                        (Some(a), Some(b)) => Some(a.max(b)),
+                        (Some(a), None) => Some(a),
+                        (None, Some(b)) => Some(b),
+                        (None, None) => None,
+                    };
+                    conv.utterance_count += 1;
+                }
+            }
+            None => {
+                current_conv = Some(Conversation {
+                    segment_id: utterance.segment_id,
+                    start_seconds: utterance.seconds_elapsed,
+                    total_speech_duration: utterance.actual_speech_duration,
+                    transcripts: vec![utterance.transcript_text.clone()],
+                    avg_confidence: utterance.confidence_score,
+                    max_speaker_count: utterance.speaker_count,
+                    utterance_count: 1,
+                });
+            }
+        }
+    }
+
+    // Don't forget the last conversation
+    if let Some(conv) = current_conv {
+        conversations.push(conv);
+    }
+
+    info!(
+        "Grouped {} utterances into {} conversations",
+        utterances.len(),
+        conversations.len()
+    );
+
+    // Insert conversations into speech_transcription
+    let mut count = 0;
+    for conv in &conversations {
+        let timestamp = base_timestamp + Duration::milliseconds((conv.start_seconds * 1000.0) as i64);
+        // Use actual speech duration (from concatenated times), not the span in original recording
+        let duration_seconds = conv.total_speech_duration.ceil() as i32;
+        let combined_transcript = conv.transcripts.join(" ");
+
+        // Generate unique source_stream_id for each conversation
+        let conv_stream_id = Uuid::new_v4();
+
         sqlx::query(
             r#"
             INSERT INTO data.speech_transcription (
@@ -326,18 +471,21 @@ async fn seed_microphone_transcriptions(
             ON CONFLICT DO NOTHING
             "#,
         )
-        .bind("test-day/Microphone.mp4") // audio_file_path
+        .bind("test-day/Microphone.mp4")
         .bind(duration_seconds)
-        .bind(transcript_text)
-        .bind(language)
-        .bind(confidence_score)
-        .bind(speaker_count)
-        .bind(speaker_labels_json)
+        .bind(&combined_transcript)
+        .bind(Some("en")) // Default to English
+        .bind(conv.avg_confidence)
+        .bind(conv.max_speaker_count)
+        .bind(None::<serde_json::Value>) // speaker_labels
         .bind(timestamp)
-        .bind(seed_stream_id)
-        .bind("stream_seed_data") // source_table
-        .bind("seed") // source_provider
-        .bind(metadata_json)
+        .bind(conv_stream_id)
+        .bind("stream_seed_microphone")
+        .bind("seed")
+        .bind(json!({
+            "utterance_count": conv.utterance_count,
+            "conversation_duration_seconds": duration_seconds,
+        }))
         .execute(db.pool())
         .await
         .map_err(|e| Error::Database(format!("Failed to insert speech_transcription: {}", e)))?;
@@ -345,7 +493,97 @@ async fn seed_microphone_transcriptions(
         count += 1;
     }
 
-    info!("Inserted {} microphone transcription records", count);
+    info!(
+        "Inserted {} conversation records into speech_transcription",
+        count
+    );
+    Ok(count)
+}
+
+/// Seed calendar events directly to praxis_calendar table
+///
+/// Loads calendar_events.csv and directly inserts into praxis_calendar ontology table.
+/// CSV already contains the final ontology fields, so no transformation needed.
+async fn seed_calendar_events(db: &Database, csv_path: &PathBuf) -> Result<usize> {
+    info!("Loading calendar events CSV: {}", csv_path.display());
+
+    let file_content = std::fs::read_to_string(csv_path)
+        .map_err(|e| Error::Other(format!("Failed to read calendar events CSV: {}", e)))?;
+
+    let mut rdr = csv::Reader::from_reader(file_content.as_bytes());
+    let mut count = 0;
+
+    for result in rdr.deserialize() {
+        let record: serde_json::Map<String, serde_json::Value> =
+            result.map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
+
+        // Extract fields from CSV
+        let start_time = record
+            .get("start_time")
+            .and_then(|v| v.as_str())
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .ok_or_else(|| Error::Other("Missing or invalid start_time".into()))?
+            .with_timezone(&Utc);
+
+        let end_time = record
+            .get("end_time")
+            .and_then(|v| v.as_str())
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .ok_or_else(|| Error::Other("Missing or invalid end_time".into()))?
+            .with_timezone(&Utc);
+
+        let title = record
+            .get("title")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| Error::Other("Missing title".into()))?;
+
+        let description = record.get("description").and_then(|v| v.as_str());
+        let calendar_name = record.get("calendar_name").and_then(|v| v.as_str());
+        let location_name = record.get("location_name").and_then(|v| v.as_str());
+
+        let is_all_day = record
+            .get("is_all_day")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        // Parse attendee_identifiers array (stored as JSON in CSV)
+        let attendee_identifiers_str = record
+            .get("attendee_identifiers")
+            .and_then(|v| v.as_str())
+            .unwrap_or("{}");
+
+        let attendee_identifiers: Vec<String> = serde_json::from_str(attendee_identifiers_str)
+            .unwrap_or_default();
+
+        // Generate required fields for seeding
+        let source_stream_id = Uuid::new_v4();
+        let source_table = "stream_seed_calendar";
+        let source_provider = "seed";
+
+        // Insert into praxis_calendar table (using original Nov 10 timestamps)
+        sqlx::query(
+            "INSERT INTO data.praxis_calendar
+             (title, description, calendar_name, location_name, start_time, end_time, is_all_day, attendee_identifiers, source_stream_id, source_table, source_provider)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (source_stream_id) DO NOTHING"
+        )
+        .bind(title)
+        .bind(description)
+        .bind(calendar_name)
+        .bind(location_name)
+        .bind(start_time)
+        .bind(end_time)
+        .bind(is_all_day)
+        .bind(&attendee_identifiers)
+        .bind(source_stream_id)
+        .bind(source_table)
+        .bind(source_provider)
+        .execute(db.pool())
+        .await?;
+
+        count += 1;
+    }
+
     Ok(count)
 }
 
@@ -413,7 +651,7 @@ async fn seed_sleep_data(db: &Database, csv_path: &PathBuf) -> Result<usize> {
             .and_then(|v| v.as_str())
             .unwrap_or("seed");
 
-        // Insert into health_sleep table
+        // Insert into health_sleep table (using original Nov 9-10 timestamps)
         sqlx::query(
             r#"
             INSERT INTO data.health_sleep (
@@ -547,7 +785,8 @@ async fn seed_imessage_data(db: &Database, _source_id: Uuid, csv_path: &PathBuf)
         // Generate a unique source_stream_id for each message (to avoid unique constraint violation)
         let source_stream_id = Uuid::new_v4();
 
-        // Insert into social_message table (matching actual schema)
+        // Transform timestamp to recent date for boundary detection
+        // Insert into social_message table (matching actual schema, using original Nov 10 timestamps)
         // Required fields: message_id, channel, timestamp, direction
         sqlx::query(
             r#"
@@ -767,7 +1006,7 @@ async fn seed_email_data(db: &Database, _source_id: Uuid, csv_path: &PathBuf) ->
             }
         }
 
-        // Insert into social_email table
+        // Insert into social_email table (using original Nov 10 timestamps)
         sqlx::query(
             r#"
             INSERT INTO data.social_email (
@@ -959,7 +1198,7 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
                 .map(|dt| dt.with_timezone(&Utc));
 
             sqlx::query(
-                "INSERT INTO data.actions_task (title, description, tags, status, progress_percent, start_date, target_date, is_active)
+                "INSERT INTO data.praxis_task (title, description, tags, status, progress_percent, start_date, target_date, is_active)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, true)
                  ON CONFLICT DO NOTHING"
             )
@@ -1040,52 +1279,12 @@ async fn seed_axiology_data(db: &Database, base_path: &PathBuf) -> Result<usize>
         info!("✅ Seeded vices");
     }
 
-    // Seed HABITS
-    let habits_path = base_path.join("axiology_habits.csv");
-    if habits_path.exists() {
-        info!("Seeding axiology habits...");
-        let file_content = std::fs::read_to_string(&habits_path)?;
-        let mut rdr = csv::Reader::from_reader(file_content.as_bytes());
-
-        for result in rdr.deserialize() {
-            let record: serde_json::Map<String, serde_json::Value> = result
-                .map_err(|e| Error::Other(format!("Failed to deserialize CSV record: {}", e)))?;
-            let title = record
-                .get("title")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::Other("Missing title".into()))?;
-            let description = record.get("description").and_then(|v| v.as_str());
-            let frequency = record.get("frequency").and_then(|v| v.as_str());
-            let time_of_day = record.get("time_of_day").and_then(|v| v.as_str());
-            let streak_count = record
-                .get("streak_count")
-                .and_then(|v| v.as_i64())
-                .map(|i| i as i32)
-                .unwrap_or(0);
-
-            let last_completed_date = record
-                .get("last_completed_date")
-                .and_then(|v| v.as_str())
-                .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
-
-            sqlx::query(
-                "INSERT INTO data.axiology_habit (title, description, frequency, time_of_day, streak_count, last_completed_date, is_active)
-                 VALUES ($1, $2, $3, $4, $5, $6, true)
-                 ON CONFLICT DO NOTHING"
-            )
-            .bind(title)
-            .bind(description)
-            .bind(frequency)
-            .bind(time_of_day)
-            .bind(streak_count)
-            .bind(last_completed_date)
-            .execute(db.pool())
-            .await?;
-
-            total_count += 1;
-        }
-        info!("✅ Seeded habits");
-    }
+    // Seed HABITS - REMOVED: axiology_habit table doesn't exist
+    // let habits_path = base_path.join("axiology_habits.csv");
+    // if habits_path.exists() {
+    //     info!("Seeding axiology habits...");
+    //     ... (removed - table doesn't exist)
+    // }
 
     // Seed TEMPERAMENTS
     let temperaments_path = base_path.join("axiology_temperaments.csv");
@@ -1256,6 +1455,28 @@ pub async fn seed_monday_in_rome(
         info!("ℹ️  microphone.csv not found, skipping speech transcription seeding");
     }
 
+    // Special handling for calendar events: seed directly to praxis_calendar table
+    // (CSV already contains final ontology fields)
+    let calendar_csv_path = base_path.join("calendar_events.csv");
+    if calendar_csv_path.exists() {
+        info!("📅 Seeding calendar events directly to praxis_calendar table...");
+
+        match seed_calendar_events(db, &calendar_csv_path).await {
+            Ok(count) => {
+                info!("✅ Seeded {} calendar event records", count);
+                total_records += count;
+            }
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    "Failed to seed calendar events, continuing"
+                );
+            }
+        }
+    } else {
+        info!("ℹ️  calendar_events.csv not found, skipping calendar event seeding");
+    }
+
     // Special handling for sleep data: seed directly to health_sleep table
     // (CSV already contains final ontology fields)
     let sleep_csv_path = base_path.join("sleep.csv");
@@ -1330,6 +1551,38 @@ pub async fn seed_monday_in_rome(
             warn!(
                 error = %e,
                 "Failed to seed axiology data, continuing"
+            );
+        }
+    }
+
+    // Trigger narrative primitive pipeline to:
+    // 1. Cluster locations into visits (entity resolution)
+    // 2. Detect event boundaries from ontology data
+    // 3. Aggregate boundaries
+    // 4. Synthesize narrative primitives
+    // Use custom date range for Nov 9-10, 2025 (the "Monday in Rome" day)
+    info!("🔍 Triggering narrative primitive pipeline for Nov 9-10, 2025 (seed data range)...");
+
+    let start = DateTime::parse_from_rfc3339("2025-11-09T00:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let end = DateTime::parse_from_rfc3339("2025-11-10T23:59:59Z")
+        .unwrap()
+        .with_timezone(&Utc);
+
+    match crate::jobs::narrative_primitive_pipeline::run_pipeline_for_range(db, start, end).await {
+        Ok(stats) => {
+            info!(
+                "✅ Narrative primitive pipeline completed: {} places resolved, {} boundaries detected, {} primitives created",
+                stats.places_resolved,
+                stats.boundaries_detected,
+                stats.primitives_created
+            );
+        }
+        Err(e) => {
+            warn!(
+                error = %e,
+                "⚠️  Narrative primitive pipeline failed - timeline may be empty"
             );
         }
     }

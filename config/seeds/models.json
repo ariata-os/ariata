@@ -49,8 +49,7 @@
       "enabled": true,
       "context_window": 200000,
       "max_output_tokens": 8192,
-      "supports_tools": true,
-      "is_default": true
+      "supports_tools": true
     },
     {
       "model_id": "openai/gpt-5",
@@ -83,10 +82,21 @@
       "supports_tools": true
     },
     {
+      "model_id": "google/gemini-3-pro-preview",
+      "display_name": "Gemini 3 Pro Preview",
+      "provider": "Google",
+      "sort_order": 9,
+      "enabled": true,
+      "context_window": 2000000,
+      "max_output_tokens": 8192,
+      "supports_tools": true,
+      "is_default": true
+    },
+    {
       "model_id": "xai/grok-4",
       "display_name": "Grok 4",
       "provider": "xAI",
-      "sort_order": 9,
+      "sort_order": 10,
       "enabled": true,
       "context_window": 128000,
       "max_output_tokens": 16384,
@@ -96,7 +106,7 @@
       "model_id": "moonshotai/kimi-k2-thinking",
       "display_name": "Kimi K2 Thinking",
       "provider": "Moonshot AI",
-      "sort_order": 10,
+      "sort_order": 11,
       "enabled": true,
       "context_window": 200000,
       "max_output_tokens": 4096,

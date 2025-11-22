@@ -3,16 +3,34 @@
 //! Seeds the database with Monday in Rome reference dataset
 
 use ariata::database::Database;
-use ariata::seeding::{narratives::seed_rome_monday_narrative, seed_monday_in_rome_dataset};
+use ariata::jobs::narrative_primitive_pipeline;
+use ariata::seeding::seed_monday_in_rome_dataset;
 use ariata::storage::{stream_writer::StreamWriter, Storage};
+use chrono::{DateTime, Duration, Utc};
+use clap::Parser;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[derive(Parser, Debug)]
+#[command(name = "ariata-seed")]
+#[command(about = "Ariata Seed - Monday in Rome Reference Dataset")]
+struct Args {
+    /// Run narrative primitive pipeline after seeding
+    #[arg(long, default_value_t = false)]
+    run_pipeline: bool,
+
+    /// Simulate hourly cron by running pipeline 12 times with sliding windows (implies --run-pipeline)
+    #[arg(long, default_value_t = false)]
+    simulate_hourly: bool,
+}
 
 #[tokio::main]
 async fn main() {
+    let args = Args::parse();
+
     // Initialize tracing
     tracing_subscriber::registry()
         .with(
@@ -90,19 +108,105 @@ async fn main() {
         }
     }
 
-    // Seed the narrative layer
-    info!("Seeding Rome Monday day narrative...");
-    match seed_rome_monday_narrative(&db).await {
-        Ok(count) => {
+    // Optional: Run narrative primitive pipeline (generates narrative_primitive records)
+    if args.simulate_hourly || args.run_pipeline {
+        info!("🔄 Running narrative primitive pipeline...");
+
+        if args.simulate_hourly {
+            info!("⏰ Simulating hourly cron execution (12 hours of seed data)");
+
+            // Base time: Nov 10, 2025 07:00 UTC (matches actual seeded data timestamps)
+            let base = DateTime::parse_from_rfc3339("2025-11-10T07:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc);
+
+            let mut total_primitives = 0;
+            let mut dedupe_count = 0;
+
+            // Run pipeline 12 times (simulating 12 hours)
+            for hour in 0..12 {
+                let current_time = base + Duration::hours(hour);
+                let window_start = current_time - Duration::hours(6); // 6h lookback
+                let window_end = current_time;
+
+                info!(
+                    hour = hour,
+                    window_start = %window_start,
+                    window_end = %window_end,
+                    "Running pipeline (simulated hour {})",
+                    hour
+                );
+
+                match narrative_primitive_pipeline::run_pipeline_for_range(
+                    &db,
+                    window_start,
+                    window_end,
+                )
+                .await
+                {
+                    Ok(stats) => {
+                        let new_primitives = stats.primitives_created;
+                        let expected_dedupe = hour > 0; // Hours 1+ should see duplicates
+
+                        info!(
+                            hour = hour,
+                            places = stats.places_resolved,
+                            people = stats.people_resolved,
+                            boundaries = stats.boundaries_detected,
+                            primitives = new_primitives,
+                            duration_ms = stats.duration_ms,
+                            "✅ Hour {} completed",
+                            hour
+                        );
+
+                        // Track if deduplication is working
+                        if new_primitives == 0 && expected_dedupe {
+                            dedupe_count += 1;
+                        }
+
+                        total_primitives += new_primitives;
+                    }
+                    Err(e) => {
+                        warn!(hour = hour, error = %e, "⚠️  Hour {} failed", hour);
+                    }
+                }
+
+                // Small delay to separate log entries
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+
             info!(
-                "✅ Rome Monday narrative seeding completed: {} narrative chunks!",
-                count
+                total_primitives = total_primitives,
+                dedupe_runs = dedupe_count,
+                "✅ Hourly simulation complete. \
+                 Expected: primitives created in early hours, then dedupe prevents duplicates."
             );
-            std::process::exit(0);
-        }
-        Err(e) => {
-            error!("❌ Rome Monday narrative seeding failed: {}", e);
-            std::process::exit(1);
+        } else {
+            // Single run for full range (matches actual seeded data: Nov 10, 07:21 - 18:20)
+            let start = DateTime::parse_from_rfc3339("2025-11-10T07:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc);
+            let end = DateTime::parse_from_rfc3339("2025-11-10T19:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc);
+
+            match narrative_primitive_pipeline::run_pipeline_for_range(&db, start, end).await {
+                Ok(stats) => {
+                    info!(
+                        places = stats.places_resolved,
+                        people = stats.people_resolved,
+                        boundaries = stats.boundaries_detected,
+                        primitives = stats.primitives_created,
+                        duration_ms = stats.duration_ms,
+                        "✅ Pipeline completed"
+                    );
+                }
+                Err(e) => {
+                    warn!(error = %e, "⚠️  Pipeline failed");
+                }
+            }
         }
     }
+
+    std::process::exit(0);
 }

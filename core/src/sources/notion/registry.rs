@@ -27,6 +27,7 @@ impl SourceRegistry for NotionSource {
                         "Sync pages and their content from Notion databases and workspaces",
                     )
                     .table_name("stream_notion_pages")
+                    .target_ontologies(vec!["knowledge_document"])
                     .config_schema(pages_config_schema())
                     .config_example(pages_config_example())
                     .supports_incremental(false) // Notion API doesn't provide incremental sync

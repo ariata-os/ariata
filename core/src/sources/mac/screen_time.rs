@@ -1,1 +1,0 @@
-//! macOS screen time duration data processor

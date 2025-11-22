@@ -10,7 +10,6 @@
 	// Lazy load tool components
 	const toolComponents: Record<string, () => Promise<{ default: Component<any> }>> = {
 		'query_location_map': () => import('./tools/LocationMap.svelte'),
-		'query_pursuits': () => import('./tools/Pursuits.svelte'),
 		'web_search': () => import('./tools/WebSearch.svelte'),
 	};
 
@@ -82,8 +81,6 @@
 		statusText = 'Error';
 	} else if (tool_name === 'query_location_map') {
 		statusText = 'Map ready';
-	} else if (tool_name === 'query_pursuits') {
-		statusText = `${(result?.data as any)?.metadata?.totalCount || 0} pursuits`;
 	} else if (tool_name === 'web_search') {
 		statusText = `${result?.resultsCount || 0} results`;
 	} else if (result?.narratives) {
@@ -97,19 +94,16 @@
 	}
 
 	// Determine if tool should auto-expand
-	const autoExpand = tool_name === 'query_location_map' || tool_name === 'query_pursuits' || tool_name === 'web_search';
+	const autoExpand = tool_name === 'query_location_map' || tool_name === 'web_search';
 
 	// Get display name for tool
 	const displayNames: Record<string, string> = {
 		query_location_map: 'Location Map',
-		query_pursuits: 'Tasks & Goals',
 		web_search: 'Web Search',
 		ariata_query_ontology: 'Query Ontology',
-		ariata_list_ontology_tables: 'List Tables',
-		ariata_get_table_schema: 'Table Schema',
 		ariata_query_narratives: 'Query Narratives',
 		ariata_query_axiology: 'Query Axiology',
-		ariata_trigger_sync: 'Trigger Sync'
+		ariata_manage_axiology: 'Manage Axiology',
 	};
 	const displayName = displayNames[tool_name] || tool_name;
 

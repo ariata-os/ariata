@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO data.entities_place (\n            canonical_name,\n            geo_center,\n            cluster_radius_meters,\n            metadata\n        ) VALUES (\n            $1,\n            ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,\n            75.0,\n            '{}'::jsonb\n        )\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "049b037d7a230c40a981f0a2e748b9fd0f6b2b4fd3457346c892a59d3ae17cd3"
+}

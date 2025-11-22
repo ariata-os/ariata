@@ -3,9 +3,10 @@
 //! This module contains the logic for creating and executing transform jobs
 //! after records have been collected, whether from cloud API syncs or device ingest batches.
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::jobs::models::{CreateJobRequest, JobStatus, JobType};
 use crate::jobs::{JobExecutor, TransformContext};
+use crate::registry;
 use crate::sources::base::MemoryDataSource;
 use serde_json::json;
 use sqlx::PgPool;
@@ -42,28 +43,37 @@ pub async fn create_transform_job_for_stream(
     records: Option<Vec<serde_json::Value>>,
 ) -> Result<Uuid> {
     // Normalize stream name using centralized registry function
-    let table_name = crate::transforms::normalize_stream_name(stream_name);
+    let table_name = registry::normalize_stream_name(stream_name);
 
-    // Use centralized transform registry as single source of truth
-    let route = match crate::transforms::get_transform_route(&table_name) {
-        Ok(route) => route,
-        Err(e) => {
-            tracing::error!(
-                error = %e,
-                stream_name = %stream_name,
-                normalized_table_name = %table_name,
-                source_id = %source_id,
-                "Transform route not found - stream→ontology mapping failed. Check transforms::registry::get_transform_route()"
-            );
-            return Err(e);
-        }
-    };
+    // Use source registry as single source of truth for stream → ontology mapping
+    let (source_name, stream) = registry::get_stream_by_table_name(&table_name).ok_or_else(|| {
+        let err = Error::InvalidInput(format!(
+            "Unknown stream for transform: '{}'. Check registry for valid streams.",
+            table_name
+        ));
+        tracing::error!(
+            error = %err,
+            stream_name = %stream_name,
+            normalized_table_name = %table_name,
+            source_id = %source_id,
+            "Transform route not found - stream→ontology mapping failed"
+        );
+        err
+    })?;
+
+    // Extract domain from first target ontology table name (e.g., "health_heart_rate" -> "health")
+    let domain = stream
+        .target_ontologies
+        .first()
+        .map(|ont| ont.split('_').next().unwrap_or("unknown"))
+        .unwrap_or("unknown");
 
     // Create transform job metadata from registry
     let metadata = json!({
-        "source_table": route.source_table,
-        "target_table": route.target_tables[0], // Use first target for now
-        "domain": route.domain,
+        "source_table": stream.table_name,
+        "target_table": stream.target_ontologies.first().unwrap_or(&""),
+        "domain": domain,
+        "source_provider": source_name,
     });
 
     // Create the transform job
@@ -89,9 +99,9 @@ pub async fn create_transform_job_for_stream(
             source_id = %source_id,
             stream_name,
             record_count = records.len(),
-            source_table = route.source_table,
-            target_table = route.target_tables[0],
-            domain = route.domain,
+            source_table = stream.table_name,
+            target_table = stream.target_ontologies.first().unwrap_or(&""),
+            domain = domain,
             "Created transform job with memory data source (HOT PATH - direct transform)"
         );
 
@@ -124,9 +134,9 @@ pub async fn create_transform_job_for_stream(
             job_id = %job.id,
             source_id = %source_id,
             stream_name,
-            source_table = route.source_table,
-            target_table = route.target_tables[0],
-            domain = route.domain,
+            source_table = stream.table_name,
+            target_table = stream.target_ontologies.first().unwrap_or(&""),
+            domain = domain,
             "Created transform job with S3 data source (COLD PATH - traditional S3 read)"
         );
 

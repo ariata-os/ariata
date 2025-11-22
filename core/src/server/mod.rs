@@ -42,9 +42,12 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
                 } else {
                     tracing::info!("Scheduler started successfully");
 
-                    // Schedule location visit clustering job
-                    if let Err(e) = sched.schedule_location_clustering_job().await {
-                        tracing::warn!("Failed to schedule location clustering job: {}", e);
+                    // Schedule unified narrative primitive pipeline job
+                    // This replaces the old separate location clustering + boundary sweeper jobs
+                    if let Err(e) = sched.schedule_narrative_primitive_pipeline_job().await {
+                        tracing::warn!("Failed to schedule narrative primitive pipeline job: {}", e);
+                    } else {
+                        tracing::info!("Narrative primitive pipeline job scheduled successfully");
                     }
 
                     // Keep scheduler alive - it will be dropped when the server shuts down
@@ -146,10 +149,6 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
             "/api/sources/:id/streams/:name/jobs",
             get(api::get_stream_jobs_handler),
         )
-        .route(
-            "/api/sources/:id/transforms/:name",
-            post(api::trigger_transform_handler),
-        )
         // Catalog/Registry API
         .route(
             "/api/catalog/sources",
@@ -234,6 +233,13 @@ pub async fn run(client: Ariata, host: &str, port: u16) -> Result<()> {
         .route("/api/axiology/values/:id", get(api::get_value_handler))
         .route("/api/axiology/values/:id", put(api::update_value_handler))
         .route("/api/axiology/values/:id", delete(api::delete_value_handler))
+        // Timeline API
+        .route("/api/timeline/boundaries", get(api::get_boundaries_handler))
+        .route("/api/timeline/day/:date", get(api::get_day_view_handler))
+        // Seed Testing API
+        .route("/api/seed/pipeline-status", get(api::seed_pipeline_status_handler))
+        .route("/api/seed/boundaries-summary", get(api::seed_boundaries_summary_handler))
+        .route("/api/seed/data-quality", get(api::seed_data_quality_handler))
         .with_state(state.clone())
         .layer(DefaultBodyLimit::disable()) // Disable default 2MB limit
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024)); // Set 20MB limit for audio files

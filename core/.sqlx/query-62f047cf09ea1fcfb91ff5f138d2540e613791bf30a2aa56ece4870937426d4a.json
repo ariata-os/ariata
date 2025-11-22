@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT * FROM data.event_boundaries\n            WHERE timestamp < $1\n            ORDER BY timestamp DESC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "timestamp",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "boundary_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "source_ontology",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "fidelity",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 5,
+        "name": "weight",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_primary",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "metadata",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "62f047cf09ea1fcfb91ff5f138d2540e613791bf30a2aa56ece4870937426d4a"
+}

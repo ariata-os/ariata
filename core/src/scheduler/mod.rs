@@ -241,32 +241,6 @@ impl Scheduler {
         Ok(())
     }
 
-    /// Schedule the location visit clustering job (hourly)
-    pub async fn schedule_location_clustering_job(&self) -> Result<()> {
-        let db = self.db.clone();
-        let storage = self.storage.clone();
-        let stream_writer = self.stream_writer.clone();
-
-        tracing::debug!("Scheduling location visit clustering job (hourly)");
-
-        // Create transform context
-        let api_keys = crate::jobs::ApiKeys::from_env();
-        let transform_context = Arc::new(crate::jobs::TransformContext::new(
-            Arc::new(storage),
-            stream_writer,
-            api_keys,
-        ));
-
-        crate::jobs::periodic_clustering::start_location_clustering_job(
-            db,
-            transform_context,
-        )
-        .await?;
-
-        tracing::debug!("Location visit clustering job scheduled successfully");
-        Ok(())
-    }
-
     /// Schedule the prudent context job (4x daily: 6am, 12pm, 6pm, 10pm)
     pub async fn schedule_prudent_context_job(&self, llm_client: Arc<dyn LLMClient>) -> Result<()> {
         let schedules = vec![
@@ -314,6 +288,62 @@ impl Scheduler {
         }
 
         tracing::info!("PrudentContextJob scheduled for 6am, 12pm, 6pm, and 10pm");
+        Ok(())
+    }
+
+    /// Schedule the narrative primitive pipeline job (hourly)
+    ///
+    /// Unified pipeline that runs:
+    /// 1. Entity resolution (place clustering, people resolution)
+    /// 2. Changepoint detection
+    /// 3. Boundary aggregation
+    /// 4. Narrative synthesis
+    ///
+    /// Replaces BoundarySweeperJob and PeriodicClusteringJob
+    pub async fn schedule_narrative_primitive_pipeline_job(&self) -> Result<()> {
+        use crate::database::Database;
+
+        let db = self.db.clone();
+
+        tracing::info!("Scheduling NarrativePrimitivePipelineJob (hourly)");
+
+        let job = Job::new_async("0 0 * * * *", move |_uuid, _lock| {
+            let db_pool = db.clone();
+
+            Box::pin(async move {
+                tracing::info!("Running NarrativePrimitivePipelineJob");
+                let db = Database::from_pool(db_pool);
+
+                match crate::jobs::narrative_primitive_pipeline::run_pipeline(&db).await {
+                    Ok(stats) => {
+                        tracing::info!(
+                            "NarrativePrimitivePipelineJob completed: \
+                            places={}, people={}, boundaries={}, primitives={}",
+                            stats.places_resolved,
+                            stats.people_resolved,
+                            stats.boundaries_detected,
+                            stats.primitives_created
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!("NarrativePrimitivePipelineJob failed: {}", e);
+                    }
+                }
+            })
+        })
+        .map_err(|e| {
+            Error::Other(format!(
+                "Failed to create NarrativePrimitivePipelineJob: {}",
+                e
+            ))
+        })?;
+
+        self.scheduler
+            .add(job)
+            .await
+            .map_err(|e| Error::Other(format!("Failed to add NarrativePrimitivePipelineJob: {}", e)))?;
+
+        tracing::info!("NarrativePrimitivePipelineJob scheduled (runs hourly at :00)");
         Ok(())
     }
 

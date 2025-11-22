@@ -600,13 +600,13 @@ CREATE TABLE IF NOT EXISTS data.knowledge_ai_conversation (
 );
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_ai_conversation_conversation
-    ON knowledge_ai_conversation(conversation_id, timestamp);
+    ON data.knowledge_ai_conversation(conversation_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_knowledge_ai_conversation_timestamp
-    ON knowledge_ai_conversation(timestamp DESC);
+    ON data.knowledge_ai_conversation(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_ai_conversation_topic
-    ON knowledge_ai_conversation(topic_id) WHERE topic_id IS NOT NULL;
+    ON data.knowledge_ai_conversation(topic_id) WHERE topic_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_knowledge_ai_conversation_provider
-    ON knowledge_ai_conversation(provider, timestamp DESC);
+    ON data.knowledge_ai_conversation(provider, timestamp DESC);
 
 DROP TRIGGER IF EXISTS knowledge_ai_conversation_updated_at ON data.knowledge_ai_conversation;
 CREATE TRIGGER knowledge_ai_conversation_updated_at

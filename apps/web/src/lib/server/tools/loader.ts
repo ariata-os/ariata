@@ -6,7 +6,6 @@ import { z } from 'zod';
 import type { Pool } from 'pg';
 import { createMcpClient, type McpClient, type McpTool } from '$lib/mcp/client';
 import { createLocationMapTool } from '$lib/tools/query-location-map';
-import { createPursuitsTool } from '$lib/tools/query-pursuits';
 import { createWebSearchTool } from '$lib/tools/web-search';
 import type { ToolRegistry } from './types';
 
@@ -38,8 +37,6 @@ export async function initializeTools(pool: Pool, mcpServerUrl: string): Promise
 		console.log('[Tools] Loading custom tools...');
 		tools.query_location_map = await createLocationMapTool(pool);
 		console.log('[Tools] ✓ Loaded query_location_map');
-		tools.query_pursuits = await createPursuitsTool(pool);
-		console.log('[Tools] ✓ Loaded query_pursuits');
 
 		// Load web search tool (if API key is configured)
 		const webSearchTool = await createWebSearchTool();

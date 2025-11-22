@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            id,\n            timestamp,\n            source_ontology,\n            weight,\n            boundary_type\n        FROM data.event_boundaries\n        WHERE timestamp >= $1\n          AND timestamp < $2\n        ORDER BY timestamp ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "timestamp",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "source_ontology",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "weight",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "boundary_type",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "041e818e02edc00ebd904ed77ef06bc295ea4bca6518e19a876dd99670226cad"
+}

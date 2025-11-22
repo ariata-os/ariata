@@ -21,6 +21,13 @@ impl SourceRegistry for IosSource {
                     .display_name("HealthKit")
                     .description("Health and fitness metrics including heart rate, steps, sleep, and workouts")
                     .table_name("stream_ios_healthkit")
+                    .target_ontologies(vec![
+                        "health_heart_rate",
+                        "health_hrv",
+                        "health_steps",
+                        "health_sleep",
+                        "health_workout",
+                    ])
                     .config_schema(healthkit_config_schema())
                     .config_example(healthkit_config_example())
                     .supports_incremental(false)
@@ -33,6 +40,7 @@ impl SourceRegistry for IosSource {
                     .display_name("Location")
                     .description("GPS coordinates, speed, altitude, and activity type")
                     .table_name("stream_ios_location")
+                    .target_ontologies(vec!["location_point"])
                     .config_schema(location_config_schema())
                     .config_example(location_config_example())
                     .supports_incremental(false)
@@ -45,6 +53,7 @@ impl SourceRegistry for IosSource {
                     .display_name("Microphone")
                     .description("Audio levels, transcriptions, and recordings")
                     .table_name("stream_ios_microphone")
+                    .target_ontologies(vec!["speech_transcription"])
                     .config_schema(microphone_config_schema())
                     .config_example(microphone_config_example())
                     .supports_incremental(false)

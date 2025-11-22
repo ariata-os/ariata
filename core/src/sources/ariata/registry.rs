@@ -21,6 +21,7 @@ impl SourceRegistry for AriataSource {
                 .display_name("Chat Export")
                 .description("Exports chat sessions from app.chat_sessions to ELT pipeline")
                 .table_name("stream_ariata_ai_chat")
+                .target_ontologies(vec!["knowledge_ai_conversation"])
                 .config_schema(json!({}))
                 .config_example(json!({}))
                 .supports_incremental(true)

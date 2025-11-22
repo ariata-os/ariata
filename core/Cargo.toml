@@ -94,8 +94,8 @@ md5 = "0.7"
 hmac = "0.12"
 sha2 = "0.10"
 
-# Random generation (for OAuth state)
-rand = "0.8"
+# Random generation (for OAuth state + BOCPD)
+rand = { version = "0.9", features = ["small_rng"] }
 fake = { version = "2.9", features = ["derive", "chrono", "uuid"] }
 
 # URL encoding and validation
@@ -111,6 +111,10 @@ schemars = "1.0"
 
 # Geospatial/clustering
 geo = "0.28"  # Geospatial calculations (Haversine distance)
+
+# Changepoint detection
+changepoint = "0.15"  # Bayesian Online Changepoint Detection
+rv = "0.19"  # Probability distributions for changepoint priors
 
 # Interactive CLI setup
 dialoguer = "0.11"

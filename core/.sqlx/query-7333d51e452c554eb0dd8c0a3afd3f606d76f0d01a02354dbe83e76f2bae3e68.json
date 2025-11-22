@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO app.tools (id, name, description, tool_type, category, icon, display_order)\n            VALUES ($1, $2, $3, $4, $5, $6, $7)\n            ON CONFLICT (id) DO UPDATE SET\n                name = EXCLUDED.name,\n                description = EXCLUDED.description,\n                tool_type = EXCLUDED.tool_type,\n                category = EXCLUDED.category,\n                icon = EXCLUDED.icon,\n                display_order = EXCLUDED.display_order,\n                updated_at = NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7333d51e452c554eb0dd8c0a3afd3f606d76f0d01a02354dbe83e76f2bae3e68"
+}

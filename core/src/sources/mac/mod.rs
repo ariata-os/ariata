@@ -7,7 +7,6 @@ pub mod apps;
 pub mod browser;
 pub mod imessage;
 pub mod registry;
-pub mod screen_time;
 pub mod transform;
 
 // PushStream implementations

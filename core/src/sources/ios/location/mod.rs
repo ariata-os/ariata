@@ -27,14 +27,14 @@ pub use transform::IosLocationTransform;
 ///
 /// Receives location data pushed from iOS devices via /ingest endpoint.
 pub struct IosLocationStream {
-    db: PgPool,
+    _db: PgPool,
     stream_writer: Arc<Mutex<StreamWriter>>,
 }
 
 impl IosLocationStream {
     /// Create a new IosLocationStream
     pub fn new(db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>) -> Self {
-        Self { db, stream_writer }
+        Self { _db: db, stream_writer }
     }
 }
 

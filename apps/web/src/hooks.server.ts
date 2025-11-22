@@ -5,6 +5,7 @@
 import { env } from '$env/dynamic/private';
 import { getPool } from '$lib/server/db';
 import { initializeTools } from '$lib/server/tools/loader';
+import { ApiClient } from '$lib/server/apiClient';
 
 /**
  * Server initialization
@@ -59,6 +60,9 @@ export async function handle({ event, resolve }) {
 	if (!initialized) {
 		await initializeServer();
 	}
+
+	// Attach API client to locals for use in route handlers
+	event.locals.apiClient = new ApiClient();
 
 	// Continue with request handling
 	return resolve(event);

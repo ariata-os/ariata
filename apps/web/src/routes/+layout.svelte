@@ -8,6 +8,7 @@
 	import { goto, onNavigate } from "$app/navigation";
 	import { onMount } from "svelte";
 	import { createAIContext } from '@ai-sdk/svelte';
+	import { initTheme } from "$lib/utils/theme";
 
 	let { children, data } = $props();
 
@@ -118,16 +119,36 @@
 				},
 			],
 		},
+		views: {
+			id: "views",
+			name: "Views",
+			icon: "ri:layout-grid-line",
+			iconFilled: "ri:layout-grid-fill",
+			title: "Views",
+			items: [
+				{
+					href: "/timeline",
+					icon: "ri:time-line",
+					text: "Timeline",
+					pagespace: "timeline",
+				},
+			],
+		},
 	};
 
 	let currentModule = $derived.by(() => {
 		const path = page.url.pathname.split("/")[1] || "";
 
+		// Views module paths (timeline is under views)
+		if (path === "timeline") {
+			return "views";
+		}
+
 		// Special handling for root-level chat routes
 		// Root (/) and /[conversationId] are chat
 		if (
 			path === "" ||
-			!["data", "profile", "axiology", "api", "oauth"].includes(path)
+			!["data", "profile", "axiology", "views", "api", "oauth"].includes(path)
 		) {
 			// If it's not one of the known modules, assume it's a conversation ID (chat)
 			return "chat";
@@ -173,9 +194,10 @@
 		}
 	}
 
-	// Load chat sessions on mount
+	// Load chat sessions and initialize theme on mount
 	onMount(() => {
 		chatSessions.load();
+		initTheme();
 	});
 
 	// Create dynamic chat items from loaded sessions

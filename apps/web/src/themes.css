@@ -1,0 +1,222 @@
+/* ===================================
+   ARIATA THEME SYSTEM
+
+   Semantic color definitions for multiple theme variants.
+   These colors are available as Tailwind utilities (e.g., bg-primary, text-foreground)
+   and as CSS variables (e.g., var(--color-primary))
+   =================================== */
+
+@theme {
+	/* ===================================
+	   LIGHT THEME (DEFAULT)
+	   =================================== */
+
+	/* Surface Colors - Backgrounds and containers */
+	--color-background: #FAF9F5;        /* Main app background (paper) */
+	--color-surface: #FFFFFF;           /* Cards, panels, elevated surfaces */
+	--color-surface-elevated: #F3F2E9;  /* Hover states, raised elements (paper-dark) */
+	--color-surface-overlay: #FFFFFF;   /* Modals, dropdowns, tooltips */
+
+	/* Content Colors - Text and foreground elements */
+	--color-foreground: #14283D;        /* Primary text color (navy) */
+	--color-foreground-muted: #1a3550;  /* Secondary text, less emphasis (navy-light) */
+	--color-foreground-subtle: #78716c; /* Tertiary text, placeholder text (stone-500) */
+	--color-foreground-disabled: #a8a29e; /* Disabled text (stone-400) */
+
+	/* Interactive Colors - Actions and states */
+	--color-primary: #2883DE;           /* Primary actions, links, focus (blue) */
+	--color-primary-hover: #4a9ae5;     /* Primary hover state (blue-light) */
+	--color-primary-active: #1d6bb8;    /* Primary pressed/active state */
+	--color-primary-subtle: #e3f2fd;    /* Primary backgrounds, badges */
+
+	--color-secondary: #14283D;         /* Secondary actions (navy) */
+	--color-secondary-hover: #1a3550;   /* Secondary hover state (navy-light) */
+	--color-secondary-active: #0f1e2d;  /* Secondary pressed/active state */
+
+	--color-accent: #2883DE;            /* Accents, highlights (blue) */
+	--color-accent-hover: #4a9ae5;      /* Accent hover state */
+
+	/* Status Colors */
+	--color-success: #16a34a;           /* Success states, positive actions */
+	--color-success-subtle: #dcfce7;    /* Success backgrounds */
+	--color-warning: #ea580c;           /* Warning states, caution */
+	--color-warning-subtle: #ffedd5;    /* Warning backgrounds */
+	--color-error: #dc2626;             /* Error states, destructive actions */
+	--color-error-subtle: #fee2e2;      /* Error backgrounds */
+	--color-info: #0284c7;              /* Informational states */
+	--color-info-subtle: #e0f2fe;       /* Info backgrounds */
+
+	/* Border Colors */
+	--color-border: #e7e5e4;            /* Default borders (stone-200) */
+	--color-border-subtle: #d6d3d1;     /* Subtle borders, dividers (stone-300) */
+	--color-border-strong: #a8a29e;     /* Emphasized borders (stone-400) */
+	--color-border-focus: #2883DE;      /* Focus rings (blue) */
+
+	/* Legacy Brand Colors (for backward compatibility - will be removed later) */
+	--color-navy: #14283D;
+	--color-navy-light: #1a3550;
+	--color-paper: #FAF9F5;
+	--color-paper-dark: #F3F2E9;
+	--color-white: #FFFFFF;
+	--color-blue: #2883DE;
+	--color-blue-light: #4a9ae5;
+
+	/* Stone palette for grays (keeping for utility classes) */
+	--color-stone-200: #e7e5e4;
+	--color-stone-300: #d6d3d1;
+	--color-stone-400: #a8a29e;
+	--color-stone-500: #78716c;
+	--color-stone-600: #57534e;
+	--color-stone-700: #44403c;
+	--color-stone-800: #292524;
+	--color-stone-900: #1c1917;
+
+	/* Font Families */
+	--font-mono: 'IBM Plex Mono', monospace;
+	--font-sans: 'Avenir', sans-serif;
+	--font-serif: 'PP Writer', Lora, serif;
+}
+
+/* ===================================
+   DARK THEME
+   =================================== */
+[data-theme="dark"] {
+	@theme {
+		/* Surface Colors - Darker backgrounds */
+		--color-background: #14283D;        /* Navy as main background */
+		--color-surface: #1a3550;           /* Navy-light for cards/panels */
+		--color-surface-elevated: #213d5a;  /* Lighter for hover/raised elements */
+		--color-surface-overlay: #2a4a6a;   /* Even lighter for modals/dropdowns */
+
+		/* Content Colors - Light text on dark */
+		--color-foreground: #FAF9F5;        /* Paper color for primary text */
+		--color-foreground-muted: #F3F2E9;  /* Paper-dark for secondary text */
+		--color-foreground-subtle: #a8a29e; /* Stone-400 for tertiary text */
+		--color-foreground-disabled: #78716c; /* Stone-500 for disabled */
+
+		/* Interactive Colors - Adjusted for dark mode */
+		--color-primary: #4a9ae5;           /* Lighter blue for better contrast */
+		--color-primary-hover: #6baee9;     /* Even lighter on hover */
+		--color-primary-active: #2883DE;    /* Original blue when pressed */
+		--color-primary-subtle: #1d3d5c;    /* Darker blue background */
+
+		--color-secondary: #FAF9F5;         /* Paper for secondary actions */
+		--color-secondary-hover: #FFFFFF;   /* White on hover */
+		--color-secondary-active: #F3F2E9;  /* Paper-dark when pressed */
+
+		--color-accent: #4a9ae5;            /* Lighter blue accent */
+		--color-accent-hover: #6baee9;      /* Lighter on hover */
+
+		/* Status Colors - Adjusted for dark backgrounds */
+		--color-success: #22c55e;           /* Brighter green */
+		--color-success-subtle: #14532d;    /* Dark green background */
+		--color-warning: #fb923c;           /* Brighter orange */
+		--color-warning-subtle: #431407;    /* Dark orange background */
+		--color-error: #ef4444;             /* Brighter red */
+		--color-error-subtle: #450a0a;      /* Dark red background */
+		--color-info: #38bdf8;              /* Brighter cyan */
+		--color-info-subtle: #082f49;       /* Dark cyan background */
+
+		/* Border Colors - Lighter for visibility on dark */
+		--color-border: #2a4a6a;            /* Visible border */
+		--color-border-subtle: #213d5a;     /* Subtle border */
+		--color-border-strong: #3d5a7a;     /* Strong border */
+		--color-border-focus: #4a9ae5;      /* Lighter blue focus ring */
+	}
+}
+
+/* ===================================
+   WARM THEME
+   =================================== */
+[data-theme="warm"] {
+	@theme {
+		/* Surface Colors - Warm, sepia-toned */
+		--color-background: #F5F1E8;        /* Warm cream background */
+		--color-surface: #FFFCF5;           /* Slightly lighter cream */
+		--color-surface-elevated: #EBE4D5;  /* Warmer elevated surfaces */
+		--color-surface-overlay: #FFFFFF;   /* Clean white overlays */
+
+		/* Content Colors - Warm browns */
+		--color-foreground: #3D2817;        /* Dark warm brown */
+		--color-foreground-muted: #5A402D;  /* Medium warm brown */
+		--color-foreground-subtle: #8B7355; /* Light warm brown */
+		--color-foreground-disabled: #B39C7D; /* Very light brown */
+
+		/* Interactive Colors - Warm accent colors */
+		--color-primary: #D97706;           /* Warm amber */
+		--color-primary-hover: #F59E0B;     /* Lighter amber on hover */
+		--color-primary-active: #B45309;    /* Darker amber when pressed */
+		--color-primary-subtle: #FEF3C7;    /* Light amber background */
+
+		--color-secondary: #3D2817;         /* Dark brown secondary */
+		--color-secondary-hover: #5A402D;   /* Medium brown hover */
+		--color-secondary-active: #2D1E10;  /* Darker brown active */
+
+		--color-accent: #DC2626;            /* Warm red accent */
+		--color-accent-hover: #EF4444;      /* Lighter red hover */
+
+		/* Status Colors - Warm tones */
+		--color-success: #059669;           /* Warm green */
+		--color-success-subtle: #D1FAE5;    /* Light green background */
+		--color-warning: #D97706;           /* Amber warning */
+		--color-warning-subtle: #FEF3C7;    /* Light amber background */
+		--color-error: #DC2626;             /* Warm red */
+		--color-error-subtle: #FEE2E2;      /* Light red background */
+		--color-info: #0891B2;              /* Warm cyan */
+		--color-info-subtle: #CFFAFE;       /* Light cyan background */
+
+		/* Border Colors - Warm neutral borders */
+		--color-border: #D4C4AB;            /* Warm beige border */
+		--color-border-subtle: #E6D9C3;     /* Lighter beige border */
+		--color-border-strong: #B39C7D;     /* Stronger brown border */
+		--color-border-focus: #D97706;      /* Amber focus ring */
+	}
+}
+
+/* ===================================
+   HIGH CONTRAST THEME
+   =================================== */
+[data-theme="high-contrast"] {
+	@theme {
+		/* Surface Colors - Maximum contrast */
+		--color-background: #FFFFFF;        /* Pure white */
+		--color-surface: #F5F5F5;           /* Very light gray */
+		--color-surface-elevated: #E5E5E5;  /* Light gray */
+		--color-surface-overlay: #FFFFFF;   /* Pure white */
+
+		/* Content Colors - Pure black for maximum readability */
+		--color-foreground: #000000;        /* Pure black */
+		--color-foreground-muted: #1A1A1A;  /* Very dark gray */
+		--color-foreground-subtle: #4A4A4A; /* Medium gray */
+		--color-foreground-disabled: #767676; /* Light gray (WCAG AA compliant) */
+
+		/* Interactive Colors - High contrast blues */
+		--color-primary: #0066CC;           /* Strong blue */
+		--color-primary-hover: #0052A3;     /* Darker blue hover */
+		--color-primary-active: #003D7A;    /* Even darker pressed */
+		--color-primary-subtle: #E6F2FF;    /* Very light blue background */
+
+		--color-secondary: #000000;         /* Pure black */
+		--color-secondary-hover: #1A1A1A;   /* Very dark gray hover */
+		--color-secondary-active: #000000;  /* Pure black active */
+
+		--color-accent: #CC0000;            /* Strong red */
+		--color-accent-hover: #A30000;      /* Darker red hover */
+
+		/* Status Colors - High contrast, WCAG AAA compliant */
+		--color-success: #006B3D;           /* Strong green */
+		--color-success-subtle: #E6F4ED;    /* Light green background */
+		--color-warning: #CC6600;           /* Strong orange */
+		--color-warning-subtle: #FFF4E6;    /* Light orange background */
+		--color-error: #CC0000;             /* Strong red */
+		--color-error-subtle: #FFE6E6;      /* Light red background */
+		--color-info: #0066CC;              /* Strong blue */
+		--color-info-subtle: #E6F2FF;       /* Light blue background */
+
+		/* Border Colors - High contrast borders */
+		--color-border: #000000;            /* Pure black border */
+		--color-border-subtle: #4A4A4A;     /* Dark gray border */
+		--color-border-strong: #000000;     /* Pure black strong */
+		--color-border-focus: #0066CC;      /* Strong blue focus (3px width recommended) */
+	}
+}

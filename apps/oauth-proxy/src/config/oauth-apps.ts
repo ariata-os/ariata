@@ -67,6 +67,15 @@ export const oauthConfigs = {
     scopes: ['read,activity:read_all'], // Strava uses comma-separated scopes
     authUrl: 'https://www.strava.com/oauth/authorize',
     tokenUrl: 'https://www.strava.com/oauth/token'
+  },
+
+  plaid: {
+    clientId: process.env.PLAID_CLIENT_ID || '',
+    clientSecret: process.env.PLAID_SECRET || '',
+    redirectUri: process.env.PLAID_REDIRECT_URI || 'https://auth.ariata.com/plaid/callback',
+    scopes: [], // Plaid uses Link instead of traditional OAuth scopes
+    authUrl: 'https://cdn.plaid.com/link/v2/stable/link.html',
+    tokenUrl: 'https://production.plaid.com/link/token/exchange'
   }
 } as const;
 

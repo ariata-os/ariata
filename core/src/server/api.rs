@@ -347,23 +347,6 @@ pub struct SyncStreamRequest {
     pub sync_mode: Option<String>,
 }
 
-/// Trigger a transform job for a stream
-///
-/// POST /api/sources/:source_id/transforms/:stream_name
-pub async fn trigger_transform_handler(
-    State(_state): State<AppState>,
-    Path((_source_id, stream_name)): Path<(Uuid, String)>,
-) -> Response {
-    // Manual transform triggers are deprecated in the direct transform architecture.
-    // Transforms are now automatically triggered after sync jobs complete.
-    error_response(crate::error::Error::InvalidInput(format!(
-        "Manual transform triggers are not supported. \
-         Transforms are automatically triggered after sync jobs complete. \
-         To transform data for '{}', run a sync job instead.",
-        stream_name
-    )))
-}
-
 // ============================================================================
 // Catalog/Registry API
 // ============================================================================
@@ -1207,4 +1190,122 @@ pub async fn get_agent_handler(
     Path(agent_id): Path<String>,
 ) -> Response {
     api_response(crate::api::get_agent(state.db.pool(), &agent_id).await)
+}
+
+// =============================================================================
+// Timeline API
+// =============================================================================
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GetBoundariesQuery {
+    pub start: Option<String>, // RFC3339 timestamp
+    pub end: Option<String>,
+}
+
+/// Get boundaries within a time range
+pub async fn get_boundaries_handler(
+    State(state): State<AppState>,
+    Query(params): Query<GetBoundariesQuery>,
+) -> Response {
+    use chrono::Duration;
+
+    let end = params
+        .end
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .unwrap_or_else(chrono::Utc::now);
+
+    let start = params
+        .start
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|| end - Duration::days(1));
+
+    api_response(crate::api::get_boundaries(&state.db, start, end).await)
+}
+
+/// Get day view for a specific date
+pub async fn get_day_view_handler(
+    State(state): State<AppState>,
+    Path(date_str): Path<String>,
+) -> Response {
+    use chrono::NaiveDate;
+
+    let date = match NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
+        Ok(d) => d,
+        Err(_) => {
+            return error_response(crate::error::Error::InvalidInput(
+                "Invalid date format. Use YYYY-MM-DD".to_string(),
+            ))
+        }
+    };
+
+    api_response(crate::api::get_day_view(&state.db, date).await)
+}
+
+// =============================================================================
+// Seed Testing API
+// =============================================================================
+
+/// Get pipeline status (archive, transform, clustering, boundaries)
+pub async fn seed_pipeline_status_handler(State(state): State<AppState>) -> Response {
+    api_response(crate::api::get_pipeline_status(&state.db).await)
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct BoundariesSummaryQuery {
+    pub start: String, // RFC3339 timestamp
+    pub end: String,   // RFC3339 timestamp
+}
+
+/// Get boundaries summary grouped by ontology
+pub async fn seed_boundaries_summary_handler(
+    State(state): State<AppState>,
+    Query(params): Query<BoundariesSummaryQuery>,
+) -> Response {
+    let start = match chrono::DateTime::parse_from_rfc3339(&params.start) {
+        Ok(dt) => dt.with_timezone(&chrono::Utc),
+        Err(_) => {
+            return error_response(crate::error::Error::InvalidInput(
+                "Invalid start timestamp. Use RFC3339 format".to_string(),
+            ))
+        }
+    };
+
+    let end = match chrono::DateTime::parse_from_rfc3339(&params.end) {
+        Ok(dt) => dt.with_timezone(&chrono::Utc),
+        Err(_) => {
+            return error_response(crate::error::Error::InvalidInput(
+                "Invalid end timestamp. Use RFC3339 format".to_string(),
+            ))
+        }
+    };
+
+    api_response(crate::api::get_boundaries_summary(&state.db, start, end).await)
+}
+
+/// Get data quality metrics for seed data
+pub async fn seed_data_quality_handler(
+    State(state): State<AppState>,
+    Query(params): Query<BoundariesSummaryQuery>,
+) -> Response {
+    let start = match chrono::DateTime::parse_from_rfc3339(&params.start) {
+        Ok(dt) => dt.with_timezone(&chrono::Utc),
+        Err(_) => {
+            return error_response(crate::error::Error::InvalidInput(
+                "Invalid start timestamp. Use RFC3339 format".to_string(),
+            ))
+        }
+    };
+
+    let end = match chrono::DateTime::parse_from_rfc3339(&params.end) {
+        Ok(dt) => dt.with_timezone(&chrono::Utc),
+        Err(_) => {
+            return error_response(crate::error::Error::InvalidInput(
+                "Invalid end timestamp. Use RFC3339 format".to_string(),
+            ))
+        }
+    };
+
+    api_response(crate::api::get_data_quality_metrics(&state.db, start, end).await)
 }

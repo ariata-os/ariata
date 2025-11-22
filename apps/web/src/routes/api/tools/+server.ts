@@ -6,14 +6,10 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	try {
 		// Get query parameters
-		const pinnable = url.searchParams.get('pinnable');
 		const category = url.searchParams.get('category');
 
 		// Build query params for Rust API
 		const params = new URLSearchParams();
-		if (pinnable === 'true') {
-			params.set('pinnable', 'true');
-		}
 		if (category) {
 			params.set('category', category);
 		}

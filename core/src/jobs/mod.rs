@@ -6,10 +6,11 @@
 pub mod archive_job;
 pub mod executor;
 pub mod models;
-pub mod periodic_clustering;
+pub mod narrative_primitive_pipeline;
 pub mod prudent_context_job;
 pub mod sync_job;
 pub mod transform_context;
+pub mod transform_factory;
 pub mod transform_job;
 pub mod transform_trigger;
 
@@ -21,6 +22,7 @@ pub use executor::JobExecutor;
 pub use models::{CreateJobRequest, Job, JobStatus, JobType, SyncJobMetadata};
 pub use prudent_context_job::PrudentContextJob;
 pub use transform_context::{ApiKeys, TransformContext};
+pub use transform_factory::TransformFactory;
 pub use transform_trigger::create_transform_job_for_stream;
 
 use crate::error::{Error, Result};

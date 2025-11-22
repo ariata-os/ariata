@@ -3,10 +3,9 @@
   "defaults": {
     "assistant_name": null,
     "default_agent_id": "auto",
-    "default_model_id": "anthropic/claude-haiku-4.5",
+    "default_model_id": "google/gemini-3-pro-preview",
     "enabled_tools": {
       "query_location_map": true,
-      "query_pursuits": true,
       "web_search": true
     },
     "ui_preferences": {

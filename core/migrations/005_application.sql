@@ -5,8 +5,8 @@ CREATE TABLE IF NOT EXISTS app.assistant_profile (
     id UUID PRIMARY KEY DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
     assistant_name TEXT DEFAULT 'Assistant',
     default_agent_id TEXT DEFAULT 'auto',
-    default_model_id TEXT DEFAULT 'openai/gpt-oss-120b',
-    enabled_tools JSONB DEFAULT '{"queryLocationMap": true, "queryPursuits": true}',
+    default_model_id TEXT DEFAULT 'google/gemini-3-pro-preview',
+    enabled_tools JSONB DEFAULT '{"queryLocationMap": true}',
     ui_preferences JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -25,7 +25,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS assistant_profile_updated_at ON app.assistant_profile;
 DROP TRIGGER IF EXISTS assistant_profile_updated_at ON app.assistant_profile;
 CREATE TRIGGER assistant_profile_updated_at
     BEFORE UPDATE ON app.assistant_profile
@@ -94,14 +93,12 @@ CREATE TABLE IF NOT EXISTS app.tools (
     tool_type TEXT NOT NULL CHECK (tool_type IN ('mcp', 'ariata')),
     category TEXT,
     icon TEXT,
-    is_pinnable BOOLEAN DEFAULT false,
     default_params JSONB,
     display_order INTEGER,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_tools_pinnable ON app.tools(is_pinnable) WHERE is_pinnable = true;
 CREATE INDEX IF NOT EXISTS idx_tools_category ON app.tools(category);
 CREATE INDEX IF NOT EXISTS idx_tools_type ON app.tools(tool_type);
 

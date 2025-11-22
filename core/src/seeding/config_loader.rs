@@ -96,7 +96,6 @@ pub struct ToolConfig {
     pub tool_type: String,
     pub category: String,
     pub icon: String,
-    pub is_pinnable: bool,
     pub display_order: i32,
 }
 

@@ -113,7 +113,11 @@ impl OntologyTransform for IosLocationTransform {
                     .unwrap_or_else(|| Uuid::new_v4());
 
                 let altitude = record.get("altitude").and_then(|v| v.as_f64());
-                let speed = record.get("speed").and_then(|v| v.as_f64());
+                // GPS returns -1.0 when speed is invalid/unavailable - normalize to NULL
+                let speed = record
+                    .get("speed")
+                    .and_then(|v| v.as_f64())
+                    .filter(|&s| s >= 0.0);
                 let course = record.get("course").and_then(|v| v.as_f64());
                 let horizontal_accuracy =
                     record.get("horizontal_accuracy").and_then(|v| v.as_f64());

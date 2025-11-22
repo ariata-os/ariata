@@ -133,6 +133,21 @@ CREATE TABLE IF NOT EXISTS data.stream_transform_checkpoints (
 CREATE INDEX IF NOT EXISTS idx_transform_checkpoints_lookup ON data.stream_transform_checkpoints(source_connection_id, stream_name, transform_name);
 CREATE INDEX IF NOT EXISTS idx_transform_checkpoints_last_run ON data.stream_transform_checkpoints(last_run_at);
 
+-- Simplified checkpoint table for in-memory transforms (used by MemoryDataSource)
+-- Unlike stream_transform_checkpoints, this doesn't require FK to source_connections
+CREATE TABLE IF NOT EXISTS data.stream_checkpoints (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_id UUID NOT NULL,
+    stream_name TEXT NOT NULL,
+    checkpoint_key TEXT NOT NULL,
+    last_processed_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(source_id, stream_name, checkpoint_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stream_checkpoints_lookup ON data.stream_checkpoints(source_id, stream_name, checkpoint_key);
+
 CREATE TABLE IF NOT EXISTS data.archive_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sync_job_id UUID REFERENCES data.jobs(id) ON DELETE CASCADE,

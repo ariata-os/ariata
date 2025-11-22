@@ -95,6 +95,11 @@ pub struct RegisteredStream {
     /// Database table name (e.g., "stream_google_calendar")
     pub table_name: &'static str,
 
+    /// Target ontology tables this stream feeds into
+    /// e.g., ["praxis_calendar"] for Google Calendar
+    /// e.g., ["health_heart_rate", "health_sleep", "health_workout"] for HealthKit
+    pub target_ontologies: Vec<&'static str>,
+
     /// JSON schema for configuration (serialized as JSON)
     #[ts(type = "any")]
     pub config_schema: serde_json::Value,
@@ -121,6 +126,7 @@ impl RegisteredStream {
             display_name: name,
             description: "",
             table_name: "",
+            target_ontologies: vec![],
             config_schema: serde_json::json!({}),
             config_example: serde_json::json!({}),
             supports_incremental: true,
@@ -136,6 +142,7 @@ pub struct StreamBuilder {
     display_name: &'static str,
     description: &'static str,
     table_name: &'static str,
+    target_ontologies: Vec<&'static str>,
     config_schema: serde_json::Value,
     config_example: serde_json::Value,
     supports_incremental: bool,
@@ -184,12 +191,19 @@ impl StreamBuilder {
         self
     }
 
+    /// Set target ontology tables this stream feeds into
+    pub fn target_ontologies(mut self, ontologies: Vec<&'static str>) -> Self {
+        self.target_ontologies = ontologies;
+        self
+    }
+
     pub fn build(self) -> RegisteredStream {
         RegisteredStream {
             name: self.name,
             display_name: self.display_name,
             description: self.description,
             table_name: self.table_name,
+            target_ontologies: self.target_ontologies,
             config_schema: self.config_schema,
             config_example: self.config_example,
             supports_incremental: self.supports_incremental,
@@ -269,6 +283,7 @@ fn init_registry() -> Registry {
     // Register OAuth sources
     registry.register(crate::sources::google::registry::GoogleSource::descriptor());
     registry.register(crate::sources::notion::registry::NotionSource::descriptor());
+    registry.register(crate::sources::plaid::registry::PlaidSource::descriptor());
 
     // Register device sources
     registry.register(crate::sources::ios::registry::IosSource::descriptor());
@@ -300,6 +315,60 @@ pub fn get_stream(source_name: &str, stream_name: &str) -> Option<&'static Regis
 /// List all streams across all sources
 pub fn list_all_streams() -> Vec<(&'static str, &'static RegisteredStream)> {
     registry().list_all_streams()
+}
+
+/// Get a stream by its table name (e.g., "stream_google_calendar")
+///
+/// Returns the source name and stream reference if found.
+pub fn get_stream_by_table_name(table_name: &str) -> Option<(&'static str, &'static RegisteredStream)> {
+    registry()
+        .list_all_streams()
+        .into_iter()
+        .find(|(_, stream)| stream.table_name == table_name)
+}
+
+/// Normalize stream name from short form to full table name
+///
+/// ## Naming Convention
+///
+/// The system uses a three-tier naming architecture:
+/// 1. **Stream Name** (registered in data.streams) - e.g., "app_export", "gmail"
+/// 2. **Stream Table** (object storage) - e.g., "stream_ariata_ai_chat", "stream_google_gmail"
+/// 3. **Ontology Table** (data schema) - e.g., "knowledge_ai_conversation", "social_email"
+///
+/// This function maps stream names (tier 1) to stream tables (tier 2).
+///
+/// ## Usage
+///
+/// If the name already starts with "stream_", it is returned as-is.
+/// Otherwise, short names are expanded to their full stream table names.
+pub fn normalize_stream_name(name: &str) -> String {
+    if name.starts_with("stream_") {
+        return name.to_string();
+    }
+
+    // Try to find by short name in registry
+    for (_source_name, stream) in list_all_streams() {
+        if stream.name == name {
+            return stream.table_name.to_string();
+        }
+    }
+
+    // Legacy fallback mappings for backwards compatibility
+    match name {
+        "app_export" => "stream_ariata_ai_chat",
+        "gmail" => "stream_google_gmail",
+        "calendar" => "stream_google_calendar",
+        "pages" => "stream_notion_pages",
+        "microphone" => "stream_ios_microphone",
+        "healthkit" => "stream_ios_healthkit",
+        "location" => "stream_ios_location",
+        "apps" => "stream_mac_apps",
+        "browser" => "stream_mac_browser",
+        "imessage" | "messages" => "stream_mac_imessage",
+        _ => name, // Return as-is if unknown
+    }
+    .to_string()
 }
 
 #[cfg(test)]

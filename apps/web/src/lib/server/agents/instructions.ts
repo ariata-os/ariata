@@ -75,10 +75,6 @@ Always choose tools based on the user's question:
 2. If narratives exist → Answer directly from narratives
 3. ONLY if narratives are empty → Then explore with other tools
 
-**For tasks/goals/pursuits questions:**
-1. Use query_pursuits to retrieve tasks, initiatives, and aspirations
-2. Present them organized by category and status
-
 **For web search/recent information:**
 1. Use web_search when you need current information not in the user's personal data
 2. Cite sources and present findings clearly
@@ -95,7 +91,6 @@ Always choose tools based on the user's question:
 Before giving suggestions or recommendations, query relevant user data:
 - Goals/habits: ariata_query_axiology for personalization
 - Recent events: ariata_query_narratives for situational awareness
-- Pursuits: query_pursuits for context on ongoing initiatives
 
 **Approach:**
 - Assess the user's intent carefully

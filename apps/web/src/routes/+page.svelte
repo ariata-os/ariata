@@ -1,18 +1,14 @@
 <script lang="ts">
 	import Page from "$lib/components/Page.svelte";
 	import ChatInput from "$lib/components/ChatInput.svelte";
-	import ModelPicker from "$lib/components/ModelPicker.svelte";
 	import AgentPicker from "$lib/components/AgentPicker.svelte";
 	import ContextIndicator from "$lib/components/ContextIndicator.svelte";
 	import TableOfContents from "$lib/components/TableOfContents.svelte";
 	import type { ModelOption } from "$lib/config/models";
 	import {
-		getModels,
 		getSelectedModel,
-		setSelectedModel,
 		initializeSelectedModel,
 		getInitializationPromise,
-		isLoading as isModelsLoading,
 	} from "$lib/stores/models.svelte";
 	import Markdown from "$lib/components/Markdown.svelte";
 	import ToolCall from "$lib/components/ToolCall.svelte";
@@ -218,9 +214,6 @@ let inputFocused = $state(false);
 					parts: convertMessageToParts(msg),
 				})) || [];
 
-			// Update modelLocked based on whether this is a new conversation
-			modelLocked = !data.isNew;
-
 			// Re-enable transitions after a brief moment
 			setTimeout(() => {
 				enableTransitions = true;
@@ -239,13 +232,11 @@ let inputFocused = $state(false);
 	const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes
 
 	// Model selection state
-	const models = getModels();
 	const selectedModel = $derived(getSelectedModel());
-	let modelLocked = $state(!data.isNew);
 
-	// Initialize selectedModel once models are loaded
+	// Initialize selectedModel once loaded
 	$effect(() => {
-		if (models.length > 0 && !selectedModel) {
+		if (!selectedModel) {
 			console.log("[+page.svelte] Initializing selected model");
 			initializeSelectedModel(data.conversation?.model);
 		}
@@ -367,10 +358,9 @@ let inputFocused = $state(false);
 						selectedAgent = profile.default_agent_id;
 					}
 
-					// Apply default model if set and conversation is new (not locked)
+					// Apply default model if set
 					if (
 						profile.default_model_id &&
-						!modelLocked &&
 						!selectedModel
 					) {
 						initializeSelectedModel(
@@ -577,11 +567,6 @@ let inputFocused = $state(false);
 
 		// Reset inactivity timer on user activity
 		resetInactivityTimer();
-
-		// Lock model after first message
-		if (!modelLocked) {
-			modelLocked = true;
-		}
 
 		// Refresh thinking label for new message
 		thinkingLabel = getRandomThinkingLabel();
@@ -857,13 +842,6 @@ let inputFocused = $state(false);
 						disabled={chat.status !== "ready"}
 					/>
 				{/snippet}
-				{#snippet modelPicker()}
-					<ModelPicker
-						value={selectedModel}
-						disabled={modelLocked}
-						onSelect={setSelectedModel}
-					/>
-				{/snippet}
 				{#snippet contextIndicator()}
 					{#if selectedModel}
 						<ContextIndicator
@@ -972,22 +950,6 @@ let inputFocused = $state(false);
 
 	.hero-title {
 		text-align: center;
-	}
-
-	.pinned-tools-container {
-		display: flex;
-		justify-content: center;
-		width: 100%;
-		max-width: 48rem; /* max-w-3xl */
-		margin-top: 1.5rem;
-		opacity: 1;
-		transition: opacity 200ms ease-out;
-		pointer-events: auto;
-	}
-
-	.pinned-tools-container.hidden {
-		opacity: 0;
-		pointer-events: none;
 	}
 
 	.message-wrapper {

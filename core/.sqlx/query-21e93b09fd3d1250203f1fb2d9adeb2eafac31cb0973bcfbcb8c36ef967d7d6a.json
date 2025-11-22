@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            app_name,\n            app_category,\n            window_title,\n            start_time,\n            end_time\n        FROM data.activity_app_usage\n        WHERE start_time <= $2\n          AND end_time >= $1\n        ORDER BY (end_time - start_time) DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "app_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "app_category",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "window_title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "start_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "end_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "21e93b09fd3d1250203f1fb2d9adeb2eafac31cb0973bcfbcb8c36ef967d7d6a"
+}

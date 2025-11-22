@@ -101,7 +101,6 @@
 		>
 			<div class="pickers-slot flex items-center gap-2">
 				<slot name="agentPicker" />
-				<slot name="modelPicker" />
 				<slot name="contextIndicator" />
 			</div>
 			<button

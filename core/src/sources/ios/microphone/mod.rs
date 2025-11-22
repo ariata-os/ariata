@@ -24,7 +24,7 @@ pub use transform::MicrophoneTranscriptionTransform;
 ///
 /// Receives microphone/audio data pushed from iOS devices via /ingest endpoint.
 pub struct IosMicrophoneStream {
-    db: PgPool,
+    _db: PgPool,
     storage: Arc<Storage>,
     stream_writer: Arc<Mutex<StreamWriter>>,
 }
@@ -33,7 +33,7 @@ impl IosMicrophoneStream {
     /// Create a new IosMicrophoneStream
     pub fn new(db: PgPool, storage: Arc<Storage>, stream_writer: Arc<Mutex<StreamWriter>>) -> Self {
         Self {
-            db,
+            _db: db,
             storage,
             stream_writer,
         }

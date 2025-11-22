@@ -29,6 +29,7 @@ const ALLOWED_MODELS = [
 	'openai/gpt-oss-20b',
 	'google/gemini-2.5-pro',
 	'google/gemini-2.5-flash',
+	'google/gemini-3-pro-preview',
 	'xai/grok-4',
 	'moonshotai/kimi-k2-thinking'
 ];

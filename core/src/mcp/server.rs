@@ -53,9 +53,9 @@ impl AriataMcpServer {
         }
     }
 
-    /// Execute a read-only SQL query against ontology tables
+    /// Unified ontology tool - query data, list tables, or get schema
     #[tool(
-        description = "Execute a read-only SQL query against ontology tables in the Ariata data warehouse. Only SELECT queries are allowed. Use ariata_list_ontology_tables first to discover available tables."
+        description = "Unified ontology tool with 3 operations: (1) 'query' - Execute read-only SQL queries on ontology tables (SELECT only), (2) 'list_tables' - Discover available tables with column names and row counts, (3) 'get_schema' - Get detailed schema for a specific table (column types, nullability, defaults). NOTE: For biographical questions ('who did I meet', 'what happened'), use ariata_query_narratives first instead of exploring tables."
     )]
     async fn ariata_query_ontology(
         &self,
@@ -73,6 +73,10 @@ impl AriataMcpServer {
                 if e.contains("forbidden keyword")
                     || e.contains("Only SELECT")
                     || e.contains("exceeds maximum length")
+                    || e.contains("Missing")
+                    || e.contains("Invalid operation")
+                    || e.contains("not found")
+                    || e.contains("does not exist")
                 {
                     Err(McpError::invalid_params(e, None))
                 } else {
@@ -102,80 +106,9 @@ impl AriataMcpServer {
     //     }
     // }
 
-    /// List all ontology tables with their schemas
-    #[tool(
-        description = "List all available ontology tables in the data warehouse. Each table represents a normalized data type (e.g., health_heart_rate, social_email, location_point). Returns table names, column lists, and row counts. NOTE: For biographical questions ('who did I meet', 'what happened'), use ariata_query_narratives first instead of exploring tables."
-    )]
-    async fn ariata_list_ontology_tables(
-        &self,
-        _params: Parameters<tools::ListOntologyTablesRequest>,
-    ) -> Result<CallToolResult, McpError> {
-        match tools::list_ontology_tables(&self.pool).await {
-            Ok(result) => {
-                let json_str = serde_json::to_string_pretty(&result).map_err(|e| {
-                    McpError::internal_error(format!("Failed to serialize result: {}", e), None)
-                })?;
-                Ok(CallToolResult::success(vec![Content::text(json_str)]))
-            }
-            Err(e) => Err(McpError::internal_error(e, None)),
-        }
-    }
-
-    /// Get detailed schema for a specific table
-    #[tool(
-        description = "Get detailed schema information for a specific ontology table, including column names, data types, nullability, and default values. Use this before writing SQL queries."
-    )]
-    async fn ariata_get_table_schema(
-        &self,
-        params: Parameters<tools::GetTableSchemaRequest>,
-    ) -> Result<CallToolResult, McpError> {
-        match tools::get_table_schema(&self.pool, params.0).await {
-            Ok(result) => {
-                let json_str = serde_json::to_string_pretty(&result).map_err(|e| {
-                    McpError::internal_error(format!("Failed to serialize result: {}", e), None)
-                })?;
-                Ok(CallToolResult::success(vec![Content::text(json_str)]))
-            }
-            Err(e) => {
-                // Categorize errors appropriately
-                if e.contains("not found") || e.contains("does not exist") {
-                    Err(McpError::invalid_params(e, None))
-                } else {
-                    Err(McpError::internal_error(e, None))
-                }
-            }
-        }
-    }
-
-    /// Trigger a manual sync for a data source
-    #[tool(
-        description = "Manually trigger a sync job for a data source. You can sync all enabled streams for a source, or specify a particular stream. Returns job IDs for tracking."
-    )]
-    async fn ariata_trigger_sync(
-        &self,
-        params: Parameters<tools::TriggerSyncRequest>,
-    ) -> Result<CallToolResult, McpError> {
-        match tools::trigger_sync(&self.pool, params.0).await {
-            Ok(result) => {
-                let json_str = serde_json::to_string_pretty(&result).map_err(|e| {
-                    McpError::internal_error(format!("Failed to serialize result: {}", e), None)
-                })?;
-                Ok(CallToolResult::success(vec![Content::text(json_str)]))
-            }
-            Err(e) => {
-                // Categorize errors appropriately
-                if e.contains("Invalid source ID") || e.contains("No enabled streams") {
-                    Err(McpError::invalid_params(e, None))
-                } else {
-                    Err(McpError::internal_error(e, None))
-                }
-            }
-        }
-    }
-
     /// Execute a read-only SQL query against axiology tables
     #[tool(
-        description = "Execute a read-only SQL query against axiology tables. Available tables: data.axiology_value, data.axiology_telos, data.axiology_goal, data.axiology_virtue, data.axiology_vice, data.axiology_habit, data.axiology_temperament, data.axiology_preference. Only SELECT queries are allowed. Returns the user's formal axiological framework for context-aware decision support."
+        description = "Execute a read-only SQL query against axiology tables. Available tables: data.axiology_value, data.axiology_telos, data.axiology_goal, data.axiology_virtue, data.axiology_vice, data.axiology_temperament, data.axiology_preference. Only SELECT queries are allowed. Returns the user's formal axiological framework for context-aware decision support."
     )]
     async fn ariata_query_axiology(
         &self,
@@ -338,11 +271,9 @@ This server provides access to your personal data warehouse, which aggregates da
 
 Available Tools:
 1. ariata_query_narratives - Query your narrative biography and life story (use this for "what happened", "who did I meet", biographical questions)
-2. ariata_query_ontology - Execute read-only SQL queries against ontology tables
+2. ariata_query_ontology - Unified ontology tool with 3 operations: query (execute SQL), list_tables (discover tables), get_schema (get table details)
 3. ariata_query_axiology - Execute read-only SQL queries against axiology tables
-4. ariata_list_ontology_tables - Discover available ontology tables and their schemas
-5. ariata_get_table_schema - Get detailed schema for a specific table
-6. ariata_trigger_sync - Manually trigger a sync for a data source
+4. ariata_manage_axiology - Manage your axiology system (create, read, update, delete tasks, initiatives, aspirations, values, etc.)
 
 Axiology System:
 The axiology tables store the user's formal axiological framework:
@@ -351,13 +282,12 @@ The axiology tables store the user's formal axiological framework:
 - axiology_goal: Concrete pursuits with goal_type (work/character/experiential/relational) (Level 2)
 - axiology_virtue: Positive character patterns to cultivate (Level 3)
 - axiology_vice: Negative character patterns to resist (Level 3)
-- axiology_habit: Daily practices (neutral, changeable) (Level 3)
 - axiology_temperament: Innate dispositions (neutral, stable) (Level 3)
 - axiology_preference: Affinities with entities (Level 4)
 
 Best Practices:
-- Always use ariata_list_ontology_tables first to discover what data is available
-- Use ariata_get_table_schema to understand column names and types before querying
+- Use ariata_query_ontology with operation='list_tables' to discover what data is available
+- Use ariata_query_ontology with operation='get_schema' to understand column names and types before querying
 - Queries are read-only and limited to 1000 rows max
 - Use aggregate functions (COUNT, AVG, etc.) to summarize large datasets
 - Filter by date ranges to narrow results
@@ -400,31 +330,24 @@ GROUP BY DATE(start_time)
 ORDER BY DATE(start_time);
 
 -- Upcoming calendar (titles only, no attendees/content)
-SELECT title, start_time, duration_minutes
-FROM data.social_calendar_event
+SELECT title, start_time, end_time
+FROM data.praxis_calendar
 WHERE start_time BETWEEN NOW() AND NOW() + INTERVAL '7 days'
 ORDER BY start_time;
 ```
 
 Axiology queries for context-aware assistance:
 ```sql
--- Active goals by priority
-SELECT name, goal_type, priority, description
-FROM axiology_goal
-WHERE status = 'active'
-ORDER BY priority;
+-- Active aspirations
+SELECT title, description, status, target_timeframe
+FROM data.praxis_aspiration
+WHERE is_active = true
+ORDER BY created_at DESC;
 
--- Relevant virtues to cultivate
-SELECT name, description, cultivation_notes
-FROM axiology_virtue
-WHERE priority > 5
-ORDER BY priority DESC;
-
--- Daily habits to track
-SELECT name, frequency, time_of_day
-FROM axiology_habit
-WHERE active = true
-ORDER BY time_of_day;
+-- Active virtues to cultivate
+SELECT title, description
+FROM data.axiology_virtue
+WHERE is_active = true;
 ```
 "#
                 .to_string(),
@@ -497,8 +420,8 @@ ORDER BY time_of_day;
 3. ONLY if narratives are empty → then consider other tools
 
 **DO NOT:**
-- ❌ Call `ariata_list_ontology_tables` first
-- ❌ Call `ariata_query_ontology` before checking narratives
+- ❌ Call `ariata_query_ontology` with operation='list_tables' first
+- ❌ Call `ariata_query_ontology` with operation='query' before checking narratives
 - ❌ "Explore" the data before checking narratives
 - ❌ Check multiple data sources when narratives have the answer
 
@@ -510,8 +433,8 @@ ORDER BY time_of_day;
 - Contain the "story" not just raw data points
 
 **When to use other tools:**
-- `ariata_list_ontology_tables`: Only when you need to discover what raw data types exist
-- `ariata_query_ontology`: Only for specific metrics (exact heart rate at 3:42pm) or when narratives don't exist
+- `ariata_query_ontology` operation='list_tables': Only when you need to discover what raw data types exist
+- `ariata_query_ontology` operation='query': Only for specific metrics (exact heart rate at 3:42pm) or when narratives don't exist
 - `ariata_query_axiology`: For values, goals, habits, virtues, vices queries
 
 ---
@@ -529,7 +452,7 @@ When you find information:
 ❌ "Querying the narrative_chunks table..."
 ❌ "The data.narrative_chunks table shows..."
 ❌ "SELECT narrative_text FROM..."
-❌ "Here's what the social_calendar_event table returned..."
+❌ "Here's what the praxis_calendar table returned..."
 ❌ "The location_point data indicates..."
 ❌ "Based on ios_microphone_transcription..."
 

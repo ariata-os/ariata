@@ -10,7 +10,7 @@ use std::sync::Arc;
 use crate::error::Result;
 use crate::jobs::models::Job;
 use crate::jobs::transform_context::TransformContext;
-use crate::transforms::TransformFactory;
+use crate::jobs::transform_factory::TransformFactory;
 
 /// Execute a transform job
 ///

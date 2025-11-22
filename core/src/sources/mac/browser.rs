@@ -20,14 +20,14 @@ use crate::{
 ///
 /// Receives browser history data pushed from macOS devices via /ingest endpoint.
 pub struct MacBrowserStream {
-    db: PgPool,
+    _db: PgPool,
     stream_writer: Arc<Mutex<StreamWriter>>,
 }
 
 impl MacBrowserStream {
     /// Create a new MacBrowserStream
     pub fn new(db: PgPool, stream_writer: Arc<Mutex<StreamWriter>>) -> Self {
-        Self { db, stream_writer }
+        Self { _db: db, stream_writer }
     }
 }
 

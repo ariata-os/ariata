@@ -37,7 +37,10 @@ pub async fn seed_default_sources(db: &Database) -> Result<usize> {
         .await?;
     }
 
-    info!("✅ Seeded {} system default source connections from config", count);
+    info!(
+        "✅ Seeded {} system default source connections from config",
+        count
+    );
     Ok(count)
 }
 
@@ -56,19 +59,25 @@ pub async fn seed_default_streams(db: &Database) -> Result<usize> {
         let source_conn = source_connections
             .iter()
             .find(|s| s.id == conn.source_connection_id)
-            .ok_or_else(|| anyhow::anyhow!(
-                "Stream '{}' references unknown source_connection_id {}",
-                conn.stream_name,
-                conn.source_connection_id
-            ))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Stream '{}' references unknown source_connection_id {}",
+                    conn.stream_name,
+                    conn.source_connection_id
+                )
+            })?;
 
         // Determine cron_schedule: use JSON value if provided, otherwise look up registry default
         let cron_schedule = match &conn.cron_schedule {
             Some(schedule) => Some(schedule.clone()),
             None => {
                 // Look up registry default
-                if let Some(registered_stream) = crate::registry::get_stream(&source_conn.source, &conn.stream_name) {
-                    registered_stream.default_cron_schedule.map(|s| s.to_string())
+                if let Some(registered_stream) =
+                    crate::registry::get_stream(&source_conn.source, &conn.stream_name)
+                {
+                    registered_stream
+                        .default_cron_schedule
+                        .map(|s| s.to_string())
                 } else {
                     None
                 }
@@ -96,7 +105,10 @@ pub async fn seed_default_streams(db: &Database) -> Result<usize> {
         .await?;
     }
 
-    info!("✅ Seeded {} system default stream connections from config", count);
+    info!(
+        "✅ Seeded {} system default stream connections from config",
+        count
+    );
     Ok(count)
 }
 
@@ -183,14 +195,41 @@ pub async fn seed_default_agents(db: &Database) -> Result<usize> {
 /// Creates sample tasks with common tags to populate autocomplete
 pub async fn seed_axiology_tags(db: &Database) -> Result<usize> {
     let sample_tasks = vec![
-        ("Work projects", Some("Professional and career-related tasks"), vec!["work".to_string()]),
-        ("Family time", Some("Spending quality time with loved ones"), vec!["family".to_string(), "relational".to_string()]),
-        ("Exercise routine", Some("Physical fitness and wellbeing"), vec!["health".to_string()]),
-        ("Personal development", Some("Self-improvement and growth"), vec!["personal".to_string()]),
-        ("Creative pursuits", Some("Artistic and creative activities"), vec!["creative".to_string()]),
-        ("Spiritual practice", Some("Meditation, reflection, and inner work"), vec!["spiritual".to_string()]),
-        ("New experiences", Some("Trying new things and adventures"), vec!["experiential".to_string()]),
-        ("Building relationships", Some("Deepening connections with others"), vec!["relational".to_string()]),
+        (
+            "Work projects",
+            Some("Professional and career-related tasks"),
+            vec!["work".to_string()],
+        ),
+        (
+            "Family time",
+            Some("Spending quality time with loved ones"),
+            vec!["family".to_string(), "relational".to_string()],
+        ),
+        (
+            "Exercise routine",
+            Some("Physical fitness and wellbeing"),
+            vec!["health".to_string()],
+        ),
+        (
+            "Personal development",
+            Some("Self-improvement and growth"),
+            vec!["personal".to_string()],
+        ),
+        (
+            "Spiritual practice",
+            Some("Meditation, reflection, and inner work"),
+            vec!["spiritual".to_string()],
+        ),
+        (
+            "New experiences",
+            Some("Trying new things and adventures"),
+            vec!["experiential".to_string()],
+        ),
+        (
+            "Building relationships",
+            Some("Deepening connections with others"),
+            vec!["relational".to_string()],
+        ),
     ];
 
     let count = sample_tasks.len();
@@ -221,15 +260,14 @@ pub async fn seed_default_tools(db: &Database) -> Result<usize> {
     for tool in &tools {
         sqlx::query!(
             r#"
-            INSERT INTO app.tools (id, name, description, tool_type, category, icon, is_pinnable, display_order)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO app.tools (id, name, description, tool_type, category, icon, display_order)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (id) DO UPDATE SET
                 name = EXCLUDED.name,
                 description = EXCLUDED.description,
                 tool_type = EXCLUDED.tool_type,
                 category = EXCLUDED.category,
                 icon = EXCLUDED.icon,
-                is_pinnable = EXCLUDED.is_pinnable,
                 display_order = EXCLUDED.display_order,
                 updated_at = NOW()
             "#,
@@ -239,7 +277,6 @@ pub async fn seed_default_tools(db: &Database) -> Result<usize> {
             &tool.tool_type,
             &tool.category,
             &tool.icon,
-            tool.is_pinnable,
             tool.display_order
         )
         .execute(db.pool())
@@ -252,11 +289,13 @@ pub async fn seed_default_tools(db: &Database) -> Result<usize> {
 
 /// Initialize enabled_tools with explicit default values
 /// DEPRECATED: Use seed_assistant_profile instead
+// Commented out - function is deprecated and never called, causes SQLX cache issues
+/*
 pub async fn seed_enabled_tools(db: &Database) -> Result<()> {
     sqlx::query!(
         r#"
         UPDATE app.assistant_profile
-        SET enabled_tools = '{"query_location_map": true, "query_pursuits": true, "web_search": true}'::jsonb
+        SET enabled_tools = '{"query_location_map": true, "web_search": true}'::jsonb
         WHERE enabled_tools = '{}'::jsonb OR enabled_tools IS NULL
         "#
     )
@@ -266,6 +305,7 @@ pub async fn seed_enabled_tools(db: &Database) -> Result<()> {
     info!("✅ Initialized enabled_tools with explicit defaults");
     Ok(())
 }
+*/
 
 /// Seed assistant profile defaults
 /// Loads configuration from config/seeds/assistant_profile.json
@@ -274,7 +314,8 @@ pub async fn seed_assistant_profile(db: &Database) -> Result<()> {
     let defaults = config_loader::load_assistant_profile_defaults()?;
 
     // The assistant profile singleton UUID
-    let profile_id = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("Valid UUID constant");
+    let profile_id =
+        uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("Valid UUID constant");
 
     // Update assistant profile with defaults, but only for NULL fields
     // This preserves any user customizations while setting initial defaults

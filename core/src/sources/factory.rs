@@ -105,7 +105,7 @@ impl StreamFactory {
     /// Create authentication for a source
     async fn create_auth(&self, source_id: Uuid, provider: &str) -> Result<SourceAuth> {
         match provider {
-            "google" | "notion" => {
+            "google" | "notion" | "plaid" => {
                 // OAuth2 sources - create TokenManager for token refresh
                 let token_manager = Arc::new(TokenManager::new(self.db.clone())?);
                 Ok(SourceAuth::oauth2(source_id, token_manager))

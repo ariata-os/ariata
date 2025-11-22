@@ -229,8 +229,8 @@ async fn setup_s3_storage() -> Result<StorageType> {
 /// Generate a random 32-byte encryption key
 fn generate_encryption_key() -> String {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let key: [u8; 32] = rng.gen();
+    let mut rng = rand::rng();
+    let key: [u8; 32] = rng.random();
     base64::Engine::encode(&base64::engine::general_purpose::STANDARD, key)
 }
 

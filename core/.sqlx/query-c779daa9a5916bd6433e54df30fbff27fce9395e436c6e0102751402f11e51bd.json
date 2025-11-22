@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH ordered_visits AS (\n                SELECT\n                    timestamp,\n                    domain,\n                    page_title,\n                    LAG(timestamp + (visit_duration_seconds || ' seconds')::interval)\n                        OVER (ORDER BY timestamp) as prev_end_time\n                FROM data.activity_web_browsing\n                WHERE timestamp BETWEEN $1 AND $2\n                ORDER BY timestamp ASC\n            ),\n            session_starts AS (\n                SELECT timestamp, domain, page_title\n                FROM ordered_visits\n                WHERE prev_end_time IS NULL\n                   OR EXTRACT(EPOCH FROM (timestamp - prev_end_time)) > 120\n            )\n            SELECT timestamp, domain, page_title\n            FROM session_starts\n            ORDER BY timestamp ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "timestamp",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "page_title",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "c779daa9a5916bd6433e54df30fbff27fce9395e436c6e0102751402f11e51bd"
+}

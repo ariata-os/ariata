@@ -7,12 +7,12 @@ use sqlx::PgPool;
 use std::collections::HashSet;
 
 use crate::error::Result;
-use crate::transforms;
+use crate::registry;
 
 /// List available ontology tables based on enabled streams
 ///
 /// This queries the database for enabled streams and maps them to ontology tables
-/// using the transform registry as the single source of truth.
+/// using the source registry as the single source of truth.
 /// Only returns tables that both (1) have enabled streams AND (2) actually exist in the database schema.
 pub async fn list_available_ontologies(db: &PgPool) -> Result<Vec<String>> {
     // First, get all tables that actually exist in the data schema
@@ -53,15 +53,15 @@ pub async fn list_available_ontologies(db: &PgPool) -> Result<Vec<String>> {
     .fetch_all(db)
     .await?;
 
-    // Map stream tables to ontology tables using transform registry
+    // Map stream tables to ontology tables using source registry
     // AND filter by actual schema existence
     let mut ontologies = HashSet::new();
     for row in rows {
-        if let Ok(route) = transforms::get_transform_route(&row.table_name) {
+        if let Some((_source_name, stream)) = registry::get_stream_by_table_name(&row.table_name) {
             // Add all target ontology tables for this stream
-            for target_table in route.target_tables {
+            for target_table in &stream.target_ontologies {
                 // Only include if table actually exists in the schema
-                if existing_set.contains(target_table) {
+                if existing_set.contains(*target_table) {
                     ontologies.insert(target_table.to_string());
                 } else {
                     tracing::warn!(
@@ -74,7 +74,7 @@ pub async fn list_available_ontologies(db: &PgPool) -> Result<Vec<String>> {
         } else {
             tracing::debug!(
                 table_name = %row.table_name,
-                "No transform route found for stream, skipping"
+                "No stream found in registry, skipping"
             );
         }
     }
@@ -188,8 +188,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_transforms_registry_has_routes() {
-        // Verify that the main streams have transform routes
+    fn test_registry_has_streams() {
+        // Verify that the main streams exist in the registry
         let known_streams = vec![
             "stream_google_gmail",
             "stream_google_calendar",
@@ -198,14 +198,22 @@ mod tests {
             "stream_ariata_ai_chat",
         ];
 
-        for stream in known_streams {
-            let route = transforms::get_transform_route(stream);
+        for stream_table in known_streams {
+            let result = registry::get_stream_by_table_name(stream_table);
             assert!(
-                route.is_ok(),
-                "Expected transform route for {}, but got error: {:?}",
-                stream,
-                route.err()
+                result.is_some(),
+                "Expected stream {} in registry, but not found",
+                stream_table
             );
+
+            // Verify target_ontologies is populated
+            if let Some((_, stream)) = result {
+                assert!(
+                    !stream.target_ontologies.is_empty(),
+                    "Expected target_ontologies for {}, but was empty",
+                    stream_table
+                );
+            }
         }
     }
 }

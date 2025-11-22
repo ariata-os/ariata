@@ -31,6 +31,7 @@ impl SourceRegistry for GoogleSource {
                         "Sync calendar events with attendees, locations, and conference details",
                     )
                     .table_name("stream_google_calendar")
+                    .target_ontologies(vec!["praxis_calendar"])
                     .config_schema(calendar_config_schema())
                     .config_example(calendar_config_example())
                     .supports_incremental(true)
@@ -42,6 +43,7 @@ impl SourceRegistry for GoogleSource {
                     .display_name("Gmail")
                     .description("Sync email messages and threads with full metadata")
                     .table_name("stream_google_gmail")
+                    .target_ontologies(vec!["social_email"])
                     .config_schema(gmail_config_schema())
                     .config_example(gmail_config_example())
                     .supports_incremental(true)

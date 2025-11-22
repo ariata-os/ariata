@@ -8,6 +8,7 @@ pub mod google;
 pub mod ios;
 pub mod mac;
 pub mod notion;
+pub mod plaid;
 pub mod pull_stream;
 pub mod push_stream;
 pub mod stream_type;

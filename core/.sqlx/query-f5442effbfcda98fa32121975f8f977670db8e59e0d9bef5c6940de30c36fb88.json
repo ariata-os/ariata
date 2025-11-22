@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE data.event_boundaries\n        SET metadata = metadata || $1\n        WHERE id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f5442effbfcda98fa32121975f8f977670db8e59e0d9bef5c6940de30c36fb88"
+}

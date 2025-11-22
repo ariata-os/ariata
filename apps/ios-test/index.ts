@@ -74,6 +74,35 @@ interface VerifyResponse {
   enabled_streams: StreamInfo[];
 }
 
+// Ingest request (from iOS app)
+interface IngestRequest {
+  source: string;
+  stream: string;
+  device_id: string;
+  records: any[];
+  timestamp: string;
+  checkpoint?: string;
+}
+
+// Ingest response
+interface IngestResponse {
+  accepted: number;
+  rejected: number;
+  next_checkpoint?: string;
+  activity_id: string;
+}
+
+// Ingested record storage (for debugging)
+interface IngestedRecord {
+  id: string;
+  timestamp: Date;
+  source: string;
+  stream: string;
+  device_id: string;
+  records: any[];
+  record_count: number;
+}
+
 // Generate random pairing code (6 chars alphanumeric)
 function generatePairingCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -235,6 +264,23 @@ function corsHeaders(origin?: string): HeadersInit {
 // In-memory store for test pairing codes (cleared on restart)
 const pairingCodes = new Map<string, { source_id: string, expires_at: Date }>();
 
+// In-memory store for ingested data (1-minute TTL, cleared on restart)
+const ingestedData: IngestedRecord[] = [];
+const MAX_AGE_MS = 60000; // 1 minute
+
+// Cleanup interval - purge records older than 1 minute every 10 seconds
+setInterval(() => {
+  const cutoff = Date.now() - MAX_AGE_MS;
+  const validIndex = ingestedData.findIndex(r => r.timestamp.getTime() > cutoff);
+
+  if (validIndex > 0) {
+    const removed = ingestedData.splice(0, validIndex);
+    if (removed.length > 0) {
+      console.log(`[CLEANUP] Purged ${removed.length} old ingest records (>1 minute old)`);
+    }
+  }
+}, 10000); // Run every 10 seconds
+
 const server = Bun.serve({
   port: process.env.PORT || 3000,
 
@@ -260,6 +306,8 @@ const server = Bun.serve({
             'POST /api/devices/pairing/initiate - Initiate device pairing (web/CLI)',
             'POST /api/devices/pairing/complete - Complete device pairing (iOS app)',
             'POST /api/devices/verify - Verify device token',
+            'POST /ingest - Ingest device data (iOS app)',
+            'GET /api/debug/recent-uploads - View recent ingested data',
             'GET /health - Health check'
           ]
         }),
@@ -456,6 +504,164 @@ const server = Bun.serve({
       }
     }
 
+    // Ingest endpoint (iOS app uses this to upload data)
+    if (url.pathname === '/ingest' && req.method === 'POST') {
+      try {
+        const authHeader = req.headers.get('Authorization');
+
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+          return new Response(
+            JSON.stringify({ error: 'Missing or invalid Authorization header' }),
+            {
+              status: 401,
+              headers: {
+                'Content-Type': 'application/json',
+                ...corsHeaders(origin || undefined)
+              }
+            }
+          );
+        }
+
+        const token = authHeader.substring(7); // Remove 'Bearer '
+        const payload = await req.json() as IngestRequest;
+
+        // Validate required fields
+        if (!payload.source || !payload.stream || !payload.device_id || !payload.records) {
+          return new Response(
+            JSON.stringify({ error: 'Missing required fields: source, stream, device_id, records' }),
+            {
+              status: 400,
+              headers: {
+                'Content-Type': 'application/json',
+                ...corsHeaders(origin || undefined)
+              }
+            }
+          );
+        }
+
+        // Store the ingested data with timestamp
+        const record: IngestedRecord = {
+          id: generateUUID(),
+          timestamp: new Date(),
+          source: payload.source,
+          stream: payload.stream,
+          device_id: payload.device_id,
+          records: payload.records,
+          record_count: payload.records.length
+        };
+
+        ingestedData.push(record);
+
+        // Log the ingest
+        console.log(`[INGEST] ${payload.stream}: ${payload.records.length} records from ${payload.device_id.substring(0, 8)}...`);
+
+        // Return success response matching Rust backend
+        const response: IngestResponse = {
+          accepted: payload.records.length,
+          rejected: 0,
+          next_checkpoint: payload.checkpoint || null,
+          activity_id: record.id
+        };
+
+        return new Response(JSON.stringify(response), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders(origin || undefined)
+          }
+        });
+      } catch (error) {
+        return new Response(
+          JSON.stringify({
+            error: 'Ingest failed',
+            message: error instanceof Error ? error.message : 'Unknown error'
+          }),
+          {
+            status: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              ...corsHeaders(origin || undefined)
+            }
+          }
+        );
+      }
+    }
+
+    // Debug endpoint - view recent uploads (last 1 minute)
+    if (url.pathname === '/api/debug/recent-uploads' && req.method === 'GET') {
+      try {
+        const now = Date.now();
+        const recent = ingestedData.filter(r =>
+          now - r.timestamp.getTime() <= MAX_AGE_MS
+        );
+
+        // Group by stream
+        const byStream: Record<string, IngestedRecord[]> = {};
+        for (const record of recent) {
+          if (!byStream[record.stream]) {
+            byStream[record.stream] = [];
+          }
+          byStream[record.stream].push(record);
+        }
+
+        // Calculate stats
+        const totalRecords = recent.reduce((sum, r) => sum + r.record_count, 0);
+        const oldestUpload = recent[0]?.timestamp;
+        const newestUpload = recent[recent.length - 1]?.timestamp;
+
+        const response = {
+          total_uploads: recent.length,
+          total_records: totalRecords,
+          oldest_upload: oldestUpload?.toISOString() || null,
+          newest_upload: newestUpload?.toISOString() || null,
+          uploads_by_stream: Object.keys(byStream).reduce((acc, stream) => {
+            acc[stream] = {
+              upload_count: byStream[stream].length,
+              record_count: byStream[stream].reduce((sum, r) => sum + r.record_count, 0),
+              uploads: byStream[stream].map(r => ({
+                id: r.id,
+                timestamp: r.timestamp.toISOString(),
+                device_id: r.device_id,
+                record_count: r.record_count
+              }))
+            };
+            return acc;
+          }, {} as Record<string, any>),
+          data: recent.map(r => ({
+            id: r.id,
+            timestamp: r.timestamp.toISOString(),
+            source: r.source,
+            stream: r.stream,
+            device_id: r.device_id,
+            record_count: r.record_count,
+            records: r.records
+          }))
+        };
+
+        return new Response(JSON.stringify(response), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders(origin || undefined)
+          }
+        });
+      } catch (error) {
+        return new Response(
+          JSON.stringify({
+            error: 'Failed to retrieve debug data',
+            message: error instanceof Error ? error.message : 'Unknown error'
+          }),
+          {
+            status: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              ...corsHeaders(origin || undefined)
+            }
+          }
+        );
+      }
+    }
+
     // 404 for unknown routes
     return new Response(
       JSON.stringify({ error: 'Not found' }),
@@ -475,4 +681,6 @@ console.log(`📱 Endpoints (matching Rust backend):`);
 console.log(`   POST http://localhost:${server.port}/api/devices/pairing/initiate`);
 console.log(`   POST http://localhost:${server.port}/api/devices/pairing/complete`);
 console.log(`   POST http://localhost:${server.port}/api/devices/verify`);
+console.log(`   POST http://localhost:${server.port}/ingest`);
+console.log(`   GET  http://localhost:${server.port}/api/debug/recent-uploads`);
 console.log(`   GET  http://localhost:${server.port}/health`);
