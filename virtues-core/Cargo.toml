@@ -24,10 +24,6 @@ name = "virtues"
 path = "src/main.rs"
 
 [[bin]]
-name = "virtues-mcp-server"
-path = "src/bin/mcp-server.rs"
-
-[[bin]]
 name = "virtues-prod-seed"
 path = "src/bin/prod_seed.rs"
 
@@ -193,7 +189,6 @@ sysinfo = "0.33"
 time = "0.3"
 
 # MCP Server
-rmcp = { version = "0.8.5", features = ["server", "transport-io", "transport-streamable-http-server"] }
 schemars = "1.0"
 
 # Geospatial/clustering

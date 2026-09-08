@@ -151,7 +151,7 @@ pub async fn charge(
     .await
     .map_err(|e| ChargeError::Db(e.into()))?;
 
-    if let Some((balance,)) = row {
+    if row.is_some() {
         // Journal the debit (negative) in the same transaction.
         sqlx::query(
             "INSERT INTO ledger (account_id, micros, kind, real_micros) \
@@ -165,11 +165,7 @@ pub async fn charge(
         .map_err(|e| ChargeError::Db(e.into()))?;
 
         tx.commit().await.map_err(|e| ChargeError::Db(e.into()))?;
-        return Ok(ChargeOk {
-            balance_micros: balance,
-            billed_micros: billed,
-            real_micros: real_cost_micros,
-        });
+        return Ok(ChargeOk { billed_micros: billed });
     }
 
     // Gate failed — nothing was written; classify why.
@@ -504,14 +500,13 @@ pub struct LedgerEntry {
     pub real_micros: Option<i64>,
 }
 
-/// Outcome of a successful charge.
+/// Outcome of a successful charge. The real upstream cost and the resulting
+/// balance are persisted on the ledger row and the account respectively;
+/// callers only need what the user was billed.
 #[derive(Debug, Clone, Copy)]
 pub struct ChargeOk {
-    pub balance_micros: i64,
     /// What the user was charged (post-markup).
     pub billed_micros: i64,
-    /// What the upstream really cost us (for margin analytics).
-    pub real_micros: i64,
 }
 
 #[derive(Debug)]

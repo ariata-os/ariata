@@ -621,27 +621,6 @@ export async function importActionsFromGit(body: {
 	return res.json();
 }
 
-export interface CreateAppletRequest {
-	name: string;
-	agent?: string;
-	schedule?: string;
-	triggers?: AppletTrigger[];
-	config?: Record<string, unknown>;
-}
-
-export async function createApplet(body: CreateAppletRequest): Promise<Applet> {
-	const res = await fetch(`${API_BASE}/applets`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	if (!res.ok) {
-		const err = await res.json().catch(() => ({ error: res.statusText }));
-		throw new Error(err.error || `Failed to create applet: ${res.statusText}`);
-	}
-	return res.json();
-}
-
 export interface PatchAppletBody {
 	name?: string;
 	agent?: string | null;
@@ -796,21 +775,6 @@ export async function getAppletSourceFile(
 	);
 }
 
-export async function listAppletRuns(
-	id: string,
-	opts?: { limit?: number; status?: string }
-): Promise<AppletRun[]> {
-	const params = new URLSearchParams();
-	if (opts?.limit != null) params.set('limit', String(opts.limit));
-	if (opts?.status) params.set('status', opts.status);
-	const qs = params.toString();
-	const res = await fetch(
-		`${API_BASE}/applets/${encodeURIComponent(id)}/runs${qs ? `?${qs}` : ''}`
-	);
-	if (!res.ok) throw new Error(`Failed to list runs: ${res.statusText}`);
-	return res.json();
-}
-
 export async function listRuns(opts?: {
 	limit?: number;
 	status?: string;
@@ -823,15 +787,6 @@ export async function listRuns(opts?: {
 	const qs = params.toString();
 	const res = await fetch(`${API_BASE}/runs${qs ? `?${qs}` : ''}`);
 	if (!res.ok) throw new Error(`Failed to list runs: ${res.statusText}`);
-	return res.json();
-}
-
-/** Get a single action run by ID (used for polling sync job status) */
-export async function getJobStatus(
-	jobId: string
-): Promise<{ id: string; status: string; records_processed: number; error: string | null }> {
-	const res = await fetch(`${API_BASE}/applets/runs/${jobId}`);
-	if (!res.ok) throw new Error(`Failed to get run status: ${res.statusText}`);
 	return res.json();
 }
 
@@ -1075,16 +1030,6 @@ export async function pairStatus(id: string): Promise<PairStatusResponse> {
 	return res.json();
 }
 
-/**
- * DELETE /api/devices/:id — auth'd. Revoke a device (soft-delete + credential
- * teardown).
- */
-export async function deleteDevice(id: string): Promise<void> {
-	await fetch(`${API_BASE}/devices/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {
-		/* benign — device may already be revoked */
-	});
-}
-
 export interface ChatImportResponse {
 	status: string;
 	summary: string;
@@ -1255,19 +1200,6 @@ export async function getPairingStatus(sourceId: string): Promise<PairingStatus>
 	return { status: 'pending' };
 }
 
-/**
- * List all pending device pairings (not yet completed)
- * @returns Array of pending pairings with codes and expiration times
- */
-export async function listPendingPairings(): Promise<{ pairings: PendingPairing[] }> {
-	const res = await fetch(`${API_BASE}/devices/pending-pairings`);
-
-	if (!res.ok) {
-		throw new Error(`Failed to list pending pairings: ${res.statusText}`);
-	}
-
-	return res.json();
-}
 
 // Profile
 export interface Profile {
@@ -1367,36 +1299,9 @@ export async function listAnnotations(fileId: string): Promise<Annotation[]> {
 }
 
 /** A highlight enriched with its file's name, for the notebook Highlights tab. */
-export interface NotebookAnnotation {
-	id: string;
-	file_id: string;
-	filename: string;
-	page_num: number | null;
-	quote_text: string;
-	color: string;
-	note_md: string;
-	created_at: string;
-	updated_at: string;
-}
-
-export async function listNotebookAnnotations(notebookId: string): Promise<NotebookAnnotation[]> {
-	const res = await fetch(`${API_BASE}/notebooks/${encodeURIComponent(notebookId)}/annotations`);
-	if (!res.ok) throw new Error(`Failed to list notebook annotations: ${res.statusText}`);
-	return res.json();
-}
-
 /** A file's highlights as markdown (blockquote + citation ref each). */
 export async function exportFileAnnotations(fileId: string): Promise<string> {
 	const res = await fetch(`${API_BASE}/annotations/export?file_id=${encodeURIComponent(fileId)}`);
-	if (!res.ok) throw new Error(`Failed to export annotations: ${res.statusText}`);
-	return res.text();
-}
-
-/** Every highlight across a notebook's documents, grouped by file. */
-export async function exportNotebookAnnotations(notebookId: string): Promise<string> {
-	const res = await fetch(
-		`${API_BASE}/notebooks/${encodeURIComponent(notebookId)}/annotations/export`
-	);
 	if (!res.ok) throw new Error(`Failed to export annotations: ${res.statusText}`);
 	return res.text();
 }
@@ -1780,18 +1685,6 @@ export async function uploadMedia(
 	});
 }
 
-/**
- * Get media file metadata by ID
- */
-export async function getMedia(fileId: string): Promise<MediaFile> {
-	const res = await fetch(`${API_BASE}/media/${fileId}`);
-	if (!res.ok) {
-		const error = await res.json().catch(() => ({ error: res.statusText }));
-		throw new Error(error.error || `Failed to get media: ${res.statusText}`);
-	}
-	return res.json();
-}
-
 // =============================================================================
 // Chats - Chat Management
 // =============================================================================
@@ -1800,35 +1693,6 @@ export interface ChatMessage {
 	role: 'user' | 'assistant' | 'system';
 	content: string;
 	timestamp: string;
-}
-
-export interface CreateChatResponse {
-	id: string;
-	title: string;
-	message_count: number;
-	created_at: string;
-}
-
-/**
- * Create a new chat with initial messages
- * Used for intro chats and pre-populated conversations
- */
-export async function createChat(
-	title: string,
-	messages: ChatMessage[]
-): Promise<CreateChatResponse> {
-	const res = await fetch(`${API_BASE}/chats`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ title, messages })
-	});
-
-	if (!res.ok) {
-		const error = await res.json().catch(() => ({ error: res.statusText }));
-		throw new Error(error.error || `Failed to create chat: ${res.statusText}`);
-	}
-
-	return res.json();
 }
 
 /**
@@ -2029,27 +1893,6 @@ export interface ViewEntity {
 // Developer SQL API
 // =============================================================================
 
-export interface SqlResult {
-	columns: string[];
-	rows: Record<string, unknown>[];
-	row_count: number;
-}
-
-/**
- * Execute a read-only SQL query via the developer endpoint
- */
-export async function executeSql(sql: string): Promise<SqlResult> {
-	const res = await fetch(`${API_BASE}/developer/sql`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ query: sql })
-	});
-	if (!res.ok) {
-		const error = await res.text();
-		throw new Error(`SQL execution failed: ${error}`);
-	}
-	return res.json();
-}
 
 // =============================================================================
 // Notebook Items API — the URL-native members of a Notebook
@@ -2365,12 +2208,6 @@ export interface OntologyOverview {
 	sample_record: Record<string, unknown> | null;
 }
 
-export async function listAvailableOntologies(): Promise<string[]> {
-	const res = await fetch(`${API_BASE}/ontologies/available`);
-	if (!res.ok) throw new Error(`Failed to list ontologies: ${res.statusText}`);
-	return res.json();
-}
-
 export async function getOntologiesOverview(): Promise<OntologyOverview[]> {
 	const res = await fetch(`${API_BASE}/ontologies/overview`);
 	if (!res.ok) throw new Error(`Failed to get ontologies overview: ${res.statusText}`);
@@ -2553,29 +2390,6 @@ export function deleteByoKey<T = unknown>(sudoRequestId?: string): Promise<T> {
 	return apiSend<T>('DELETE', '/settings/byo-key', { sudo_request_id: sudoRequestId });
 }
 
-// ── MCP ──────────────────────────────────────────────────────────────────────
-export function listMcpServers<T = unknown>(): Promise<T> {
-	return apiGet<T>('/mcp/servers');
-}
-export function getMcpServer<T = unknown>(id: string): Promise<T> {
-	return apiGet<T>(`/mcp/servers/${encodeURIComponent(id)}`);
-}
-export function createMcpServer<T = unknown>(body: Record<string, unknown>): Promise<T> {
-	return apiSend<T>('POST', '/mcp/servers', body);
-}
-export function deleteMcpServer<T = unknown>(id: string): Promise<T> {
-	return apiSend<T>('DELETE', `/mcp/servers/${encodeURIComponent(id)}`);
-}
-export function connectMcpServer<T = unknown>(id: string): Promise<T> {
-	return apiSend<T>('POST', `/mcp/servers/${encodeURIComponent(id)}/connect`);
-}
-export function disconnectMcpServer<T = unknown>(id: string): Promise<T> {
-	return apiSend<T>('POST', `/mcp/servers/${encodeURIComponent(id)}/disconnect`);
-}
-export function toggleMcpTool<T = unknown>(toolId: string): Promise<T> {
-	return apiSend<T>('PATCH', `/mcp/tools/${encodeURIComponent(toolId)}/toggle`);
-}
-
 // ── Personas ─────────────────────────────────────────────────────────────────
 export function listPersonas<T = unknown>(): Promise<T> {
 	return apiGet<T>('/personas');
@@ -2669,11 +2483,6 @@ export function getSudoStatus<T = unknown>(id: string): Promise<T> {
 	return apiGet<T>(`/sudo/status/${encodeURIComponent(id)}`);
 }
 
-// ── Mentions queue ───────────────────────────────────────────────────────────
-export function resolveMention<T = unknown>(path: string, body: Record<string, unknown>): Promise<T> {
-	return apiSend<T>('POST', `/mentions/${encodeURIComponent(path)}`, body);
-}
-
 // ── Data lake ────────────────────────────────────────────────────────────────
 export function getLakeSummary<T = unknown>(): Promise<T> {
 	return apiGet<T>('/lake/summary');
@@ -2685,9 +2494,6 @@ export function getLakeStreams<T = unknown>(): Promise<T> {
 // ── System / telemetry / usage ───────────────────────────────────────────────
 export function getSystemTelemetry<T = unknown>(): Promise<T> {
 	return apiGet<T>('/system/telemetry');
-}
-export function getSystemHistory<T = unknown>(): Promise<T> {
-	return apiGet<T>('/system/history');
 }
 /** One row of the box-local AI-call log. Metadata only — never content. */
 export interface AiCallRow {
@@ -2740,9 +2546,6 @@ export function getNarrativeIdentity<T = unknown>(): Promise<T> {
 export function listDevices<T = unknown>(): Promise<T> {
 	return apiGet<T>('/devices');
 }
-export function pairConsume<T = unknown>(body?: Record<string, unknown>): Promise<T> {
-	return apiSend<T>('POST', '/pair/consume', body);
-}
 
 // ── Misc singletons ──────────────────────────────────────────────────────────
 export function getDeveloperTables<T = unknown>(): Promise<T> {
@@ -2756,7 +2559,4 @@ export function searchUnsplash<T = unknown>(body: Record<string, unknown>): Prom
 }
 export function getServerInfo<T = unknown>(): Promise<T> {
 	return apiGet<T>('/app/server-info');
-}
-export function aiComplete<T = unknown>(req: Record<string, unknown>): Promise<T> {
-	return apiSend<T>('POST', '/ai/complete', req);
 }

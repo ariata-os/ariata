@@ -119,28 +119,6 @@ pub struct WikiOrganization {
 
 
 
-/// A story: a themed article that spans time.
-///
-/// Not an act. Acts tile the timeline in order and each one has to start where
-/// the last ended; stories overlap, skip years, and are gathered by subject —
-/// "the story of my wedding", "the story of my sobriety". Dates are optional
-/// and never order the list, because plenty of stories have no clean edges.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WikiStory {
-    pub id: String,
-    pub title: String,
-    pub subtitle: Option<String>,
-    pub content: Option<String>,
-    pub cover_image: Option<String>,
-    pub start_date: Option<NaiveDate>,
-    pub end_date: Option<NaiveDate>,
-    pub sort_order: i32,
-    pub themes: Option<Vec<String>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-
 /// A day wiki page
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WikiDay {
@@ -808,80 +786,6 @@ pub async fn get_narrative_identity(pool: &PgPool) -> Result<NarrativeIdentity> 
 // ============================================================================
 
 
-
-// ============================================================================
-// Story Operations
-// ============================================================================
-//
-// Read-only for now, and deliberately so: stories are hand-authored and there
-// is no pipeline that writes one. Authoring lands with the editor, not here.
-
-/// Get a story by ID
-pub async fn get_story(pool: &PgPool, id: String) -> Result<WikiStory> {
-    let row = sqlx::query!(
-        r#"
-        SELECT
-            id, title, subtitle, content, cover_image,
-            start_date, end_date, sort_order, themes,
-            created_at, updated_at
-        FROM wiki_stories
-        WHERE id = $1
-        "#,
-        id
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| Error::Database(format!("Failed to get story: {}", e)))?
-    .ok_or_else(|| Error::NotFound(format!("Story not found: {}", id)))?;
-
-    Ok(WikiStory {
-        id: row.id,
-        title: row.title,
-        subtitle: row.subtitle,
-        content: row.content,
-        cover_image: row.cover_image,
-        start_date: row.start_date,
-        end_date: row.end_date,
-        sort_order: row.sort_order,
-        themes: serde_json::from_value(row.themes).ok(),
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-    })
-}
-
-/// List all stories — hand-ordered first, then newest.
-pub async fn list_stories(pool: &PgPool) -> Result<Vec<WikiStory>> {
-    let rows = sqlx::query!(
-        r#"
-        SELECT
-            id, title, subtitle, content, cover_image,
-            start_date, end_date, sort_order, themes,
-            created_at, updated_at
-        FROM wiki_stories
-        ORDER BY sort_order, created_at DESC
-        "#
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| Error::Database(format!("Failed to list stories: {}", e)))?;
-
-    Ok(rows
-        .into_iter()
-        .map(|row| WikiStory {
-            id: row.id,
-            title: row.title,
-            subtitle: row.subtitle,
-            content: row.content,
-            cover_image: row.cover_image,
-            start_date: row.start_date,
-            end_date: row.end_date,
-            sort_order: row.sort_order,
-            themes: serde_json::from_value(row.themes).ok(),
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-        })
-        .collect())
-}
 
 // ============================================================================
 // Act CRUD Operations

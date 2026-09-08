@@ -419,8 +419,7 @@ is an applet; so is a scheduled job. See
 
 **Pages** are collaborative documents (ProseMirror + Yjs) with `[[entity]]`
 links into the graph, version history, and AI editing. **Drive** is file storage
-on an S3 backend. **MCP** servers plug in as agent tools. Every entity has a
-URL, which is what makes the web UI's tabs and split panes work.
+on an S3 backend. Every entity has a URL, which is what makes the web UI's tabs and split panes work.
 
 <a id="development"></a>
 ## <picture><source media="(prefers-color-scheme: dark)" srcset=".github/images/headings/h2-development-dark.svg"><img alt="Development" src=".github/images/headings/h2-development-light.svg" height="28"></picture>

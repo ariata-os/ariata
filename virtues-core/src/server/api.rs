@@ -2383,21 +2383,6 @@ pub async fn wiki_get_narrative_identity_handler(State(state): State<AppState>) 
 
 
 
-// --- Story ---
-
-/// Get a story by ID
-pub async fn wiki_get_story_handler(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Response {
-    api_response(crate::api::get_story(state.db.pool(), id).await)
-}
-
-/// List all stories
-pub async fn wiki_list_stories_handler(State(state): State<AppState>) -> Response {
-    api_response(crate::api::list_stories(state.db.pool()).await)
-}
-
 // --- Chapter ---
 
 
@@ -3660,70 +3645,6 @@ pub async fn get_media_handler(
     Path(file_id): Path<String>,
 ) -> Response {
     api_response(crate::api::get_media(state.db.pool(), &file_id).await)
-}
-
-// =============================================================================
-// Internal API Handlers (virtues-api Integration)
-// =============================================================================
-
-/// POST /internal/hydrate - Hydrate user profile from virtues-api
-///
-/// This endpoint is called by virtues-api on the first request to a newly
-/// provisioned container. It seeds the profile with data from Atlas
-/// provisioning and marks the server as ready.
-pub async fn hydrate_profile_handler(
-    State(state): State<AppState>,
-    headers: axum::http::HeaderMap,
-    Json(request): Json<crate::api::HydrateRequest>,
-) -> Response {
-    // Validate virtues-api secret
-    let expected_secret = std::env::var("VIRTUES_API_INTERNAL_SECRET").unwrap_or_default();
-    let provided_secret = headers
-        .get("X-Virtues-Api-Secret")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    // In production, require the secret; in dev, allow any request.
-    // Keyed off ENVIRONMENT (what the installer actually sets) — RUST_ENV was never
-    // set, which silently disabled this auth check in production.
-    let is_production = std::env::var("ENVIRONMENT")
-        .map(|v| v == "production")
-        .unwrap_or(false);
-
-    if is_production && (expected_secret.is_empty() || provided_secret != expected_secret) {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "error": "Invalid or missing X-Virtues-Api-Secret header"
-            })),
-        )
-            .into_response();
-    }
-
-    api_response(crate::api::hydrate_profile(state.db.pool(), request).await)
-}
-
-/// GET /internal/server-status - Get current server status
-pub async fn get_server_status_handler(State(state): State<AppState>) -> Response {
-    match crate::api::get_server_status(state.db.pool()).await {
-        Ok(status) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "status": status.as_str(),
-                "is_ready": status == crate::api::ServerStatus::Ready
-            })),
-        )
-            .into_response(),
-        Err(e) => error_response(e),
-    }
-}
-
-/// POST /internal/mark-ready - Mark server as ready (dev/admin use)
-pub async fn mark_server_ready_handler(State(state): State<AppState>) -> Response {
-    match crate::api::mark_server_ready(state.db.pool()).await {
-        Ok(_) => success_message("Server marked as ready"),
-        Err(e) => error_response(e),
-    }
 }
 
 // ============================================================================

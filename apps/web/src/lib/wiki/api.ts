@@ -115,28 +115,6 @@ export interface WikiDayApi {
 	updated_at: string;
 }
 
-/**
- * A story: a themed article that spans time. Unlike an act, it has no required
- * dates and no place in an ordered spine — "the story of my wedding" overlaps
- * whatever else was going on.
- */
-export interface WikiStoryApi {
-	id: string;
-	title: string;
-	subtitle: string | null;
-	content: string | null;
-	cover_image: string | null;
-	start_date: string | null;
-	end_date: string | null;
-	sort_order: number;
-	themes: string[] | null;
-	created_at: string;
-	updated_at: string;
-}
-
-
-
-
 export interface IdResolution {
 	entity_type: string;
 	id: string;
@@ -760,23 +738,6 @@ export async function updateOrganization(
 // --- Act ---
 
 
-
-// --- Story ---
-
-export async function getStoryById(
-	id: string,
-	fetchFn: FetchFn = fetch
-): Promise<WikiStoryApi | null> {
-	const res = await fetchFn(`/api/wiki/story/${encodeURIComponent(id)}`);
-	if (!res.ok) return null;
-	return res.json();
-}
-
-export async function listStories(fetchFn: FetchFn = fetch): Promise<WikiStoryApi[]> {
-	const res = await fetchFn("/api/wiki/stories");
-	if (!res.ok) return [];
-	return res.json();
-}
 
 // --- Chapter ---
 

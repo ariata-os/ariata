@@ -144,10 +144,7 @@ pub use chats::{
     DeleteChatResponse, GenerateTitleRequest, GenerateTitleResponse, IntentMetadata,
     MessageResponse, TimeRange, TitleMessage, ToolCall, UpdateChatRequest, UpdateChatResponse,
 };
-pub use internal::{
-    ensure_server_status, get_server_status, hydrate_profile, mark_server_ready, HydrateRequest,
-    HydrateResponse, ServerStatus,
-};
+pub use internal::ensure_server_status;
 pub use pages::{
     create_page,
     create_page_share,
@@ -231,7 +228,6 @@ pub use wiki::{
     create_temporal_event,
     delete_auto_events_for_day,
     delete_temporal_event,
-    get_story,
     get_narrative_identity,
     NarrativeIdentity,
     get_day_chats,
@@ -254,7 +250,6 @@ pub use wiki::{
     EntityRecord,
     EntityRecordsPage,
     EntityRecordFacet,
-    list_stories,
     list_days,
     list_organizations,
     list_people,
@@ -277,7 +272,6 @@ pub use wiki::{
     UpdateWikiOrganizationRequest,
     UpdateWikiPersonRequest,
     UpdateWikiPlaceRequest,
-    WikiStory,
     WikiDay,
     WikiOrganization,
     WikiOrganizationListItem,

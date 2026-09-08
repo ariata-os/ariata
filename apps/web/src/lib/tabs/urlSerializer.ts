@@ -16,7 +16,6 @@ const KNOWN_TYPES: TabType[] = [
 	// Hyphenated types first (checked before splitting on underscore)
 	'chat-history',
 	'narrative-identity',
-	'dog-jump',
 	// Then regular types
 	'chat',
 	'page',
@@ -38,7 +37,6 @@ const KNOWN_TYPES: TabType[] = [
 	'drive',
 	'trash',
 	'virtues',
-	'conway',
 ];
 
 /**

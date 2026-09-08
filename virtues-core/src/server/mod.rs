@@ -22,7 +22,6 @@ use std::sync::Arc;
 pub use self::webhook::AppState;
 use self::yjs::yjs_websocket_handler;
 use crate::error::Result;
-use crate::mcp::{http::add_mcp_routes, VirtuesMcpServer};
 use crate::middleware::auth::AuthUser;
 use crate::Virtues;
 
@@ -389,13 +388,6 @@ pub async fn run(client: Virtues, host: &str, port: u16) -> Result<()> {
             post(crate::api::pair::consume_handler),
         )
         .route("/auth/session", get(api::auth_session_handler))
-        // Internal API (virtues-api integration — has its own header-based auth)
-        .route("/internal/hydrate", post(api::hydrate_profile_handler))
-        .route(
-            "/internal/server-status",
-            get(api::get_server_status_handler),
-        )
-        .route("/internal/mark-ready", post(api::mark_server_ready_handler))
         // Applet faces — the CORS-permissive, token-gated leaves only. The
         // mint route is AUTHENTICATED (in protected_routes): the token is the
         // sole gate on the data door, so obtaining one must require owner auth.
@@ -852,8 +844,6 @@ pub async fn run(client: Virtues, host: &str, port: u16) -> Result<()> {
         )
         // Wiki - Telos
         // Wiki - Act
-        .route("/api/wiki/stories", get(api::wiki_list_stories_handler))
-        .route("/api/wiki/story/:id", get(api::wiki_get_story_handler))
         // Wiki - Chapter (the life's partition, written by the interview)
         .route(
             "/api/wiki/chapters",
@@ -1145,12 +1135,6 @@ pub async fn run(client: Virtues, host: &str, port: u16) -> Result<()> {
     let app = app
         .route("/api/*__unmatched", axum::routing::any(api_not_found_handler))
         .route("/auth/*__unmatched", axum::routing::any(api_not_found_handler));
-
-    // Add MCP routes to the same server
-    let mcp_server = VirtuesMcpServer::new(client.database.pool().clone());
-    let app = add_mcp_routes(app, mcp_server);
-
-    tracing::info!("MCP endpoint enabled at /mcp");
 
     // Add static file serving for SPA frontend
     // This serves the SvelteKit static build and falls back to 200.html for SPA routing
