@@ -60,15 +60,20 @@ def main() -> None:
         dr.text((W * S / 2, 62 * S), "Virtues", font=serif, fill=INK, anchor="mm")
         dr.text((W * S / 2, 96 * S), "Drag Virtues to Applications", font=sans, fill=MUTED, anchor="mm")
 
-        # A hairline arrow between the two icons: line + open chevron.
-        gap = 34
+        # A short dashed hairline between the two icons, with an open chevron.
+        # Dashes read as "movement" the way a drawn diagram's arrow does.
+        gap = 52
         x0 = (APP_X + ICON / 2 + gap) * S
         x1 = (FOLDER_X - ICON / 2 - gap) * S
         y = ICON_Y * S
-        w = 1.5 * S
-        dr.line([(x0, y), (x1, y)], fill=HAIR, width=int(w))
-        head = 7 * S
-        dr.line([(x1 - head, y - head), (x1, y), (x1 - head, y + head)], fill=HAIR, width=int(w), joint="curve")
+        w = int(1.25 * S)
+        dash, space = 5 * S, 4 * S
+        x = x0
+        while x < x1 - 2 * S:
+            dr.line([(x, y), (min(x + dash, x1 - 2 * S), y)], fill=HAIR, width=w)
+            x += dash + space
+        head = 5 * S
+        dr.line([(x1 - head, y - head), (x1, y), (x1 - head, y + head)], fill=HAIR, width=w, joint="curve")
 
         OUT.parent.mkdir(parents=True, exist_ok=True)
         im.save(OUT, dpi=(72 * S, 72 * S), optimize=True)
