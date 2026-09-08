@@ -1,4 +1,5 @@
 import AVFoundation
+import CallKit
 import Foundation
 import UIKit
 import UserNotifications
@@ -61,6 +62,7 @@ public final class AudioRecorder: NSObject {
   private let lastGoodKey = "virtues.audio.lastGoodCapture"   // persisted across launches
   private let gapThreshold: TimeInterval = 300                // 5 min sustained gap
   private let nudgeId = "virtues.audio.gap"                   // fixed id → dedupe + auto-clear
+  private let callObserver = CXCallObserver()
   private var nudgeFired = false
   private var lastGoodPersistAt: Date?
 
@@ -281,14 +283,8 @@ public final class AudioRecorder: NSObject {
     if !on { clearNudge(); nudgeFired = false }
   }
 
-  /// A notified interruption (call, Siri, alarm) currently owns the mic. The
-  /// hold is set on `.began` and cleared on `.ended` / first flowing buffer,
-  /// so "hold standing" is exactly "the interrupter has not let go yet".
-  /// This used to ask CallKit's `CXCallObserver`; App Review (2026-09-05,
-  /// guideline 5) rejects any CallKit linkage while China is a territory,
-  /// and the audio-session interruption already carries the same fact.
   private func callActive() -> Bool {
-    interruptionHoldUntil != nil
+    callObserver.calls.contains { !$0.hasEnded }
   }
 
   /// Decide whether to surface "Recording paused — tap to resume". Fires once per

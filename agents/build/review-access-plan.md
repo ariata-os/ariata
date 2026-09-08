@@ -314,12 +314,17 @@ the client IP, so the next silent rejection can be told apart from one that
 never arrived.
 
 **CallKit.** The same rejection carried guideline 5: MIIT requires CallKit
-off for apps available in China, and the audio plugin linked `CallKit` for
-one read-only `CXCallObserver` (suppress the "recording paused" nudge during a
-phone call). Removed the same day — the audio-session interruption hold
-carries the same fact. Do not reintroduce a CallKit import for any reason
-short of shipping a dialer; the alternative is dropping China from the
-territory list in App Store Connect.
+off for apps available in China, and the audio plugin links `CallKit` for one
+read-only `CXCallObserver` (`callActive()`: suppress the "recording paused"
+nudge while a phone call owns the mic). Resolved by **removing China from the
+app's territories in App Store Connect**, not by touching the recorder. The
+obvious code substitute — "a notified interruption hold is standing" — was
+tried and reverted the same day: the hold is deliberately cleared by
+foreground, route change and media-services reset, all of which happen
+mid-call, so the nudge would fire during exactly the call it exists to stay
+quiet for. `CXCallObserver.calls` is the only signal that answers "is a call
+up right now" independently of our session state. Keep it; keep China off
+the territory list.
 
 ## Shooting App Store screenshots
 
