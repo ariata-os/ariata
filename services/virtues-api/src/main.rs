@@ -153,7 +153,7 @@ async fn main() -> Result<()> {
         // OAuth proxy (google/notion/strava/plaid) — folded in from the Node
         // oauth-proxy (WS-4). Mounted at root: /{provider}/start|callback|...
         .merge(routes::oauth::router())
-        // WS-6b bearer-auth smoke endpoints (whoami + charge-test)
+        // Bearer-auth account endpoints (whoami + usage)
         .merge(routes::bearer_test::router())
         // Bearer-auth + entitlement charge: Places, Exa, Unsplash, AI.
         // AI (`/v1/ai/*`) covers both streaming and non-streaming chat; the

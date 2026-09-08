@@ -133,7 +133,7 @@ pub async fn draft_from_interview(pool: &PgPool) -> Result<Draft> {
         prompt.push_str(&format!("\n{speaker}: {}\n", content.trim()));
     }
 
-    let raw = call_model(pool, &prompt).await?;
+    let raw = call_model(pool, SYSTEM_PROMPT, &prompt, "narrative_draft").await?;
     let (document, proposed_rules) = split_draft(&raw);
 
     if document.trim().is_empty() {
@@ -172,25 +172,59 @@ pub async fn draft_from_interview(pool: &PgPool) -> Result<Draft> {
 const CHAPTERS_PROMPT: &str = r#"You are extracting the CHAPTERS of a person's life from an interview transcript — the eras they themselves named, with their rough years.
 
 Output STRICT JSON only, no prose, no code fences: an array in chronological order, each element:
-{"title": string|null, "start_year": int, "end_year": int|null, "changepoint": string|null, "summary": string|null}
+{"title": string|null, "start_year": int, "start_month": int|null, "end_year": int|null, "end_month": int|null, "changepoint": string|null, "summary": string|null}
 
 Rules:
 - Only chapters the person themselves gave. The interviewer's words are scaffolding — but a name or year the interviewer played back and the person confirmed counts as theirs. Anything never confirmed does not exist.
 - "title": their name for the era, verbatim or near-verbatim. null ONLY for a stretch they deliberately left unnamed.
 - "start_year"/"end_year": the rough year they said — "about '09" is 2009. When they wavered ("'08 or '09"), take the one they settled on, or the later mention. "end_year": null means the chapter is still running.
+- "start_month"/"end_month": 1-12, ONLY when they gave a month ("Aug 2023" is start_year 2023, start_month 8; "July 20 2024" is 2024, 7). A bare year is null. Never invent a month to make eras line up.
+- Several eras can begin in one year — keep every one of them, with its month. Two eras with the same start year AND the same month (or both no month) are one era: keep the one they said more about.
 - "changepoint": what ENDED the era, in their words, if they said. Otherwise null.
 - "summary": one or two of their own sentences about the era, kept close to verbatim. Otherwise null. Never diagnose, never interpret.
 - If they gave no chapters at all, output [].
 "#;
 
 /// One extracted chapter, as the model returns it (rough years, their words).
+///
+/// Months are optional and honored when given. The first shape was
+/// year-only, and `plan_chapters` deduped on the year — so a person who
+/// answered in months ("camper van Aug 2023, married July 2024, new job Sep
+/// 2024") silently lost every era but the first of each year. People do not
+/// answer in years when a month is what they remember.
 #[derive(Debug, serde::Deserialize)]
 struct ExtractedChapter {
     title: Option<String>,
     start_year: i32,
+    #[serde(default)]
+    start_month: Option<u32>,
     end_year: Option<i32>,
+    #[serde(default)]
+    end_month: Option<u32>,
     changepoint: Option<String>,
     summary: Option<String>,
+}
+
+impl ExtractedChapter {
+    /// The era's start as a date plus the precision the person gave.
+    fn start(&self) -> Option<(chrono::NaiveDate, &'static str)> {
+        date_at(self.start_year, self.start_month)
+    }
+
+    /// The era's end as they gave it, if they gave one.
+    fn end(&self) -> Option<(chrono::NaiveDate, &'static str)> {
+        self.end_year.and_then(|y| date_at(y, self.end_month))
+    }
+}
+
+/// A rough date: the first of the month when a month was given, else the
+/// first of the year — with the matching `wiki_chapters` precision so the
+/// page can render "2023" rather than "January 2023" for a bare year.
+fn date_at(year: i32, month: Option<u32>) -> Option<(chrono::NaiveDate, &'static str)> {
+    match month {
+        Some(m @ 1..=12) => chrono::NaiveDate::from_ymd_opt(year, m, 1).map(|d| (d, "month")),
+        _ => chrono::NaiveDate::from_ymd_opt(year, 1, 1).map(|d| (d, "year")),
+    }
 }
 
 /// What the `write_it_up` tool reports back to the interviewer.
@@ -205,15 +239,122 @@ pub struct FinalizeOutcome {
     /// Chapters ride best-effort beside the document: a failed extraction is
     /// reported here for the interviewer to relay, never fatal — the document
     /// must not be lost to a second model call's bad day.
+    ///
+    /// This is the OUTCOME in plain words, never the mechanism. The first
+    /// version put the serde error here, and the interviewer relayed
+    /// "a technical error parsing them" to a person who had just finished
+    /// telling it their life. The detail goes to the log.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chapters_error: Option<String>,
+    /// Always true: the room is over. Spelled out in the result so the
+    /// interviewer's last message is grounded in what the screen now shows —
+    /// the composer is gone and the person cannot reply here.
+    pub interview_closed: bool,
+    pub person_can_reply_here: bool,
+}
+
+/// What the interviewer claims when it asks to close.
+///
+/// The tool used to take no arguments, and the only guard on an irreversible
+/// close was prose asking the model to keep a six-territory ledger in its head.
+/// A tester wrote "thats more complete" after their chapter list and the
+/// interviewer read it as "I'm done" and closed after territory one. The
+/// arguments make the model state what it is claiming, and [`close_gate`]
+/// checks the parts a server can check.
+#[derive(Debug, Default, Clone, serde::Deserialize)]
+pub struct CloseRequest {
+    /// Territories (1..=6) the person has actually answered.
+    #[serde(default)]
+    pub territories_covered: Vec<u8>,
+    /// The person's own words asking to close or saying yes to it, verbatim.
+    #[serde(default)]
+    pub their_words: String,
+    /// Territories are uncovered AND the person, told which, said yes anyway.
+    #[serde(default)]
+    pub close_early_confirmed: bool,
+}
+
+impl CloseRequest {
+    /// The person closed it themselves (the HTTP button): nothing to gate.
+    pub fn by_person() -> Self {
+        Self {
+            territories_covered: (1..=6).collect(),
+            their_words: "(closed from the page)".into(),
+            close_early_confirmed: true,
+        }
+    }
+}
+
+/// How many territories the interview has.
+pub const TERRITORIES: u8 = 6;
+
+/// Fewer replies than this and six territories cannot have been covered;
+/// even an early close needs an ask and an answer, so two is the floor.
+const MIN_REPLIES_TO_CLOSE: usize = 2;
+
+/// Refuse a close the server can see is premature. Returns the sentence the
+/// interviewer should act on.
+///
+/// The server cannot verify what the person said, but it can count their
+/// replies and it can hold the model to its own claim: uncovered territories
+/// need the person's confirmed yes, and every close needs their words.
+pub fn close_gate(req: &CloseRequest, their_replies: usize) -> std::result::Result<(), String> {
+    if their_replies < MIN_REPLIES_TO_CLOSE {
+        return Err(format!(
+            "not yet: the person has replied {their_replies} time(s); this closes after the \
+             territories are covered, or after they have asked to stop and said yes to closing early"
+        ));
+    }
+    if req.their_words.trim().is_empty() {
+        return Err("not yet: pass their_words — the person's own words asking to close or \
+                    agreeing to it. If they have not said so, ask, do not close."
+            .into());
+    }
+    let mut covered: Vec<u8> = req
+        .territories_covered
+        .iter()
+        .copied()
+        .filter(|t| (1..=TERRITORIES).contains(t))
+        .collect();
+    covered.sort_unstable();
+    covered.dedup();
+    let missing: Vec<String> = (1..=TERRITORIES)
+        .filter(|t| !covered.contains(t))
+        .map(|t| t.to_string())
+        .collect();
+    if !missing.is_empty() && !req.close_early_confirmed {
+        return Err(format!(
+            "not yet: territories {} are uncovered. Tell the person which in one sentence and ask \
+             whether to close anyway; call again with close_early_confirmed=true only after they say yes.",
+            missing.join(", ")
+        ));
+    }
+    Ok(())
+}
+
+/// The person's replies so far in the interview transcript.
+pub async fn their_reply_count(pool: &PgPool) -> Result<usize> {
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM app_chat_messages \
+         WHERE chat_id = $1 AND role = 'user' AND content <> ''",
+    )
+    .bind(INTERVIEW_CHAT_ID)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| Error::Database(format!("count interview replies: {e}")))?;
+    Ok(n.max(0) as usize)
 }
 
 /// The interview's finisher: the document (draft_from_interview), then the
 /// structured chapters with their seeded articles. Everything downstream of
 /// the transcript happens here, so the tool, the HTTP endpoint, and any
 /// future caller share one path.
-pub async fn finalize_interview(pool: &PgPool) -> Result<FinalizeOutcome> {
+pub async fn finalize_interview(pool: &PgPool, req: &CloseRequest) -> Result<FinalizeOutcome> {
+    let replies = their_reply_count(pool).await?;
+    if let Err(why) = close_gate(req, replies) {
+        return Err(Error::InvalidInput(why));
+    }
+
     let existed_before = crate::api::wiki_articles::get_article(
         pool,
         "narrative_identity",
@@ -232,7 +373,10 @@ pub async fn finalize_interview(pool: &PgPool) -> Result<FinalizeOutcome> {
         Ok(n) => (n, None),
         Err(e) => {
             tracing::warn!(error = %e, "chapters extraction failed; document stands");
-            (0, Some(e.to_string()))
+            (
+                0,
+                Some("the chapters were not written this time; the document is safe".to_string()),
+            )
         }
     };
 
@@ -241,6 +385,8 @@ pub async fn finalize_interview(pool: &PgPool) -> Result<FinalizeOutcome> {
         document_already_existed: existed_before,
         chapters_written,
         chapters_error,
+        interview_closed: true,
+        person_can_reply_here: false,
     })
 }
 
@@ -276,14 +422,8 @@ async fn chapters_from_interview(pool: &PgPool) -> Result<usize> {
         prompt.push_str(&format!("\n{speaker}: {}\n", content.trim()));
     }
 
-    let raw = call_model_with(pool, CHAPTERS_PROMPT, &prompt, "narrative_chapters").await?;
-    let json = raw
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
-    let extracted: Vec<ExtractedChapter> = serde_json::from_str(json)
+    let raw = call_model(pool, CHAPTERS_PROMPT, &prompt, "narrative_chapters").await?;
+    let extracted: Vec<ExtractedChapter> = serde_json::from_str(json_array_in(&raw))
         .map_err(|e| Error::ExternalApi(format!("chapters came back unparseable: {e}")))?;
 
     let planned = plan_chapters(extracted);
@@ -303,14 +443,15 @@ async fn chapters_from_interview(pool: &PgPool) -> Result<usize> {
             "INSERT INTO wiki_chapters \
                (id, kind, title, started_at, ended_at, started_precision, ended_precision, \
                 changepoint, summary) \
-             VALUES ($1, $2, $3, $4, $5, 'year', $6, $7, $8)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(id)
         .bind(kind)
         .bind(title)
         .bind(started_at)
         .bind(ended_at)
-        .bind(ended_at.map(|_| "year"))
+        .bind(ch.started_precision)
+        .bind(ch.ended_precision)
         .bind(ch.changepoint.as_deref())
         .bind(ch.summary.as_deref())
         .execute(&mut *tx)
@@ -425,34 +566,44 @@ struct PlannedChapter {
     kind: &'static str,
     title: Option<String>,
     started_at: chrono::NaiveDate,
+    started_precision: &'static str,
     ended_at: Option<chrono::NaiveDate>,
+    ended_precision: Option<&'static str>,
     changepoint: Option<String>,
     summary: Option<String>,
 }
 
 /// Normalize extracted chapters into the gapless partition the table
-/// promises: sort, drop junk and duplicate start years, then CHAIN each era's
+/// promises: sort, drop junk and duplicate starts, then CHAIN each era's
 /// end to the next era's start — the '[)' ranges then tile with no gap and no
 /// overlap, which is what lets "which chapter was that in?" always have
 /// exactly one answer. Only the last era keeps the end the person gave, and
 /// only when it is after its start (otherwise it is still running).
-fn plan_chapters(mut extracted: Vec<ExtractedChapter>) -> Vec<PlannedChapter> {
-    extracted.retain(|c| (1900..=2100).contains(&c.start_year));
-    extracted.sort_by_key(|c| c.start_year);
-    extracted.dedup_by_key(|c| c.start_year);
+///
+/// A start is a DATE (year, or year and month), so several eras may begin in
+/// one year. Only an identical start is a duplicate.
+fn plan_chapters(extracted: Vec<ExtractedChapter>) -> Vec<PlannedChapter> {
+    let mut dated: Vec<(chrono::NaiveDate, &'static str, ExtractedChapter)> = extracted
+        .into_iter()
+        .filter(|c| (1900..=2100).contains(&c.start_year))
+        .filter_map(|c| c.start().map(|(d, p)| (d, p, c)))
+        .collect();
+    dated.sort_by_key(|(d, _, _)| *d);
+    dated.dedup_by_key(|(d, _, _)| *d);
 
-    let starts: Vec<i32> = extracted.iter().map(|c| c.start_year).collect();
-    extracted
+    let starts: Vec<(chrono::NaiveDate, &'static str)> =
+        dated.iter().map(|(d, p, _)| (*d, *p)).collect();
+    dated
         .into_iter()
         .enumerate()
-        .filter_map(|(i, ch)| {
-            let started_at = chrono::NaiveDate::from_ymd_opt(ch.start_year, 1, 1)?;
-            let ended_at = match starts.get(i + 1) {
-                Some(next) => chrono::NaiveDate::from_ymd_opt(*next, 1, 1),
-                None => ch
-                    .end_year
-                    .filter(|e| *e > ch.start_year)
-                    .and_then(|e| chrono::NaiveDate::from_ymd_opt(e, 1, 1)),
+        .map(|(i, (started_at, started_precision, ch))| {
+            let (ended_at, ended_precision) = match starts.get(i + 1) {
+                // The next era's start, at the next era's precision.
+                Some((next, p)) => (Some(*next), Some(*p)),
+                None => match ch.end().filter(|(e, _)| *e > started_at) {
+                    Some((e, p)) => (Some(e), Some(p)),
+                    None => (None, None),
+                },
             };
             let title = ch
                 .title
@@ -463,19 +614,33 @@ fn plan_chapters(mut extracted: Vec<ExtractedChapter>) -> Vec<PlannedChapter> {
             let kind = if title.is_some() { "chapter" } else { "unknown" };
             let id = crate::ids::generate_id(
                 crate::ids::CHAPTER_PREFIX,
-                &[title.as_deref().unwrap_or("unknown"), &ch.start_year.to_string()],
+                &[title.as_deref().unwrap_or("unknown"), &started_at.to_string()],
             );
-            Some(PlannedChapter {
+            PlannedChapter {
                 id,
                 kind,
                 title,
                 started_at,
+                started_precision,
                 ended_at,
+                ended_precision,
                 changepoint: ch.changepoint,
                 summary: ch.summary,
-            })
+            }
         })
         .collect()
+}
+
+/// The JSON array inside a model reply: strict JSON was asked for, but a
+/// model that wraps it in a fence or a sentence should not cost the person
+/// their chapters. Anything before the first '[' and after the last ']' is
+/// dropped; a reply with no array at all is returned as-is so serde names
+/// the real problem.
+fn json_array_in(raw: &str) -> &str {
+    match (raw.find('['), raw.rfind(']')) {
+        (Some(a), Some(b)) if b > a => &raw[a..=b],
+        _ => raw.trim(),
+    }
 }
 
 /// Split on the sentinel. A model that forgets it gives us a document and no
@@ -494,64 +659,39 @@ fn split_draft(raw: &str) -> (String, Vec<String>) {
     (doc.trim().to_string(), rules)
 }
 
-async fn call_model(pool: &PgPool, user_prompt: &str) -> Result<String> {
-    call_model_with(pool, SYSTEM_PROMPT, user_prompt, "narrative_draft").await
-}
-
-async fn call_model_with(
+/// Both writes go through the shared background helper on the CHAT slot.
+///
+/// The Chat slot, not Lite, for BOTH — including the chapters extraction that
+/// a cheaper model could do — because the interview promised a no-retention
+/// agreement in as many words, and the Lite slot honors the owner's
+/// background pin, which may be a BYO endpoint or a provider with no ZDR.
+/// The Chat slot is the Virtues-curated map and stays ZDR-capable. (See
+/// `model_choice::honors_pin` for the same ruling on the interview turns.)
+///
+/// The cap is sized for THINKING plus answer. It was 4000 here, and the Chat
+/// slot's model reasons inside `max_tokens`: on a 19-chapter transcript the
+/// extraction spent the cap thinking and returned a truncated array, which
+/// serde refused, and the person was told their chapters "didn't take" for a
+/// reason that had nothing to do with what they said. Same failure
+/// day_summary hit under the same cap (see its 16k note). Low effort: both
+/// jobs are arrangement, not composition.
+async fn call_model(
     pool: &PgPool,
     system_prompt: &str,
     user_prompt: &str,
     feature: &'static str,
 ) -> Result<String> {
-    // The SLOT DEFAULT, never the profile's pinned chat model. virtues-api
-    // enforces ZDR on server-side calls, and a person may pin a chat model no
-    // ZDR provider serves (grok, notably) — their pin governs the chat they
-    // watch, not this background write. The slot map is Virtues-curated and
-    // stays ZDR-capable. Reading the pin here made "Write it up" a 500 for
-    // anyone pinned to such a model.
-    let chat_model =
-        crate::api::model_catalog::model_for_slot(virtues_registry::models::ModelSlot::Chat);
-
-    let client = crate::virtues_api::client::BearerClient::from_env(pool.clone())
-        .with_purpose(crate::virtues_api::client::Purpose::System)
-        .with_feature(feature);
-
-    let response = client
-        .post_json(
-            "/v1/ai/chat/completions",
-            &serde_json::json!({
-                "model": chat_model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                // Room for a real document. The interview can run to thousands
-                // of words and a truncated life story is worse than none.
-                "max_tokens": 4000,
-                // Low: this is arrangement, not composition. Invention is the
-                // failure mode being guarded against everywhere else here.
-                "temperature": 0.3
-            }),
-        )
-        .await
-        .map_err(|e| Error::Network(format!("virtues-api request failed: {e}")))?;
-
-    if !response.is_success() {
-        return Err(Error::ExternalApi(match response.status {
-            402 => crate::virtues_api::client::payment_required_message(&response.body, "narrative drafting"),
-            429 => "Rate limited — try again in a moment.".to_string(),
-            s => format!("virtues-api error {s}: {}", response.body),
-        }));
-    }
-
-    // `body` is already parsed JSON on this client — the same shape
-    // entity_article_gen reads.
-    Ok(response.body["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or_default()
-        .trim()
-        .to_string())
+    crate::virtues_api::completion::system_completion(
+        pool,
+        virtues_registry::models::ModelSlot::Chat,
+        feature,
+        system_prompt,
+        user_prompt,
+        16_000,
+        0.3,
+        Some("low"),
+    )
+    .await
 }
 
 // ─── handlers ───────────────────────────────────────────────────────────────
@@ -562,9 +702,10 @@ pub async fn draft_handler(
 ) -> impl axum::response::IntoResponse {
     use axum::Json;
     use axum::response::IntoResponse as _;
-    // Same path as the interview's write_it_up tool — document, capsule, and
-    // chapters together — so the API can never produce half a finalize.
-    match finalize_interview(state.db.pool()).await {
+    // Same path as the interview's write_it_up tool — document and chapters
+    // together — so the API can never produce half a finalize. The person
+    // pressed this themselves, so the close gate has nothing to ask.
+    match finalize_interview(state.db.pool(), &CloseRequest::by_person()).await {
         Ok(d) => (axum::http::StatusCode::OK, Json(d)).into_response(),
         Err(e) => {
             tracing::warn!(error = %e, "narrative draft failed");
@@ -772,10 +913,92 @@ mod tests {
         ExtractedChapter {
             title: title.map(str::to_string),
             start_year: start,
+            start_month: None,
             end_year: end,
+            end_month: None,
             changepoint: None,
             summary: None,
         }
+    }
+
+    fn chm(title: &str, start: (i32, u32), end: Option<(i32, u32)>) -> ExtractedChapter {
+        ExtractedChapter {
+            title: Some(title.to_string()),
+            start_year: start.0,
+            start_month: Some(start.1),
+            end_year: end.map(|e| e.0),
+            end_month: end.map(|e| e.1),
+            changepoint: None,
+            summary: None,
+        }
+    }
+
+    /// THE tester's list: three eras beginning in 2024 and two in 2026. The
+    /// year-keyed dedup kept one of each and threw the rest away silently.
+    #[test]
+    fn several_eras_in_one_year_all_survive_when_months_are_given() {
+        let planned = plan_chapters(vec![
+            chm("camper van", (2023, 8), Some((2024, 5))),
+            chm("marriage", (2024, 7), None),
+            chm("tech sales", (2024, 9), Some((2026, 3))),
+            chm("virtues", (2026, 3), None),
+        ]);
+        let titles: Vec<_> = planned.iter().map(|c| c.title.as_deref().unwrap()).collect();
+        assert_eq!(titles, vec!["camper van", "marriage", "tech sales", "virtues"]);
+        assert_eq!(planned[0].started_precision, "month");
+        assert_eq!(planned[0].ended_at, Some(planned[1].started_at), "chained, not the given end");
+        assert_eq!(planned[0].ended_precision, Some("month"));
+        assert_eq!(planned[3].ended_at, None);
+    }
+
+    /// A bare year keeps year precision, so the page can say "2009" and not
+    /// "January 2009" — the precision the person did not give is not invented.
+    #[test]
+    fn a_bare_year_stays_year_precision() {
+        let planned = plan_chapters(vec![ch(Some("college"), 2006, Some(2009))]);
+        assert_eq!(planned[0].started_precision, "year");
+        assert_eq!(planned[0].ended_precision, Some("year"));
+    }
+
+    #[test]
+    fn a_fenced_or_narrated_array_is_still_read() {
+        assert_eq!(json_array_in("```json\n[1, 2]\n```"), "[1, 2]");
+        assert_eq!(json_array_in("Here are the chapters: [] and that's all."), "[]");
+        assert_eq!(json_array_in("no array here"), "no array here");
+    }
+
+    fn req(covered: &[u8], words: &str, early: bool) -> CloseRequest {
+        CloseRequest {
+            territories_covered: covered.to_vec(),
+            their_words: words.into(),
+            close_early_confirmed: early,
+        }
+    }
+
+    /// THE regression: one territory covered, no words from the person
+    /// asking, one reply in — refused, and the refusal names what is missing.
+    #[test]
+    fn a_close_after_the_first_territory_is_refused() {
+        let err = close_gate(&req(&[1], "thats more complete", false), 4).unwrap_err();
+        assert!(err.contains("2, 3, 4, 5, 6"), "{err}");
+        assert!(close_gate(&req(&[1], "thats more complete", false), 1).is_err());
+    }
+
+    #[test]
+    fn six_covered_with_their_yes_closes() {
+        assert!(close_gate(&req(&[1, 2, 3, 4, 5, 6], "yes, write it up", false), 12).is_ok());
+    }
+
+    #[test]
+    fn an_early_close_needs_their_confirmed_yes_and_their_words() {
+        assert!(close_gate(&req(&[1, 2], "I'm done, close it", true), 5).is_ok());
+        assert!(close_gate(&req(&[1, 2], "", true), 5).is_err(), "no words, no close");
+        assert!(close_gate(&req(&[1, 2], "I'm done", false), 5).is_err(), "unconfirmed");
+    }
+
+    #[test]
+    fn junk_territory_numbers_do_not_count_as_coverage() {
+        assert!(close_gate(&req(&[1, 2, 3, 4, 5, 9], "yes", false), 12).is_err());
     }
 
     /// The partition promise: every era's end is the next era's start, so the

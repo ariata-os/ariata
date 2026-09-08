@@ -291,19 +291,40 @@ Give them the URL and the code, and say the app requires a paired server with
 the demo instance standing in for one. Reviewers do not SSH anywhere or run
 `virtues pair` — they type an address and six digits.
 
-**THE ADDRESS MUST INCLUDE `https://`.** `normalize_server`
-(`apps/web/plugins/reach/src/lib.rs`) passes a scheme through untouched, but a
-bare hostname with no colon becomes `http://<host>:8000` — right for
-`virtues.local` or a LAN IP, and wrong for every public demo server, whose
-security group opens only 80/443. A reviewer typing `demo-<rand>.virtues.ch`
-gets `POST http://demo-<rand>.virtues.ch:8000/api/pair/consume` and a timeout
-with no explanation. Found on 2026-09-04 by driving the actual app in a
-simulator; an earlier harness that passed a full origin string never went down
-that branch, and neither does any test. Write the scheme into the notes
-verbatim and say why, because the field's own placeholder teaches the opposite.
+**The bare hostname works now — and it did not, for one whole rejection.**
+`normalize_server` (`apps/web/plugins/reach/src/lib.rs`) used to turn any
+scheme-less name into `http://<host>:8000` — right for `virtues.local` or a
+LAN IP, wrong for every public demo server, whose security group opens only
+80/443. On 2026-09-05 App Review (1.2.16, iPad) typed exactly
+`demo-<rand>.virtues.ch`, as the field's own placeholder teaches, and got
+`POST http://demo-<rand>.virtues.ch:8000/api/pair/consume: … operation timed
+out` in red under the Pair button. Guideline 2.1 rejection, screenshot
+attached. The demo box saw nothing: no device row, no log line, because the
+request never reached port 443.
 
-Worth fixing properly at some point: a dotted public hostname probably should
-not default to `http` on port 8000. Until then the notes carry it.
+Since that day a dotted public hostname normalizes to `https://<host>`; LAN
+names (single label, `localhost`, `.local`/`.lan`/`.home`/`.internal`, IPv4
+literal) keep `http://…:8000`; a scheme or an explicit port still passes
+through as typed. Unit tests pin the reviewer's exact input. Writing
+`https://` into the notes remains harmless and is still the cautious form for
+any reviewer on a build older than that fix.
+
+Refused pair attempts (bad code → 401, rate limit → 429) now log a WARN with
+the client IP, so the next silent rejection can be told apart from one that
+never arrived.
+
+**CallKit.** The same rejection carried guideline 5: MIIT requires CallKit
+off for apps available in China, and the audio plugin links `CallKit` for one
+read-only `CXCallObserver` (`callActive()`: suppress the "recording paused"
+nudge while a phone call owns the mic). Resolved by **removing China from the
+app's territories in App Store Connect**, not by touching the recorder. The
+obvious code substitute — "a notified interruption hold is standing" — was
+tried and reverted the same day: the hold is deliberately cleared by
+foreground, route change and media-services reset, all of which happen
+mid-call, so the nudge would fire during exactly the call it exists to stay
+quiet for. `CXCallObserver.calls` is the only signal that answers "is a call
+up right now" independently of our session state. Keep it; keep China off
+the territory list.
 
 ## Shooting App Store screenshots
 

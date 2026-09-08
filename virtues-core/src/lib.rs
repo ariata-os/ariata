@@ -26,7 +26,6 @@ pub mod inference_report;
 pub mod install_manifest;
 pub mod magnet;
 pub mod maintenance;
-pub mod mcp;
 pub mod middleware;
 pub mod bookmark_enrichment;
 pub mod box_secrets;

@@ -68,7 +68,7 @@ export function installFetchProxy(): void {
   // for any extension-less path — so the box-upgrade watcher never saw the box
   // go down and reported every successful phone-initiated upgrade as a
   // ten-minute failure, and the Software page's Box row rendered "—" on iOS.
-  const BACKEND_PREFIXES = ['/api', '/auth', '/webhook', '/mcp', '/health'];
+  const BACKEND_PREFIXES = ['/api', '/auth', '/webhook', '/health'];
   const route = (p: string) => BACKEND_PREFIXES.some((pre) => p === pre || p.startsWith(pre + '/'));
 
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {

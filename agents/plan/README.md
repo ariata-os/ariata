@@ -15,6 +15,7 @@ these are not promises.
 
 | Doc | Status | What it's for |
 |---|---|---|
+| [ai-door-plan.md](ai-door-plan.md) | Planned | One AI door: tokens are resolved, never guessed. The proxy stops inventing a 4096 cap and forwards the `reasoning` object; background jobs declare a thinking mode instead of a number; the stream emits `finish` with a reason. Replaces the two 16k hotfixes. |
 | [applet-authoring-plan.md](applet-authoring-plan.md) | Planned | Phase 3: chat intent → folder → check → reconcile → gate → enabled applet. The capability and param-schema contract. |
 | [applets-overhaul-plan.md](applets-overhaul-plan.md) | Planned | "A user-space systemd with an AI author." Design locked 2026-07-19. Supersedes architecture.md at the concept/UX layer; the execution engine stays. |
 | [attention-plan.md](attention-plan.md) | Partly built | How the wiki learns which parts of a day mattered. A record has no tense — only calendar knows what time it is *about* — so aftermath is invisible by construction. Attention's four phases, what may be linked vs noted vs asserted, and the refuted list. |

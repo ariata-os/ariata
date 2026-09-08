@@ -38,10 +38,7 @@ export type TabType =
 	| 'asset' // Single file viewer (open density): /drive/file_{id}
 	| 'trash' // LEGACY alias of /storage/trash: /trash
 	// System namespace
-	| 'virtues' // System pages: /virtues/{account|assistant|usage|jobs|sql|terminal}
-	// Easter eggs
-	| 'conway'
-	| 'dog-jump';
+	| 'virtues'; // System pages: /virtues/{account|assistant|usage|jobs|sql|terminal}
 
 /**
  * Tab interface - flat structure with optional type-specific properties.

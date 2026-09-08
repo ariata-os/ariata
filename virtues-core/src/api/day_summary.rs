@@ -1694,9 +1694,29 @@ async fn call_virtues_api(
         // the 180-word diary, the epigraph and the data_quality JSON. At 1000
         // a rich day truncated mid-array — and since the parse was
         // all-or-nothing, that day lost EVERY event with only a warn!.
-        // Raised, and the parse now salvages besides.
-        4000,
+        // Raised to 4000, and the parse now salvages besides.
+        //
+        // Then 4000 failed the same way one level up. The Chat slot moved to
+        // `anthropic/claude-sonnet-5` (2026-08-27, on dragon from 09-04), and
+        // that model THINKS before it answers — and Anthropic counts the
+        // thinking against max_tokens. On the day dossier it wanted more than
+        // 4000 to think, so it hit the cap with zero content tokens: 237 of
+        // 276 calls, all billed, all three retries, every hour on the same
+        // never-fingerprinted day. $13.61 to produce nothing, and the day
+        // never narrated. Even the calls that did answer maxed at exactly
+        // 4000, i.e. were truncated and salvaged.
+        //
+        // So the cap is sized for thinking plus answer, with real headroom
+        // because the failing calls stopped AT the cap and never showed how
+        // much thinking the model actually wanted. Read `reasoning_tokens` in
+        // `app_ai_calls` after a few nights before tightening this.
+        16_000,
         0.3,
+        // Low effort: the detective job is adjudicating witnesses into a
+        // timeline, not proving a theorem. The lever exists on this model
+        // (see the registry's slot note) and trims the thinking tax that made
+        // 4000 fatal; a model without the lever just ignores the hint.
+        Some("low"),
     )
     .await
 }

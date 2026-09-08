@@ -111,7 +111,7 @@ export const DEVELOPER_MODE: SidebarMode = {
  * wiki outgrew a row of underline tabs the same way Developer did.
  *
  * Ordered as the record reads rather than alphabetically: what it is
- * (Overview), what you wrote about it (Stories, Narrative Identity), when it
+ * (Overview), what you wrote about it (Narrative Identity), when it
  * happened (Days, Years), and who/where/what it involved (People, Places,
  * Orgs). People/Places/Orgs were one "Entities" tab with a filter; at eight
  * rows there is room to name them.

@@ -48,12 +48,10 @@
 		listDays,
 		listDayActivity,
 		listOnThisDay,
-		listStories,
 		getNarrativeIdentity,
 		getLifeline,
 		listHistory,
 		countOpenNotes,
-		type WikiStoryApi,
 		type WikiPersonListItem,
 		type WikiPlaceListItem,
 		type WikiOrganizationListItem,
@@ -108,24 +106,6 @@
 				? 'entities'
 				: (routeSegment as Section)
 	);
-
-	// --- Stories ---
-	//
-	// Hand-authored articles; nothing writes one yet, so an empty list is the
-	// expected state rather than a failure and the copy says so plainly.
-
-	let stories = $state<WikiStoryApi[]>([]);
-	let storiesLoaded = $state(false);
-
-	async function loadStories() {
-		if (storiesLoaded) return;
-		stories = await listStories();
-		storiesLoaded = true;
-	}
-
-	$effect(() => {
-		if (section === 'stories') void loadStories();
-	});
 
 	// --- Years ---
 	//
@@ -770,27 +750,6 @@
 					</aside>
 				</section>
 			</div>
-		{:else if section === 'stories'}
-			<!-- Stories exist in the schema but the author path hasn't shipped —
-			     until it does, a room with no write path teaches a construct the
-			     product can't yet keep. Ships later (ruled 2026-09-01); until
-			     then, list what stands and say nothing about a promise. -->
-			<div class="measure">
-				{#if !storiesLoaded}
-					<p class="quiet">Loading…</p>
-				{:else if stories.length === 0}
-					<p class="quiet">Nothing here yet.</p>
-				{:else}
-					<ul class="stories">
-						{#each stories as story (story.id)}
-							<li>
-								<a href="/wiki/story/{story.id}">{story.title}</a>
-								{#if story.subtitle}<span class="quiet"> — {story.subtitle}</span>{/if}
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</div>
 		{:else if section === 'lifeline'}
 			<!-- Full bleed, and not by preference. Every other section here is
 			     prose and belongs in a 42rem measure; a lifeline is a viewport
@@ -1130,7 +1089,7 @@
 		margin: 0;
 	}
 
-	/* Stories and Years: plain indexes, set to the reading measure. */
+	/* Years: a plain index, set to the reading measure. */
 	.measure {
 		max-width: 42rem;
 		padding: 1.5rem 0;
@@ -1148,14 +1107,12 @@
 		padding: 1rem 0;
 	}
 
-	.stories,
 	.years {
 		list-style: none;
 		margin: 0;
 		padding: 0;
 	}
 
-	.stories li,
 	.years li {
 		display: flex;
 		justify-content: space-between;
@@ -1165,13 +1122,11 @@
 		border-bottom: 1px solid var(--color-border-subtle);
 	}
 
-	.stories a,
 	.years a {
 		color: var(--color-foreground);
 		text-decoration: none;
 	}
 
-	.stories a:hover,
 	.years a:hover {
 		text-decoration: underline;
 	}

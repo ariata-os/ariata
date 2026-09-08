@@ -464,6 +464,7 @@ async fn call_virtues_api(pool: &PgPool, user_prompt: &str) -> Result<String> {
         user_prompt,
         900,
         0.4,
+        None,
     )
     .await
 }

@@ -312,10 +312,23 @@ impl ToolExecutor {
             // this tool's output for document_page_id, opens the page beside
             // the chat, and retires the composer — the interview is over.
             "write_it_up" => {
-                match crate::api::narrative_draft::finalize_interview(&self._pool).await {
+                // The claim the interviewer makes about where the interview
+                // stands; the finisher's close gate holds it to that claim
+                // and refuses a premature close with the sentence to act on.
+                let req: crate::api::narrative_draft::CloseRequest =
+                    serde_json::from_value(arguments).map_err(|e| {
+                        ToolError::InvalidParameters(format!("write_it_up arguments: {e}"))
+                    })?;
+                match crate::api::narrative_draft::finalize_interview(&self._pool, &req).await {
                     Ok(outcome) => Ok(ToolResult::success(
                         serde_json::to_value(outcome).unwrap_or_default(),
                     )),
+                    // A refused close is not a failure of the tool: the
+                    // interview simply goes on. Its message tells the
+                    // interviewer what to say next.
+                    Err(crate::error::Error::InvalidInput(why)) => {
+                        Err(ToolError::InvalidParameters(why))
+                    }
                     Err(e) => Err(ToolError::ExecutionFailed(format!(
                         "write it up failed: {e}"
                     ))),

@@ -5,7 +5,6 @@
  * - Entity namespaces: /{namespace} (list) or /{namespace}/{namespace}_{id} (detail)
  * - Storage: /drive, /drive/{path}
  * - System: /virtues/{page}
- * - Easter eggs: /life, /jump
  */
 
 import type { Component } from 'svelte';
@@ -28,8 +27,6 @@ import DevelopersView from '$lib/components/tabs/views/DevelopersView.svelte';
 import SettingsView from '$lib/components/tabs/views/SettingsView.svelte';
 import StorageView from '$lib/components/tabs/views/StorageView.svelte';
 import AssetView from '$lib/components/tabs/views/AssetView.svelte';
-import ConwayView from '$lib/components/tabs/views/ConwayView.svelte';
-import DogJumpView from '$lib/components/tabs/views/DogJumpView.svelte';
 import PagesView from '$lib/components/tabs/views/PagesView.svelte';
 import PageDetailView from '$lib/components/tabs/views/PageDetailView.svelte';
 import BookmarksView from '$lib/components/tabs/views/BookmarksView.svelte';
@@ -75,7 +72,7 @@ export interface TabDefinition {
  * section.
  */
 export const WIKI_SECTION_RE =
-	/^\/wiki\/(days|years|stories|entities|identity|chapters|lifeline|history|people|places|orgs|unlinked)$/;
+	/^\/wiki\/(days|years|entities|identity|chapters|lifeline|history|people|places|orgs|unlinked)$/;
 
 /**
  * Sections of the Sources room. Same one-list rule as the wiki above, and here
@@ -868,37 +865,6 @@ export const tabRegistry: Record<TabType, TabDefinition> = {
 		defaultLabel: 'Settings',
 		component: SettingsView,
 	},
-
-	// ========================================================================
-	// EASTER EGGS
-	// ========================================================================
-	conway: {
-		match: (path) => path === '/life',
-		parse: () => ({
-			type: 'conway',
-			label: 'Zen Garden',
-			icon: 'ri:seedling-line',
-		}),
-		serialize: () => 'conway',
-		deserialize: () => '/life',
-		icon: 'ri:seedling-line',
-		defaultLabel: 'Zen Garden',
-		component: ConwayView,
-	},
-
-	'dog-jump': {
-		match: (path) => path === '/jump',
-		parse: () => ({
-			type: 'dog-jump',
-			label: 'Dog Jump',
-			icon: 'ri:mickey-line',
-		}),
-		serialize: () => 'dog-jump',
-		deserialize: () => '/jump',
-		icon: 'ri:mickey-line',
-		defaultLabel: 'Dog Jump',
-		component: DogJumpView,
-	},
 };
 
 /**
@@ -968,9 +934,6 @@ export function parseRoute(route: string): ParsedRoute {
 		'day',
 		'year',
 		'narrative-identity',
-		// Easter eggs last
-		'conway',
-		'dog-jump',
 	];
 
 	for (const type of orderedTypes) {

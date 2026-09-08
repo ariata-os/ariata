@@ -45,6 +45,18 @@ pub async fn background_model_for_slot(pool: &PgPool, slot: ModelSlot) -> Result
 ///
 /// `feature` tags the spend into `app_ai_calls` so Usage can attribute it.
 ///
+/// `max_tokens` covers hidden reasoning AND the answer on models that think
+/// (Anthropic counts both against it). Size it for the thinking, not just the
+/// output: measured on the box 2026-09-04..08, `anthropic/claude-sonnet-5`
+/// segmenting a day under a 4000 cap spent exactly 4000 tokens reasoning and
+/// returned no content on 237 of 276 calls — every one billed, three per run,
+/// hourly, on the same un-fingerprinted day.
+///
+/// `reasoning_effort` is forwarded to the gateway as-is (`"low"` | `"medium"`
+/// | `"high"`); `None` leaves the model's default. Models without the lever
+/// ignore it (grok — see `EMPTY_COMPLETION_ATTEMPTS`), so it is a hint that
+/// trims the thinking tax where it can, never a guarantee.
+///
 /// An empty completion is an error, not an empty string: the client has
 /// already resent genuinely empty answers (reasoning models that spend the
 /// whole budget thinking — see `EMPTY_COMPLETION_ATTEMPTS`), so an empty body
@@ -58,6 +70,7 @@ pub async fn system_completion(
     user_prompt: &str,
     max_tokens: u32,
     temperature: f32,
+    reasoning_effort: Option<&str>,
 ) -> Result<String> {
     let model = background_model_for_slot(pool, slot).await?;
 
@@ -65,19 +78,21 @@ pub async fn system_completion(
         .with_purpose(Purpose::System)
         .with_feature(feature);
 
+    let mut body = json!({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature
+    });
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
+    }
+
     let response = client
-        .post_json(
-            "/v1/ai/chat/completions",
-            &json!({
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "max_tokens": max_tokens,
-                "temperature": temperature
-            }),
-        )
+        .post_json("/v1/ai/chat/completions", &body)
         .await
         .map_err(|e| Error::Network(format!("virtues-api request failed: {e}")))?;
 
