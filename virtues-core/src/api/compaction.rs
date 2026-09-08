@@ -513,6 +513,18 @@ pub fn build_context_for_llm(
             for part in msg_parts {
                 match part {
                     UIPart::Text { text } => {
+                        // An empty text block is a hard 400 from Anthropic
+                        // ("text content blocks must be non-empty") and a
+                        // no-op everywhere else. The composer used to send one
+                        // beside every attachment-only message (the AI SDK
+                        // appends a text part for text `""`), and since user
+                        // parts persist verbatim, that one turn poisoned every
+                        // later Claude turn in the chat while Grok kept
+                        // working. Dropping it here heals chats already
+                        // carrying one.
+                        if text.trim().is_empty() {
+                            continue;
+                        }
                         parts.push(serde_json::json!({
                             "type": "text",
                             "text": text
@@ -614,6 +626,13 @@ pub fn build_context_for_llm(
 
         // If no parts (legacy), use content
         let content = if parts.is_empty() {
+            // Nothing survived and there is no legacy content either: this
+            // message would go out as `"content": ""`, which is the same
+            // rejection in string form. Leaving it out is the only honest
+            // rendering of a message with nothing in it.
+            if msg.content.trim().is_empty() {
+                continue;
+            }
             serde_json::Value::String(msg.content.clone())
         } else {
             serde_json::Value::Array(parts)
@@ -794,6 +813,64 @@ mod tests {
         assert_eq!(context[0]["role"], "system");
         assert_eq!(context[1]["role"], "user");
         assert_eq!(context[2]["role"], "assistant");
+    }
+
+    /// An attachment-only send arrives as `[file, text ""]`. The file block
+    /// must survive and the empty text block must not; a message that is
+    /// empty through and through must not be sent at all.
+    #[test]
+    fn test_build_context_drops_empty_text_blocks() {
+        let base = ChatMessage {
+            id: None,
+            role: "user".to_string(),
+            content: String::new(),
+            timestamp: Timestamp::parse("2024-01-01T00:00:00Z").unwrap(),
+            model: None,
+            provider: None,
+            agent_id: None,
+            tool_calls: None,
+            reasoning: None,
+            intent: None,
+            subject: None,
+            thought_signature: None,
+            parts: None,
+        };
+        let messages = vec![
+            ChatMessage {
+                parts: Some(vec![
+                    UIPart::File {
+                        media_type: "image/png".to_string(),
+                        url: "data:image/png;base64,AAAA".to_string(),
+                        filename: Some("shot.png".to_string()),
+                    },
+                    UIPart::Text { text: String::new() },
+                ]),
+                ..base.clone()
+            },
+            ChatMessage {
+                role: "assistant".to_string(),
+                content: "I see it.".to_string(),
+                ..base.clone()
+            },
+            // Empty in every representation: parts that all drop, no content.
+            ChatMessage {
+                parts: Some(vec![UIPart::Text { text: "   ".to_string() }]),
+                ..base.clone()
+            },
+            ChatMessage {
+                content: "and then?".to_string(),
+                ..base
+            },
+        ];
+
+        let context = build_context_for_llm(&messages, None, 0, None);
+
+        assert_eq!(context.len(), 3, "the all-empty message is omitted");
+        let first = context[0]["content"].as_array().expect("parts array");
+        assert_eq!(first.len(), 1, "only the file block survives");
+        assert_eq!(first[0]["type"], "image_url");
+        assert_eq!(context[1]["role"], "assistant");
+        assert_eq!(context[2]["content"], "and then?");
     }
 
     #[test]

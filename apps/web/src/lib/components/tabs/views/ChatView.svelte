@@ -1661,8 +1661,18 @@
 				await editAllowListStore.markChatCreated();
 			}
 
+			// No `text` key when nothing was typed: the SDK appends a text part
+			// for any non-null text, and an EMPTY text block is a 400 from
+			// Anthropic that then rode in this chat's history forever (every
+			// later Claude turn failed; Grok did not care). An attachment on
+			// its own is a complete message — no filler words on the person's
+			// behalf.
 			await chat.sendMessage(
-				files.length > 0 ? { text: messageToSend, files } : { text: messageToSend },
+				files.length > 0
+					? messageToSend
+						? { text: messageToSend, files }
+						: { files }
+					: { text: messageToSend },
 			);
 
 			if (chat.messages.length >= 2 && !isGhost && !titleGenerated) {
