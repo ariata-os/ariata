@@ -880,6 +880,7 @@ pub async fn consume_handler(
     });
     if let Some(ip_key) = rl_key {
         if !crate::middleware::rate_limit::pair_limiter().check_and_record(&ip_key) {
+            tracing::warn!(ip = %ip_key, "pair consume: rate-limited");
             return (
                 StatusCode::TOO_MANY_REQUESTS,
                 Json(json!({"error": "too_many_attempts", "retry_after_secs": 1800})),
@@ -960,6 +961,11 @@ pub async fn consume_handler(
     let token_id = match claim_pair_token(&mut tx, &token_hash).await {
         Ok(Some(id)) => id,
         Ok(None) => {
+            // Logged so a remote pairing that never lands can be told apart
+            // from one that never arrived: the 2026-09-05 App Review
+            // rejection left no trace here because the request timed out
+            // on the wrong port, and a bad code would have looked the same.
+            tracing::warn!(ip = ?ip, kind, "pair consume: refused — invalid or expired code");
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(json!({"error": "invalid_or_expired_token"})),

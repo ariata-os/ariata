@@ -982,17 +982,78 @@ impl ReachState {
   }
 }
 
-/// Normalize a user-typed box address to an `http://host:port` origin
-/// (default port 8000), mirroring the desktop connect UI.
+/// Normalize a user-typed box address to an origin.
+///
+/// A scheme passes through untouched and an explicit port means plain HTTP on
+/// that port — both are the user saying exactly what they mean. The bare-name
+/// case splits on what the name *is*: a LAN name (`virtues.local`, a private
+/// IP, a single label) is the box answering on its own `:8000`, while a dotted
+/// public hostname is a server behind TLS on 443. It used to map every bare
+/// name to `http://host:8000`; an App Store reviewer typed the demo server's
+/// hostname on 2026-09-05, got `POST http://demo-….virtues.ch:8000/…:
+/// operation timed out` (the security group opens only 80/443), and rejected
+/// the build for it. The placeholder shows `virtues.local` and an IP, so a
+/// reviewer following it will never type a scheme.
 pub(crate) fn normalize_server(input: &str) -> String {
   let s = input.trim().trim_end_matches('/');
   if s.starts_with("http://") || s.starts_with("https://") {
     return s.to_string();
   }
   if s.contains(':') {
-    format!("http://{s}")
-  } else {
+    return format!("http://{s}");
+  }
+  if is_lan_name(s) {
     format!("http://{s}:8000")
+  } else {
+    format!("https://{s}")
+  }
+}
+
+/// A name that can only resolve on the local network: a single label,
+/// `localhost`, an mDNS / home-router suffix, or an IPv4 literal. Everything
+/// else is a public DNS name.
+fn is_lan_name(host: &str) -> bool {
+  let h = host.to_ascii_lowercase();
+  !h.contains('.')
+    || h == "localhost"
+    || h.ends_with(".local")
+    || h.ends_with(".lan")
+    || h.ends_with(".home")
+    || h.ends_with(".internal")
+    || h.parse::<std::net::Ipv4Addr>().is_ok()
+}
+
+#[cfg(test)]
+mod normalize_tests {
+  use super::normalize_server;
+
+  #[test]
+  fn scheme_passes_through() {
+    assert_eq!(normalize_server("https://demo-x.virtues.ch/"), "https://demo-x.virtues.ch");
+    assert_eq!(normalize_server("http://192.168.1.5:8000"), "http://192.168.1.5:8000");
+  }
+
+  #[test]
+  fn explicit_port_is_plain_http() {
+    assert_eq!(normalize_server("virtues.local:9000"), "http://virtues.local:9000");
+    assert_eq!(normalize_server("demo-x.virtues.ch:8000"), "http://demo-x.virtues.ch:8000");
+  }
+
+  #[test]
+  fn lan_names_get_the_box_port() {
+    assert_eq!(normalize_server("virtues.local"), "http://virtues.local:8000");
+    assert_eq!(normalize_server("Virtues-Mighty-Merganser.LOCAL"), "http://Virtues-Mighty-Merganser.LOCAL:8000");
+    assert_eq!(normalize_server("192.168.1.5"), "http://192.168.1.5:8000");
+    assert_eq!(normalize_server("dragon"), "http://dragon:8000");
+    assert_eq!(normalize_server("localhost"), "http://localhost:8000");
+    assert_eq!(normalize_server("box.lan"), "http://box.lan:8000");
+  }
+
+  #[test]
+  fn public_hostnames_are_https() {
+    // The App Store reviewer's exact input on 2026-09-05.
+    assert_eq!(normalize_server("demo-abc123.virtues.ch"), "https://demo-abc123.virtues.ch");
+    assert_eq!(normalize_server("  box.example.com/ "), "https://box.example.com");
   }
 }
 
