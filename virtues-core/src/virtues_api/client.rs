@@ -62,7 +62,8 @@ fn is_ai_path(path: &str) -> bool {
 /// no retry; 2026-08-03 died the same way on a different model. Raising
 /// `max_tokens` does not fix it (the same run recorded 7214 completion tokens
 /// against a 4000 cap, so reasoning is not bounded by it), and
-/// `reasoning_effort` is a no-op on this model — a resend is the only lever.
+/// `reasoning_effort` is a no-op on THAT model — a resend is the only lever
+/// there. (Sonnet 5 honors it; `completion::system_completion` sends it.)
 ///
 /// 3 attempts: empty output is sporadic rather than deterministic, so a couple
 /// of resends is the difference between losing a day and not, while still
