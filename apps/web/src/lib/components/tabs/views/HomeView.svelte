@@ -53,8 +53,6 @@
 	import { chatSessions } from "$lib/stores/chatSessions.svelte";
 	import { windowShellStore } from "$lib/stores/window-shell.svelte";
 	import GettingStarted from "$lib/components/home/GettingStarted.svelte";
-	import Frontispiece from "$lib/components/home/Frontispiece.svelte";
-	import { lineForDay, plateForHour } from "$lib/components/home/lines";
 	import DayDeck from "$lib/components/home/DayDeck.svelte";
 
 	// Which page this is — written by GettingStarted, read here. While any
@@ -106,7 +104,6 @@
 	}
 
 	// ---- state ----
-	let yDay = $state<WikiDayApi | null>(null);
 	let today = $state<WikiDayApi | null>(null);
 	let streams = $state<TodayStreamsView | null>(null);
 	let heart = $state<DayHeartRateSample[]>([]);
@@ -177,7 +174,6 @@
 	onMount(() => {
 		tick();
 		refresh();
-		getDayByDate(yesterdayDate).then((d) => (yDay = d)).catch(() => {});
 		getWeatherNow().then((w) => (weather = w)).catch(() => {});
 		// Arm state changes on the scale of connecting a source, not of a day.
 		getStreamHealth()
@@ -210,15 +206,6 @@
 		windowShellStore.openTabFromRoute(route, label ? { label } : undefined);
 	}
 
-	// ---- lead: yesterday in one line (epigraph, else its first sentence) ----
-	const leadLine = $derived.by(() => {
-		const e = yDay?.epigraph?.trim();
-		if (e) return e.replace(/^["“]|["”]$/g, "");
-		const prose = yDay?.article?.trim();
-		const first = prose?.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim();
-		return first || null;
-	});
-
 	// ---- the page's subtitle: the day, the weather, the time ----
 	/** Under the dateline: the weather, then the clock. */
 	const subtitle = $derived.by(() => {
@@ -227,24 +214,6 @@
 				? `${Math.round((weather.temperature_c * 9) / 5 + 32)}° ${weather.condition}`.trim()
 				: null;
 		return [wx, clock].filter(Boolean).join(" · ");
-	});
-
-	// ---- the frontispiece: the hour's painting, yesterday's sentence, today's count ----
-	const plate = $derived(plateForHour(new Date(nowMs).getHours()));
-	const frontLine = $derived(leadLine ?? lineForDay(new Date(nowMs)));
-	const sumLane = (id: string) => (life?.lanes?.find((l) => l.id === id)?.density ?? []).reduce((a, b) => a + b, 0);
-	const figures = $derived.by(() => {
-		const out: { v: string; k: string }[] = [];
-		const steps = sumLane("health");
-		if (steps > 0) out.push({ v: Math.round(steps).toLocaleString(), k: "steps" });
-		const screenH = sumLane("activity");
-		if (screenH > 0.05) {
-			const m = Math.round(screenH * 60);
-			out.push({ v: m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}` : `${m}m`, k: "at a screen" });
-		}
-		const sent = sumLane("communication");
-		if (sent > 0) out.push({ v: Math.round(sent).toLocaleString(), k: "messages sent" });
-		return out;
 	});
 
 	// ---- recents: notebooks, pages and chats blended by recency ----
@@ -494,18 +463,14 @@
 		</section>
 	</section>
 
-	<!-- The frontispiece: the hour's painting, yesterday's own sentence (or
-	     the day's banked line), today's count, and the two adjacent pages. -->
-	<Frontispiece
-		src={plate}
-		line={frontLine}
-		{figures}
-		since={figures.length ? "Today, so far" : ""}
-		links={[
-			{ label: "Yesterday's page →", run: () => open(`/day/day_${yesterdayDate}`, "Yesterday") },
-			{ label: "Today's page →", run: () => open(`/day/day_${todayDate}`, "Today") },
-		]}
-	/>
+	<!-- The two adjacent pages. These lived on the frontispiece until
+	     2026-09-08; the painting retires with getting started (it is the
+	     one framed object the setup spread and Home shared), and the
+	     doors stay. -->
+	<nav class="pages" aria-label="Adjacent pages">
+		<button class="link" type="button" onclick={() => open(`/day/day_${yesterdayDate}`, "Yesterday")}>Yesterday's page →</button>
+		<button class="link" type="button" onclick={() => open(`/day/day_${todayDate}`, "Today")}>Today's page →</button>
+	</nav>
 </div>
 </div>
 {/if}
@@ -519,15 +484,16 @@
 	.host { height: 100%; overflow-y: auto; }
 	.host.settled { display: none; }
 
-	/* The spread, as on Getting Started: the work in the page's measure on the
-	   left, the painting as a card in the margin on the right. */
+	/* One column. Getting Started is a spread — work on the left, painting on
+	   the right — but once it retires Home is the work alone, in the page's
+	   measure; the painting was the setup spread's object, not Home's. */
 	.spread {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(360px, 40%);
+		max-width: 920px;
 		min-height: calc(100dvh - var(--chrome-row-h, 40px) - 2 * var(--pane-inset, 12px) - 2px);
 	}
-	@media (max-width: 900px) { .spread { grid-template-columns: 1fr; } }
 	.work { padding: 56px 56px 48px 64px; min-width: 0; }
+	.pages { display: flex; gap: 24px; padding: 0 56px 48px 64px; }
+	@media (max-width: 640px) { .pages { padding: 0 24px 32px; } }
 	.work > * { animation: arrive 0.5s ease both; }
 	.work > :nth-child(2) { animation-delay: 60ms; }
 	.work > :nth-child(3) { animation-delay: 120ms; }
