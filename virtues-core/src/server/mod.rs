@@ -1478,7 +1478,7 @@ fn face_origin_allowed(origin: &str, path: &str) -> bool {
 /// Allowed: the app's `tauri://` origin, loopback on any port (the desktop
 /// proxy on 7117, the box's own UI, `pnpm dev` on 5173), and the box's `.virtues`
 /// name. A page served from a remote host has none of these origins.
-fn origin_is_ours(origin: &str) -> bool {
+pub(crate) fn origin_is_ours(origin: &str) -> bool {
     // The app's own origin: `tauri://localhost` on macOS/iOS,
     // `https://tauri.localhost` on Windows — and `virtues://` on the phone,
     // which registers its OWN scheme so an OTA bundle can answer requests

@@ -29,7 +29,6 @@ export type TabType =
 	| 'applets' // Applets list: /applets
 	| 'applet' // Applet detail: /applet/applet_{id}
 	| 'applet-view' // Applet full-page face: /applet/applet_{id}/view
-	| 'developers' // Developers tools (SQL/Terminal/Lake): /developers
 	| 'ontology' // Ontology data: /ontologies, /ontologies/{name}
 	| 'record' // Single raw record viewer: /record/{ontology}/{id}
 	// Storage namespaces

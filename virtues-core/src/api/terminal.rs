@@ -95,23 +95,25 @@ pub async fn terminal_ws_handler(
         .into_response()
 }
 
-/// Returns `Some(rejection)` if the browser's `Origin` doesn't match the
-/// request `Host`. A missing `Origin` (non-browser client) is allowed — auth
-/// is still enforced by the route layer, and the CSWSH vector is browser-only:
-/// browsers always send `Origin` on a WebSocket handshake.
+/// Returns `Some(rejection)` if the browser's `Origin` is not one of ours.
+///
+/// The policy is the CORS layer's (`server::origin_is_ours`), not a second
+/// one: this used to compare `Origin` against `Host`, which holds only when
+/// the page was served by the same authority it is dialling. The Mac app is
+/// (the SPA comes through the loopback splice), but the phone is not — its
+/// bundle loads from the `virtues://` scheme, so `Origin` is
+/// `virtues://localhost` and `Host` is the box, and every terminal upgrade
+/// from iOS was a 403 while the CORS layer beside it was happily saying yes.
+///
+/// A missing `Origin` (non-browser client) is allowed — auth is still enforced
+/// by the route layer, and the CSWSH vector is browser-only: browsers always
+/// send `Origin` on a WebSocket handshake.
 fn check_same_origin(headers: &HeaderMap) -> Option<Response> {
     let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok())?;
-    // Compare authority (host[:port]); strip the scheme from the Origin.
-    let origin_authority = origin.split_once("://").map(|(_, a)| a).unwrap_or(origin);
-    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
-    if host == Some(origin_authority) {
+    if crate::server::origin_is_ours(origin) {
         None
     } else {
-        tracing::warn!(
-            "Terminal WS rejected: cross-origin (origin={:?}, host={:?})",
-            origin,
-            host
-        );
+        tracing::warn!("Terminal WS rejected: foreign origin {:?}", origin);
         Some((StatusCode::FORBIDDEN, "cross-origin websocket rejected").into_response())
     }
 }
@@ -606,6 +608,36 @@ async fn pty_bridge(
 mod tests {
     use super::*;
     use std::io::Read;
+
+    fn headers_with_origin(origin: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(header::ORIGIN, origin.parse().unwrap());
+        h.insert(header::HOST, "127.0.0.1:8000".parse().unwrap());
+        h
+    }
+
+    /// The app's own origins must pass even though none of them equals `Host`:
+    /// the phone's bundle scheme, the Mac's loopback splice on its own port.
+    #[test]
+    fn our_origins_pass_regardless_of_host() {
+        for o in ["virtues://localhost", "tauri://localhost", "http://127.0.0.1:7117"] {
+            assert!(check_same_origin(&headers_with_origin(o)).is_none(), "{o}");
+        }
+    }
+
+    /// A remote page must not ride a paired session to a shell.
+    #[test]
+    fn a_foreign_origin_is_refused() {
+        for o in ["https://evil.example", "http://localhost.evil.example"] {
+            assert!(check_same_origin(&headers_with_origin(o)).is_some(), "{o}");
+        }
+    }
+
+    /// Non-browser clients send no Origin; the route layer's auth still applies.
+    #[test]
+    fn a_missing_origin_is_allowed() {
+        assert!(check_same_origin(&HeaderMap::new()).is_none());
+    }
 
     #[test]
     fn clamps_client_supplied_dimensions() {

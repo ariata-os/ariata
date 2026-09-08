@@ -23,7 +23,6 @@ import CredentialDetailView from '$lib/components/tabs/views/CredentialDetailVie
 import AppletsView from '$lib/components/tabs/views/AppletsView.svelte';
 import AppletDetailView from '$lib/components/tabs/views/AppletDetailView.svelte';
 import AppletView from '$lib/components/tabs/views/AppletView.svelte';
-import DevelopersView from '$lib/components/tabs/views/DevelopersView.svelte';
 import SettingsView from '$lib/components/tabs/views/SettingsView.svelte';
 import StorageView from '$lib/components/tabs/views/StorageView.svelte';
 import AssetView from '$lib/components/tabs/views/AssetView.svelte';
@@ -628,25 +627,6 @@ export const tabRegistry: Record<TabType, TabDefinition> = {
 	},
 
 	// ========================================================================
-	// DEVELOPERS: /developers
-	// Tab group containing SQL, Terminal, and Lake sub-views (selected via #hash).
-	// ========================================================================
-	developers: {
-		match: (path) =>
-			path === '/developers' || /^\/developers\/(sql|terminal|lake)$/.test(path),
-		parse: () => ({
-			type: 'developers',
-			label: 'Developers',
-			icon: 'ri:code-s-slash-line',
-		}),
-		serialize: () => 'developers',
-		deserialize: () => '/developers',
-		icon: 'ri:code-s-slash-line',
-		defaultLabel: 'Developers',
-		component: DevelopersView,
-	},
-
-	// ========================================================================
 	// ONTOLOGY NAMESPACE: /ontologies, /ontologies/{name}
 	// ========================================================================
 	ontology: {
@@ -908,7 +888,6 @@ export function parseRoute(route: string): ParsedRoute {
 		'applets', // Applets list page (must come before singular 'applet')
 		'applet-view', // Applet full-page face (must come before 'applet')
 		'applet', // Applet detail page
-		'developers', // Developers tab group (SQL/Terminal/Lake)
 		'ontology', // Ontology data browsing
 		'record', // /record/<ontology>/<id> — single raw record
 		'virtues', // Has /virtues/* pattern

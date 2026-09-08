@@ -116,6 +116,11 @@
 		// Developer flattened — Console layer removed
 		'/virtues/developer': '/virtues/developer/sql',
 		'/virtues/developer/console': '/virtues/developer/sql',
+		// The pre-Settings developer doors (/virtues/sql, and the /developers/*
+		// group that used to self-heal them). One room now.
+		'/virtues/sql': '/virtues/developer/sql',
+		'/virtues/terminal': '/virtues/developer/terminal',
+		'/virtues/lake': '/virtues/developer/lake',
 		// The auth-activity log is gone. Its old doors land on Devices, which is
 		// where the thing it reported on — what is paired, and what you can
 		// revoke — actually lives.
