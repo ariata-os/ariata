@@ -104,7 +104,7 @@ export const QUESTIONS: Question[] = [
 			'Name the eras the way you would tell them to a friend — childhood, the moves, the jobs, the years that belong together. Everything else you write gets placed on this timeline.',
 		why: "Everyone privately divides their life into chapters, and nobody's match the calendar. A box that knows yours can say “that was during the Boston years” instead of “in 2017” — the difference between a filing system and a memory. What ENDED each chapter matters most: the moment a period closed is usually the moment something in you did. Places ride along because moves are one of the few universally legible turning points, and where you were usually explains who you knew.",
 		hint:
-			'Name them the way you would out loud. Rough years are fine — what ended each one matters most. Most lives so far have four to eight.',
+			'Name them the way you would out loud. Rough years are fine — what ended each one matters most. Most lives so far have five to ten.',
 		// Cards, not prose: a word target against short structured fields would
 		// read as perpetual shortfall. The chapter count is its own progress.
 		target: null,

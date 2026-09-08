@@ -1,14 +1,19 @@
 <!--
 	InterviewClosedCard.svelte
 
-	The close of the narrative interview, in the conversation. Rendered for the
-	`write_it_up` tool's result and again in place of the composer once the
-	interview is closed — the same two doors both times: the document ("In your
-	own words", the person's first-person account, on its own page) and the
-	chapters (their partition of the life, one page each). Before this card
-	existed the interview simply went on: the tool ran, a page opened beside,
-	and nothing in the room said it was over, so people kept typing into a
-	chat whose drafter had already run once and would never run again.
+	The close of the narrative interview, in place of the composer: two doors,
+	the document ("In your own words", the person's first-person account, on
+	its own page) and the chapters (their partition of the life, one page
+	each). Before this card existed the interview simply went on: the tool
+	ran, a page opened beside, and nothing in the room said it was over, so
+	people kept typing into a chat whose drafter had already run once and
+	would never run again.
+
+	It rendered a second time inline for the tool result, so the same tiles
+	showed twice; now only the standing card carries the doors. The copy reads
+	the OUTCOME: when the chapters were not written, the lede says one place,
+	not two, and the Chapters door is a note rather than a link to an empty
+	page.
 -->
 
 <script lang="ts">
@@ -52,17 +57,26 @@
 				? `${chaptersWritten} ${chaptersWritten === 1 ? 'chapter' : 'chapters'}, a page each.`
 				: 'Your partition of the life, a page each.'
 	);
+
+	const lede = $derived(
+		chaptersError
+			? 'What you said is arranged on one page. It is yours: the machine never rewrites it, and anything to add or correct is done on the page.'
+			: 'What you said is arranged in two places. Both are yours: the machine never rewrites them, and anything to add or correct is done on the page.'
+	);
 </script>
 
 <div class="closed" class:standing>
 	<p class="eyebrow">
-		{standing ? 'This interview is closed' : alreadyExisted ? 'Already written' : 'Written up'}
+		{standing
+			? alreadyExisted
+				? 'This interview is closed. The document already stood.'
+				: 'This interview is closed'
+			: alreadyExisted
+				? 'Already written'
+				: 'Written up'}
 	</p>
 	{#if standing}
-		<p class="lede">
-			What you said is arranged in two places. Both are yours: the machine never
-			rewrites them, and anything to add or correct is done on the page.
-		</p>
+		<p class="lede">{lede}</p>
 	{/if}
 	<div class="doors">
 		<button type="button" class="door" onclick={openDocument}>
@@ -70,11 +84,18 @@
 			<span class="door-note">Your account, in the first person.</span>
 			<Icon icon="ri:arrow-right-up-line" width="14" class="door-arrow" />
 		</button>
-		<button type="button" class="door" onclick={openChapters}>
-			<span class="door-title">Chapters</span>
-			<span class="door-note">{chaptersNote}</span>
-			<Icon icon="ri:arrow-right-up-line" width="14" class="door-arrow" />
-		</button>
+		{#if chaptersError}
+			<div class="door door-inert" aria-disabled="true">
+				<span class="door-title">Chapters</span>
+				<span class="door-note">{chaptersNote}</span>
+			</div>
+		{:else}
+			<button type="button" class="door" onclick={openChapters}>
+				<span class="door-title">Chapters</span>
+				<span class="door-note">{chaptersNote}</span>
+				<Icon icon="ri:arrow-right-up-line" width="14" class="door-arrow" />
+			</button>
+		{/if}
 	</div>
 </div>
 
@@ -137,6 +158,16 @@
 		cursor: pointer;
 		color: var(--color-foreground);
 		transition: border-color 120ms ease;
+	}
+
+	.door-inert {
+		cursor: default;
+		color: var(--color-foreground-muted);
+	}
+
+	.door-inert:hover {
+		border-color: var(--color-border);
+		background: var(--color-background);
 	}
 
 	.door:hover {

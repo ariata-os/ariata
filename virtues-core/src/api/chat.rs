@@ -151,6 +151,60 @@ pub struct ChatRequest {
     /// Ignored without a notebook_id.
     #[serde(rename = "chatMode", default = "default_chat_mode")]
     pub chat_mode: String,
+    /// A temporary ("ghost") chat: nothing about it is written to the box.
+    /// No chat row, no messages, no usage row. Its history arrives on the
+    /// request every turn, because the box holds none.
+    ///
+    /// The client has sent this flag since ghost mode shipped and promised
+    /// "never persisted" in its UI, while the box, which had no field to
+    /// read, created the row and stored every message anyway. The only
+    /// thing that still records a ghost turn is `app_ai_calls`: cost and
+    /// token counts, no content, no chat id.
+    #[serde(default)]
+    pub temporary: bool,
+}
+
+/// A ghost chat's history, as the client sent it. The box stores nothing for
+/// a temporary chat, so the wire is the only transcript. Text parts become
+/// content; tool parts ride along in `parts` for the converter downstream.
+fn ghost_history(messages: &[UIMessage]) -> Vec<ChatMessage> {
+    messages
+        .iter()
+        .filter(|m| m.role == "user" || m.role == "assistant")
+        .map(|m| {
+            let content = m.content.clone().unwrap_or_else(|| {
+                m.parts
+                    .as_ref()
+                    .map(|parts| {
+                        parts
+                            .iter()
+                            .filter_map(|p| match p {
+                                UIPart::Text { text } => Some(text.clone()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_default()
+            });
+            ChatMessage {
+                id: m.id.clone(),
+                role: m.role.clone(),
+                content,
+                timestamp: Timestamp::now(),
+                model: None,
+                provider: None,
+                agent_id: None,
+                parts: m.parts.clone(),
+                tool_calls: None,
+                reasoning: None,
+                intent: None,
+                subject: None,
+                thought_signature: None,
+            }
+        })
+        .filter(|m| !m.content.is_empty() || m.parts.is_some())
+        .collect()
 }
 
 fn default_chat_mode() -> String {
@@ -726,7 +780,15 @@ async fn build_system_prompt(
     // persona, no data context, no narrative-identity injection (the document
     // this conversation exists to create). Its prompt stands alone.
     if agent_mode == "interview" {
-        return crate::agent::prompt::build_interview_prompt(&assistant_name, &user_name);
+        // The person's reply count is the one fact about progress the box can
+        // vouch for; the prompt reads it as a floor on what can be covered.
+        let their_replies = crate::api::narrative_draft::their_reply_count(pool)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "interview reply count unavailable; prompt says 0");
+                0
+            });
+        return crate::agent::prompt::build_interview_prompt(&assistant_name, &user_name, their_replies);
     }
 
     build_system_prompt_blocks(
@@ -1125,25 +1187,29 @@ pub async fn chat_handler(
         }
     };
 
+    // A ghost chat has no row. Everything below that reads or writes
+    // app_chats / app_chat_messages / app_chat_usage branches on this.
+    let temporary = request.temporary;
+
     // Use ON CONFLICT DO NOTHING to handle concurrent requests for same chat
     // Returns rows_affected = 1 if inserted, 0 if already exists
-    let insert_result =
-        sqlx::query("INSERT INTO app_chats (id, title, message_count) VALUES ($1, $2, 0) ON CONFLICT (id) DO NOTHING")
+    let chat_was_created = if temporary {
+        false
+    } else {
+        match sqlx::query("INSERT INTO app_chats (id, title, message_count) VALUES ($1, $2, 0) ON CONFLICT (id) DO NOTHING")
             .bind(&chat_id_str)
             .bind(&title)
             .execute(&pool)
-            .await;
-
-    let chat_was_created = match insert_result {
-        Ok(result) => result.rows_affected() > 0,
-        Err(e) => {
-            tracing::error!("Failed to create chat: {}", e);
-            false
+            .await
+        {
+            Ok(result) => result.rows_affected() > 0,
+            Err(e) => {
+                tracing::error!("Failed to create chat: {}", e);
+                false
+            }
         }
     };
 
-    // Bind the chat to its Notebook on first creation (stores notebook_id + folds
-    // the chat into the Notebook's membership).
     if chat_was_created {
         if let Err(e) =
             crate::api::notebooks::set_chat_notebook(&pool, &chat_id_str, request.notebook_id.as_deref()).await
@@ -1187,117 +1253,130 @@ pub async fn chat_handler(
             thought_signature: None,
         };
 
-        if let Err(e) = append_message(&pool, request.chat_id.clone(), user_message).await {
+        if temporary {
+            // Ghost: the message lives in the client's tab and nowhere else.
+        } else if let Err(e) = append_message(&pool, request.chat_id.clone(), user_message).await {
             tracing::error!("Failed to save user message: {}", e);
         }
     }
 
-    // Check if compaction is needed before sending to LLM
-    let compaction_status =
-        crate::api::chat_usage::check_compaction_needed(&pool, request.chat_id.clone(), &model)
-            .await;
-
-    // Pass compaction_needed flag to stream - compaction will run inside stream
-    // and emit a checkpoint event for real-time UI updates
-    let compaction_needed = matches!(compaction_status, Ok(ContextStatus::Critical));
-
-    // Load chat from DB and build context with compaction summary
-    let chat_row = match sqlx::query(
-        r#"SELECT conversation_summary, summary_up_to_index
-           FROM app_chats WHERE id = $1"#,
-    )
-    .bind(&chat_id_str)
-    .fetch_one(&pool)
-    .await
-    {
-        Ok(row) => row,
-        Err(e) => {
-            tracing::error!("Failed to load chat: {}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ChatError {
-                    error: "Failed to load chat".to_string(),
-                    details: Some(e.to_string()),
-                }),
-            )
-                .into_response();
-        }
+    // Check if compaction is needed before sending to LLM. A ghost chat has
+    // no usage row to read and no summary to write, so it never compacts.
+    let compaction_needed = if temporary {
+        false
+    } else {
+        let compaction_status =
+            crate::api::chat_usage::check_compaction_needed(&pool, request.chat_id.clone(), &model)
+                .await;
+        // Pass compaction_needed flag to stream - compaction will run inside stream
+        // and emit a checkpoint event for real-time UI updates
+        matches!(compaction_status, Ok(ContextStatus::Critical))
     };
 
     use sqlx::Row;
-    let conversation_summary: Option<String> = chat_row.get("conversation_summary");
-    let summary_up_to_index: i64 = chat_row.get("summary_up_to_index");
 
-    // Load messages from normalized table
-    let message_rows = match sqlx::query(
-        r#"
-        SELECT
-            id, role, content, created_at, model, provider, agent_id,
-            reasoning, tool_calls, intent, subject, thought_signature, parts
-        FROM app_chat_messages
-        WHERE chat_id = $1
-        ORDER BY sequence_num ASC
-        "#,
-    )
-    .bind(&chat_id_str)
-    .fetch_all(&pool)
-    .await
-    {
-        Ok(rows) => rows,
-        Err(e) => {
-            tracing::error!("Failed to load messages for chat {}: {}", chat_id_str, e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ChatError {
-                    error: "Failed to load messages".to_string(),
-                    details: Some(e.to_string()),
-                }),
-            )
-                .into_response();
+    // Load chat from DB and build context with compaction summary
+    let (conversation_summary, summary_up_to_index): (Option<String>, i64) = if temporary {
+        (None, 0)
+    } else {
+        match sqlx::query(
+            r#"SELECT conversation_summary, summary_up_to_index
+               FROM app_chats WHERE id = $1"#,
+        )
+        .bind(&chat_id_str)
+        .fetch_one(&pool)
+        .await
+        {
+            Ok(row) => (row.get("conversation_summary"), row.get("summary_up_to_index")),
+            Err(e) => {
+                tracing::error!("Failed to load chat: {}", e);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ChatError {
+                        error: "Failed to load chat".to_string(),
+                        details: Some(e.to_string()),
+                    }),
+                )
+                    .into_response();
+            }
         }
     };
 
-    // Convert rows to ChatMessage
-    let messages: Vec<ChatMessage> = message_rows
-        .into_iter()
-        .map(|msg| {
-            let id: String = msg.get("id");
-            let role: String = msg.get("role");
-            let content: String = msg.get("content");
-            let created_at: Timestamp = msg.get("created_at");
-            let model: Option<String> = msg.get("model");
-            let provider: Option<String> = msg.get("provider");
-            let agent_id: Option<String> = msg.get("agent_id");
-            let reasoning: Option<String> = msg.get("reasoning");
-            // Columns are jsonb; read as serde_json::Value, not String
-            let tool_calls_raw: Option<serde_json::Value> = msg.get("tool_calls");
-            let intent_raw: Option<serde_json::Value> = msg.get("intent");
-            let subject: Option<String> = msg.get("subject");
-            let thought_signature: Option<String> = msg.get("thought_signature");
-            let parts_raw: Option<serde_json::Value> = msg.get("parts");
-
-            // Parse JSON fields
-            let tool_calls = tool_calls_raw.and_then(|t| serde_json::from_value(t).ok());
-            let intent = intent_raw.and_then(|i| serde_json::from_value(i).ok());
-            let parts = parts_raw.and_then(|p| serde_json::from_value(p).ok());
-
-            ChatMessage {
-                id: Some(id),
-                role,
-                content,
-                timestamp: created_at,
-                model,
-                provider,
-                agent_id,
-                parts,
-                reasoning,
-                tool_calls,
-                intent,
-                subject,
-                thought_signature,
+    // The transcript: the box's rows, or for a ghost chat the client's copy.
+    let messages: Vec<ChatMessage> = if temporary {
+        ghost_history(&request.messages)
+    } else {
+        // Load messages from normalized table
+        let message_rows = match sqlx::query(
+            r#"
+            SELECT
+                id, role, content, created_at, model, provider, agent_id,
+                reasoning, tool_calls, intent, subject, thought_signature, parts
+            FROM app_chat_messages
+            WHERE chat_id = $1
+            ORDER BY sequence_num ASC
+            "#,
+        )
+        .bind(&chat_id_str)
+        .fetch_all(&pool)
+        .await
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::error!("Failed to load messages for chat {}: {}", chat_id_str, e);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ChatError {
+                        error: "Failed to load messages".to_string(),
+                        details: Some(e.to_string()),
+                    }),
+                )
+                    .into_response();
             }
-        })
-        .collect();
+        };
+
+        // Convert rows to ChatMessage
+        message_rows
+            .into_iter()
+            .map(|msg| {
+                let id: String = msg.get("id");
+                let role: String = msg.get("role");
+                let content: String = msg.get("content");
+                let created_at: Timestamp = msg.get("created_at");
+                let model: Option<String> = msg.get("model");
+                let provider: Option<String> = msg.get("provider");
+                let agent_id: Option<String> = msg.get("agent_id");
+                let reasoning: Option<String> = msg.get("reasoning");
+                // Columns are jsonb; read as serde_json::Value, not String
+                let tool_calls_raw: Option<serde_json::Value> = msg.get("tool_calls");
+                let intent_raw: Option<serde_json::Value> = msg.get("intent");
+                let subject: Option<String> = msg.get("subject");
+                let thought_signature: Option<String> = msg.get("thought_signature");
+                let parts_raw: Option<serde_json::Value> = msg.get("parts");
+
+                // Parse JSON fields
+                let tool_calls = tool_calls_raw.and_then(|t| serde_json::from_value(t).ok());
+                let intent = intent_raw.and_then(|i| serde_json::from_value(i).ok());
+                let parts = parts_raw.and_then(|p| serde_json::from_value(p).ok());
+
+                ChatMessage {
+                    id: Some(id),
+                    role,
+                    content,
+                    timestamp: created_at,
+                    model,
+                    provider,
+                    agent_id,
+                    parts,
+                    reasoning,
+                    tool_calls,
+                    intent,
+                    subject,
+                    thought_signature,
+                }
+            })
+            .collect()
+    };
 
     // Resolve the chat's room from the persisted row (single source of truth) so
     // the active-notebook context always matches the binding, even if a stale client
@@ -1310,7 +1389,11 @@ pub async fn chat_handler(
     // query failure. A swallow here is not cosmetic: None reads as "not in a
     // notebook", so a broken query silently unscopes a scoped chat — retrieval
     // stops being hard-filtered and the answer contract below is dropped.
-    let effective_notebook_id: Option<String> = match sqlx::query_scalar::<_, Option<String>>(
+    // A ghost chat has no row to read it from; the request is the binding.
+    let effective_notebook_id: Option<String> = if temporary {
+        request.notebook_id.clone()
+    } else {
+        match sqlx::query_scalar::<_, Option<String>>(
         r#"SELECT notebook_id FROM app_chats WHERE id = $1"#,
     )
     .bind(&chat_id_str)
@@ -1329,6 +1412,7 @@ pub async fn chat_handler(
                 }),
             )
                 .into_response();
+        }
         }
     };
 
@@ -1400,6 +1484,9 @@ fn create_agent_stream(
     compaction_needed: bool,
 ) -> Pin<Box<dyn Stream<Item = Result<SseEvent, Infallible>> + Send>> {
     let chat_id = request.chat_id.clone();
+    // Copied out for the stream block below, which reads `request` for a
+    // few fields and must not persist a ghost turn either.
+    let temporary = request.temporary;
     let agent_id = request.agent_id.clone();
 
     Box::pin(async_stream::stream! {
@@ -1738,7 +1825,9 @@ fn create_agent_stream(
                 parts: None,
             };
 
-            if let Err(e) = append_message(&pool, chat_id.clone(), assistant_message).await {
+            if temporary {
+                // Ghost: nothing written. The client keeps the turn in its tab.
+            } else if let Err(e) = append_message(&pool, chat_id.clone(), assistant_message).await {
                 tracing::error!("Failed to save assistant message: {}", e);
             }
 
@@ -1754,7 +1843,10 @@ fn create_agent_stream(
                 cost_micros: Some(total_cost_micros),
             };
 
-            if let Err(e) = record_chat_usage(&pool, chat_id.clone(), &model, usage_data).await {
+            if temporary {
+                // Ghost: app_chat_usage keys on a chat row that does not exist.
+                // app_ai_calls below still records cost and counts, no content.
+            } else if let Err(e) = record_chat_usage(&pool, chat_id.clone(), &model, usage_data).await {
                 tracing::warn!(
                     chat_id = %chat_id,
                     error = %e,
@@ -2114,3 +2206,29 @@ mod live_prompt_audit {
     }
 }
 
+
+#[cfg(test)]
+mod ghost_tests {
+    use super::*;
+
+    fn ui(role: &str, text: Option<&str>, parts: Option<Vec<UIPart>>) -> UIMessage {
+        UIMessage { id: None, role: role.into(), parts, content: text.map(str::to_string) }
+    }
+
+    /// A ghost chat's transcript is exactly what the client sent: user and
+    /// assistant turns, text drawn from parts when there is no content, and
+    /// nothing else (no system rows, no empty rows).
+    #[test]
+    fn ghost_history_is_the_wire_and_only_the_wire() {
+        let history = ghost_history(&[
+            ui("system", Some("ignored"), None),
+            ui("user", None, Some(vec![UIPart::Text { text: "hello".into() }, UIPart::Text { text: "there".into() }])),
+            ui("assistant", Some("hi"), None),
+            ui("user", None, None),
+        ]);
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].role, "user");
+        assert_eq!(history[0].content, "hello\nthere");
+        assert_eq!(history[1].content, "hi");
+    }
+}

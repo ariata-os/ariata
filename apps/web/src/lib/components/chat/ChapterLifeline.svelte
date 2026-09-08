@@ -27,16 +27,17 @@
 		ep: string;
 	}
 	const CHAPTERS: Chapter[] = [
-		{ t0: BIRTH, t1: new Date(2003, 7, 20).getTime(), label: "Childhood travels", ep: "three countries before the first classroom" },
-		{ t0: new Date(2003, 7, 20).getTime(), t1: new Date(2009, 5, 10).getTime(), label: "Minnesota lower school", ep: "snow days and the lake house" },
-		{ t0: new Date(2009, 5, 10).getTime(), t1: new Date(2016, 7, 20).getTime(), label: "Wisconsin", ep: "the computer lab after hours" },
+		// A made-up life, the same one the opening's table lists (ChatView).
+		{ t0: BIRTH, t1: new Date(2003, 7, 20).getTime(), label: "Childhood on the coast", ep: "three towns before the first classroom" },
+		{ t0: new Date(2003, 7, 20).getTime(), t1: new Date(2009, 5, 10).getTime(), label: "Grade school, inland", ep: "snow days and the lake" },
+		{ t0: new Date(2009, 5, 10).getTime(), t1: new Date(2016, 7, 20).getTime(), label: "The band years", ep: "the garage after hours" },
 		{ t0: new Date(2016, 7, 20).getTime(), t1: new Date(2020, 4, 12).getTime(), label: "College", ep: "everything new at once" },
-		{ t0: new Date(2020, 4, 12).getTime(), t1: new Date(2021, 8, 1).getTime(), label: "Locked in DC", ep: "a year at a desk, locked down and itching" },
-		{ t0: new Date(2021, 8, 1).getTime(), t1: new Date(2023, 6, 1).getTime(), label: "Vanderbilt & Atmos", ep: "the first real build" },
-		{ t0: new Date(2023, 6, 1).getTime(), t1: new Date(2025, 5, 1).getTime(), label: "USDP", ep: "two years of hard problems" },
-		{ t0: new Date(2025, 5, 1).getTime(), t1: null, label: "Virtues", ep: "building the box that remembers" },
+		{ t0: new Date(2020, 4, 12).getTime(), t1: new Date(2021, 8, 1).getTime(), label: "Locked down", ep: "a year at a desk, itching" },
+		{ t0: new Date(2021, 8, 1).getTime(), t1: new Date(2023, 6, 1).getTime(), label: "The first shop", ep: "the first real build" },
+		{ t0: new Date(2023, 6, 1).getTime(), t1: new Date(2025, 5, 1).getTime(), label: "The workshop", ep: "two years of hard problems" },
+		{ t0: new Date(2025, 5, 1).getTime(), t1: null, label: "Out on my own", ep: "the shop with my name on it" },
 	];
-	const PLANNED = { t0: NOW + 10 * (YR / 12), t1: NOW + 4.2 * YR, label: "Virtues, grown" };
+	const PLANNED = { t0: NOW + 10 * (YR / 12), t1: NOW + 4.2 * YR, label: "The shop, grown" };
 
 	/* The plate's palette — one muted color per chapter, cycled. */
 	const CH_COLORS = ["#B07514", "#2E6B43", "#1E4E8C", "#1E3159", "#6C7185", "#7E5A2E"];

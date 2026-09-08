@@ -89,17 +89,21 @@
 		"What you say here stays on your server. The model conducting this is " +
 		"sent your words under a no-retention agreement and keeps nothing.\n\n" +
 		"We start with the chapters of your life \u2014 five to ten of them, rough " +
-		"names and rough years. One person's might run:\n\n" +
+		"names and rough years. Months and dates are welcome where you remember " +
+		"them. One person's might run:\n\n" +
+		// A made-up life (see ChapterLifeline.svelte, which draws the same
+		// one). The interview prompt tells the model this table is an
+		// example, and the repo's rule is that nothing from a real life ships.
 		"| Chapter | Years |\n" +
 		"|---|---|\n" +
-		"| Childhood travels | 1997 \u2013 2003 |\n" +
-		"| Minnesota lower school | 2003 \u2013 2009 |\n" +
-		"| Wisconsin | 2009 \u2013 2016 |\n" +
+		"| Childhood on the coast | 1997 \u2013 2003 |\n" +
+		"| Grade school, inland | 2003 \u2013 2009 |\n" +
+		"| The band years | 2009 \u2013 2016 |\n" +
 		"| College | 2016 \u2013 2020 |\n" +
-		"| Locked in DC | 2020 \u2013 2021 |\n" +
-		"| Vanderbilt & Atmos | 2021 \u2013 2023 |\n" +
-		"| USDP | 2023 \u2013 2025 |\n" +
-		"| Virtues | 2025 \u2013 now |\n\n" +
+		"| Locked down | 2020 \u2013 2021 |\n" +
+		"| The first shop | 2021 \u2013 2023 |\n" +
+		"| The workshop | 2023 \u2013 2025 |\n" +
+		"| Out on my own | 2025 \u2013 now |\n\n" +
 		"The same chapters, drawn on the one wire a life is:";
 
 	/** The lifeline plate renders between the two parts (see the message
@@ -2001,15 +2005,12 @@
 													onAllow={(id, type, title) => handlePermissionAllow(id, type, title)}
 													onDeny={() => handlePermissionDeny()}
 												/>
-											{:else if part.type === "tool-write_it_up" && (part as any).state === "output-available"}
-												{@const output = (part as any).output}
-												<!-- The interview's close, in the transcript: the two doors. -->
-												<InterviewClosedCard
-													pageId={output?.document_page_id ?? null}
-													chaptersWritten={output?.chapters_written ?? 0}
-													alreadyExisted={output?.document_already_existed ?? false}
-													chaptersError={output?.chapters_error ?? null}
-												/>
+											{:else if part.type === "tool-write_it_up"}
+												<!-- Nothing inline: the standing card in place of the composer
+												     holds the two doors (it used to render here as well, so the
+												     same tiles showed twice), and a REFUSED close (the box's
+												     gate saying "not yet") is the interviewer's to relay in
+												     prose, never a card. -->
 											{:else if part.type === "tool-create_page" && (part as any).state === "output-available"}
 												{@const output = (part as any).output}
 												{#if output?.page_id}
@@ -2338,6 +2339,7 @@
 								standing
 								pageId={interviewDocumentPageId}
 								chaptersWritten={interviewClosedPart?.chapters_written ?? 0}
+								alreadyExisted={interviewClosedPart?.document_already_existed ?? false}
 								chaptersError={interviewClosedPart?.chapters_error ?? null}
 							/>
 						{:else}

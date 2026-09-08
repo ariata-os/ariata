@@ -182,14 +182,35 @@ fn write_it_up_tool() -> ToolConfig {
         id: "write_it_up".to_string(),
         name: "Write it up and close the interview".to_string(),
         description: "Close the interview: arrange it into the person's document and chapters".to_string(),
-        llm_description: r#"Close the narrative interview. A separate drafter reads this conversation's transcript and writes two things — the "In your own words" document (their words arranged in their own first person, never yours) and the structured chapters of their life. Both open beside the chat when this returns, and the interview is over: the composer retires.
+        // The WHEN lives in the interview prompt ("Pacing and the close"),
+        // in one place. This describes only the arguments and the outcome,
+        // so the two cannot drift apart again.
+        llm_description: r#"Close the narrative interview. A separate drafter reads the transcript and writes the "In your own words" document and the chapters. This runs ONCE and cannot be undone: the composer retires and the person cannot reply here afterwards. The interview prompt says when to call it; never compose the document yourself in the chat.
 
-Call it when the six territories are covered and the person says yes to closing, or immediately when they ask to finish in whatever words. If territories are still uncovered when they ask, say which ones in one sentence and ask whether to close anyway — this runs ONCE; a thin early document stays thin. Never compose the document yourself in the chat.
+Arguments state your claim, and the box checks it:
+- territories_covered: the territory numbers (1-6) the person has actually answered.
+- their_words: the person's own words asking to close or saying yes to closing, verbatim. If they have not said so, do not call this; ask.
+- close_early_confirmed: true only when territories are uncovered, you told the person which, and they said yes anyway.
 
-Takes no arguments. On success, tell them in one short message what was written, that both pages are theirs to edit from here, and that the interview is closed."#.to_string(),
+A refused call is not an error: it returns the sentence to act on, and the interview goes on."#.to_string(),
         parameters: serde_json::json!({
             "type": "object",
-            "properties": {}
+            "properties": {
+                "territories_covered": {
+                    "type": "array",
+                    "items": { "type": "integer", "minimum": 1, "maximum": 6 },
+                    "description": "Territory numbers (1-6) the person has answered."
+                },
+                "their_words": {
+                    "type": "string",
+                    "description": "The person's own words asking to close or agreeing to it, verbatim."
+                },
+                "close_early_confirmed": {
+                    "type": "boolean",
+                    "description": "True only when territories are uncovered and the person, told which, said yes to closing anyway."
+                }
+            },
+            "required": ["territories_covered", "their_words"]
         }),
         tool_type: ToolType::Builtin,
         category: ToolCategory::Edit,
